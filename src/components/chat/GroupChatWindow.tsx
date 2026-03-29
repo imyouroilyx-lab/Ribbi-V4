@@ -169,7 +169,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       })
       .subscribe();
 
-    // ✅ Cleanup Function: ห่อหุ้ม removeChannel เพื่อไม่ให้คืนค่า Promise ไปยัง EffectCallback
     return () => {
       void supabase.removeChannel(channel);
     };
@@ -579,7 +578,7 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
               return (
                 <MessageBubble
                   key={message.id}
-                  message={message}
+                  message={message as any}
                   isOwn={message.sender_id === currentUser.id}
                   currentUserId={currentUser.id}
                   themeColor={themeColor}
