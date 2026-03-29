@@ -213,6 +213,7 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
                 {message.content && (
                   <p className="text-sm md:text-base whitespace-pre-wrap">{message.content}</p>
                 )}
+              </div> {/* ⬅️ เพิ่ม </div> ตรงนี้ครับ */}
 
               <div className="flex items-center gap-2 mt-1 px-1">
                 <span className="text-xs text-gray-500">{formatTime(message.created_at)}</span>
