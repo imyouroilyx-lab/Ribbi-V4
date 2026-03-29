@@ -8,6 +8,7 @@ import PostCardV3 from '@/components/PostCardV3';
 import CreatePostV3 from '@/components/CreatePostV3';
 import ConfirmModal from '@/components/ConfirmModal';
 import Link from 'next/link';
+import { Users } from 'lucide-react';
 
 const POSTS_PER_PAGE = 20;
 
@@ -26,10 +27,8 @@ export default function HomePage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [postToDelete, setPostToDelete] = useState<string | null>(null);
 
-  // Ref สำหรับเก็บตัว Observer
   const observer = useRef<IntersectionObserver | null>(null);
   
-  // ฟังก์ชัน Callback สำหรับตรวจจับ Element ท้ายหน้า
   const lastPostElementRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoading || isLoadingMore) return;
     if (observer.current) observer.current.disconnect();
@@ -43,19 +42,16 @@ export default function HomePage() {
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
 
-  // โหลดข้อมูลเริ่มต้น
   useEffect(() => {
     loadInitialData();
   }, [refreshTrigger]);
 
-  // เมื่อ Page เปลี่ยน ให้ไปโหลดข้อมูลเพิ่ม
   useEffect(() => {
     if (page > 0) {
       loadMorePosts();
     }
   }, [page]);
 
-  // Auto-update last_active
   useEffect(() => {
     if (!currentUser) return;
     const updateActivity = async () => {
@@ -81,7 +77,6 @@ export default function HomePage() {
       const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single();
       setCurrentUser(userData);
 
-      // โหลด 20 โพสต์แรก
       const { data: postsData } = await supabase
         .from('posts')
         .select('*, author:author_id(*), target:target_id(*)')
@@ -102,7 +97,6 @@ export default function HomePage() {
 
   const loadMorePosts = async () => {
     if (isLoadingMore || !hasMore) return;
-
     setIsLoadingMore(true);
     const start = page * POSTS_PER_PAGE;
     const end = start + POSTS_PER_PAGE - 1;
@@ -130,14 +124,18 @@ export default function HomePage() {
   const loadOnlineUsers = async () => {
     try {
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      const { data } = await supabase.from('users').select('*').gte('last_active', tenMinutesAgo).order('last_active', { ascending: false }).limit(20);
+      const { data } = await supabase.from('users').select('*').gte('last_active', tenMinutesAgo).order('last_active', { ascending: false }).limit(50);
       setOnlineUsers(data || []);
     } catch (error) { console.error(error); }
   };
 
   const loadAllUsers = async () => {
     try {
-      const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false }).limit(20);
+      // ดึงรายชื่อสมาชิกทั้งหมด เรียงตามตัวอักษร
+      const { data } = await supabase
+        .from('users')
+        .select('*')
+        .order('display_name', { ascending: true });
       setAllUsers(data || []);
     } catch (error) { console.error(error); }
   };
@@ -187,7 +185,6 @@ export default function HomePage() {
               ) : (
                 <>
                   {posts.map((post, index) => {
-                    // ถ้าเป็นโพสต์สุดท้ายของอาเรย์ ให้ติด Ref ไว้เพื่อตรวจจับการเลื่อน
                     if (posts.length === index + 1) {
                       return (
                         <div ref={lastPostElementRef} key={post.id}>
@@ -198,19 +195,17 @@ export default function HomePage() {
                           />
                         </div>
                       );
-                    } else {
-                      return (
-                        <PostCardV3
-                          key={post.id}
-                          post={post}
-                          currentUserId={currentUser.id}
-                          onDelete={(id) => { setPostToDelete(id); setShowDeleteConfirm(true); }}
-                        />
-                      );
                     }
+                    return (
+                      <PostCardV3
+                        key={post.id}
+                        post={post}
+                        currentUserId={currentUser.id}
+                        onDelete={(id) => { setPostToDelete(id); setShowDeleteConfirm(true); }}
+                      />
+                    );
                   })}
 
-                  {/* Loading Indicator */}
                   {isLoadingMore && (
                     <div className="text-center py-4">
                       <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-10 h-10 mx-auto mb-2 animate-bounce" />
@@ -219,9 +214,7 @@ export default function HomePage() {
                   )}
 
                   {!hasMore && posts.length > 0 && (
-                    <p className="text-center text-sm text-gray-400 py-8">
-                      — คุณมาถึงจุดสิ้นสุดแล้ว —
-                    </p>
+                    <p className="text-center text-sm text-gray-400 py-8">— สิ้นสุดหน้ากระดาษ —</p>
                   )}
                 </>
               )}
@@ -229,40 +222,70 @@ export default function HomePage() {
           </div>
 
           {/* Right Sidebar */}
-          <div className="w-full lg:w-80 lg:flex-shrink-0 space-y-6">
-            <div className="hidden lg:block">
-              <div className="sticky top-4 space-y-6">
-                <div className="card-minimal">
-                  <h3 className="font-bold text-lg mb-4">ออนไลน์ ({onlineUsers.length})</h3>
-                  <div className="space-y-3">
-                    {onlineUsers.map((user) => (
+          <div className="w-full lg:w-80 lg:flex-shrink-0">
+            <div className="sticky top-4 space-y-6">
+              {/* Online Users */}
+              <div className="card-minimal">
+                <h3 className="font-bold text-lg mb-4 flex items-center justify-between">
+                  <span>ออนไลน์</span>
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">{onlineUsers.length}</span>
+                </h3>
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                  {onlineUsers.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-4">ไม่มีผู้ใช้ออนไลน์</p>
+                  ) : (
+                    onlineUsers.map((user) => (
                       <Link key={user.id} href={`/profile/${user.username}`} className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition">
-                        <div className="relative">
-                          <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover" />
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                        <div className="relative flex-shrink-0">
+                          <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-9 h-9 rounded-full object-cover" />
+                          <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full"></div>
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm truncate">{user.display_name}</p>
-                          <p className="text-xs text-gray-500 truncate">@{user.username}</p>
+                          <p className="text-[10px] text-gray-500 truncate">@{user.username}</p>
                         </div>
                       </Link>
-                    ))}
-                  </div>
+                    ))
+                  )}
                 </div>
+              </div>
 
-                <div className="card-minimal">
-                  <h3 className="font-bold text-lg mb-4">ผู้ใช้ใหม่</h3>
-                  <div className="space-y-3">
-                    {allUsers.slice(0, 5).map((user) => (
-                      <Link key={user.id} href={`/profile/${user.username}`} className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition">
-                        <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover" />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{user.display_name}</p>
-                          <p className="text-xs text-gray-500 truncate">@{user.username}</p>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
+              {/* All Members - Scrollable */}
+              <div className="card-minimal flex flex-col h-[500px]">
+                <h3 className="font-bold text-lg mb-4 flex items-center justify-between flex-shrink-0">
+                  <span className="flex items-center gap-2">
+                    <Users className="w-5 h-5 text-frog-600" />
+                    รายชื่อสมาชิกทั้งหมด
+                  </span>
+                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">{allUsers.length}</span>
+                </h3>
+                
+                <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                  {allUsers.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-4">กำลังโหลดรายชื่อ...</p>
+                  ) : (
+                    allUsers.map((user) => {
+                      const isOnline = onlineUsers.some(u => u.id === user.id);
+                      return (
+                        <Link key={user.id} href={`/profile/${user.username}`} className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition border border-transparent hover:border-gray-100">
+                          <div className="relative flex-shrink-0">
+                            <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover" />
+                            {isOnline && (
+                              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full"></div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm truncate text-gray-900">{user.display_name}</p>
+                            <p className="text-xs text-gray-500 truncate">@{user.username}</p>
+                          </div>
+                        </Link>
+                      );
+                    })
+                  )}
+                </div>
+                
+                <div className="pt-4 mt-2 border-t border-gray-50 text-center flex-shrink-0">
+                  <p className="text-[10px] text-gray-400 italic">เลื่อนเพื่อดูสมาชิกคนอื่นๆ</p>
                 </div>
               </div>
             </div>
