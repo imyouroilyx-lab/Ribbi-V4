@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-// แก้ไข Path จาก @/ เป็น ../ เพื่อให้ระบบ Preview และ Compiler หาไฟล์เจอ
-import { supabase, Post, User } from '../lib/supabase';
-import { Heart, MessageCircle, Trash2, MapPin, Image as ImageIcon, X, Edit2, Check } from 'lucide-react';
-import { getRelativeTime } from '../lib/utils';
+import { supabase, Post, User } from '@/lib/supabase';
+import { Heart, MessageCircle, Trash2, MapPin, Image as ImageIcon, X, Edit2, Check, Link2 } from 'lucide-react';
+import { getRelativeTime } from '@/lib/utils';
 import Link from 'next/link';
 
 interface Comment {
@@ -197,7 +196,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         .in('username', usernames);
 
       if (fetchError) {
-        console.error("❌ [ERROR] ดึงข้อมูล User จากฐานข้อมูลไม่ได้ :", fetchError.message);
+        console.error("❌ [ERROR] ดึงข้อมูล User จากฐานข้อมูลไม่ได้:", fetchError.message);
         return;
       }
 
@@ -216,20 +215,73 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
       if (notifications.length > 0) {
         const { error: insertError } = await supabase.from('notifications').insert(notifications);
         if (insertError) {
-          console.error("❌ [ERROR] บันทึกการแจ้งเตือนลงตารางล้มเหลว :", insertError.message, insertError.details);
+          console.error("❌ [ERROR] บันทึกการแจ้งเตือนลงตารางล้มเหลว:", insertError.message, insertError.details);
         } else {
           console.log("✅ [SUCCESS] บันทึกการแจ้งเตือนสำเร็จ");
         }
       }
     } catch (error) {
-      console.error('❌ [ERROR] ระบบแจ้งเตือนพัง :', error);
+      console.error('❌ [ERROR] ระบบแจ้งเตือนพัง:', error);
     }
   };
 
+  // ✅ ฟังก์ชันตรวจจับ YouTube ID
+  const getYouTubeId = (url: string) => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  // ✅ ฟังก์ชัน Render Embed จาก URL (แสดง YouTube หรือการ์ดลิงก์เว็บทั่วไป)
+  const renderEmbeds = (text: string) => {
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const urls = text.match(urlRegex) || [];
+    if (urls.length === 0) return null;
+
+    const firstUrl = urls[0]; // ดึงเฉพาะลิงก์แรกมาทำเป็น Embed เพื่อไม่ให้รก
+    const ytId = getYouTubeId(firstUrl);
+
+    if (ytId) {
+      return (
+        <div className="mb-4 rounded-xl overflow-hidden shadow-sm border border-gray-100 relative pt-[56.25%] w-full">
+          <iframe
+            className="absolute top-0 left-0 w-full h-full"
+            src={`https://www.youtube.com/embed/${ytId}`}
+            title="YouTube video player"
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          ></iframe>
+        </div>
+      );
+    } else {
+      // สำหรับเว็บไซต์ทั่วไป แสดงเป็น Link Card
+      try {
+        const domain = new URL(firstUrl).hostname;
+        return (
+          <a href={firstUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mb-4 flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition block">
+            <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Link2 className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-gray-900 truncate">{domain}</p>
+              <p className="text-xs text-gray-500 truncate">{firstUrl}</p>
+            </div>
+          </a>
+        );
+      } catch (e) {
+        return null;
+      }
+    }
+  };
+
+  // ✅ อัปเดตให้รองรับ URL ในการทำ Clickable Link
   const renderTextWithTags = (text: string) => {
     if (!text) return null;
     
-    const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+)/g;
+    // แยกข้อความด้วย Regex ที่รองรับ Mention แบบเก่า, แบบใหม่ และ HTTP/HTTPS
+    const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|https?:\/\/[^\s]+)/g;
     const parts = text.split(regex);
     
     return parts.map((part, index) => {
@@ -250,6 +302,15 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
           <Link key={index} href={`/profile/${plainMatch[1]}`} className="text-[#34a35c] hover:underline font-semibold" onClick={(e) => e.stopPropagation()}>
             @{plainMatch[1]}
           </Link>
+        );
+      }
+
+      // ตรวจจับลิงก์ URL ทั่วไปเพื่อให้กดได้
+      if (part.startsWith('http://') || part.startsWith('https://')) {
+        return (
+          <a key={index} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all" onClick={(e) => e.stopPropagation()}>
+            {part}
+          </a>
         );
       }
       
@@ -633,9 +694,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     </div>
   );
 
-  // ✅ การแก้ปัญหา Build Error เรื่อง 'post.author' is possibly 'undefined'
-  if (!post.author) return null;
-
   return (
     <div className="card-minimal">
       {/* Header */}
@@ -748,9 +806,13 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
           </div>
         </div>
       ) : (
-        <p className="text-sm md:text-base text-gray-800 mb-4 whitespace-pre-wrap break-words">
-          {renderTextWithTags(post.content || '')}
-        </p>
+        <>
+          <p className="text-sm md:text-base text-gray-800 mb-4 whitespace-pre-wrap break-words">
+            {renderTextWithTags(post.content || '')}
+          </p>
+          {/* ✅ แสดงการฝัง Embed YouTube หรือ Website Card ตรงนี้ */}
+          {renderEmbeds(post.content || '')}
+        </>
       )}
 
       {/* Images */}
