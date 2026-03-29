@@ -26,9 +26,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const [friendRequestCount, setFriendRequestCount] = useState(0);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
-  // ใช้ ref เพื่อให้ realtime callback อ่านค่าล่าสุดได้โดยไม่ต้อง re-subscribe
+  // ใช้ Ref เพื่อให้ callback ของ Realtime อ่านค่าล่าสุดได้ถูกต้อง
   const pathnameRef = useRef<string | null>(pathname);
   const currentUserRef = useRef<any>(null);
+  // ✅ Ref สำหรับเก็บรายการ ID ของแชทที่เราเป็นสมาชิกอยู่ เพื่อใช้กรองเสียงแจ้งเตือน
+  const userChatIdsRef = useRef<string[]>([]);
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -44,6 +46,9 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     if (!currentUser) return;
 
     currentUserRef.current = currentUser;
+
+    // โหลดข้อมูลแชทเริ่มต้นทันทีเพื่อให้มีข้อมูลใน Ref
+    loadUnreadMessages(currentUser.id);
 
     // Interval fallback ทุก 30 วิ
     const interval = setInterval(() => {
@@ -68,7 +73,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
         if (!pathnameRef.current?.startsWith('/notifications')) {
           playNotificationSound();
-          console.log('🔔 NavLayout: New notification sound');
         }
       })
       .on('postgres_changes', {
@@ -81,9 +85,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         if (!user || notif.receiver_id !== user.id) return;
         loadNotifications(user.id);
       })
-      .subscribe((status) => {
-        console.log('📡 nav-notifications:', status);
-      });
+      .subscribe();
 
     // ─── Realtime: friend requests ───
     const friendChannel = supabase
@@ -99,12 +101,8 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
         loadFriendRequests(user.id);
 
-        if (
-          friendship.status === 'pending' &&
-          !pathnameRef.current?.startsWith('/friends')
-        ) {
+        if (friendship.status === 'pending' && !pathnameRef.current?.startsWith('/friends')) {
           playNotificationSound();
-          console.log('👥 NavLayout: New friend request sound');
         }
       })
       .on('postgres_changes', {
@@ -115,18 +113,13 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         const friendship = payload.new as any;
         const user = currentUserRef.current;
         if (!user) return;
-        if (
-          friendship.receiver_id === user.id ||
-          friendship.sender_id === user.id
-        ) {
+        if (friendship.receiver_id === user.id || friendship.sender_id === user.id) {
           loadFriendRequests(user.id);
         }
       })
-      .subscribe((status) => {
-        console.log('📡 nav-friendships:', status);
-      });
+      .subscribe();
 
-    // ─── Realtime: unread messages ───
+    // ─── Realtime: unread messages (จุดแก้ไขเรื่องเสียงรั่ว) ───
     const msgChannel = supabase
       .channel('nav-messages')
       .on('postgres_changes', {
@@ -136,17 +129,23 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       }, (payload) => {
         const newMsg = payload.new as any;
         const user = currentUserRef.current;
-        if (!user) return;
+        if (!user || newMsg.event) return;
 
-        if (
-          newMsg.sender_id !== user.id &&
-          !pathnameRef.current?.startsWith('/messages')
-        ) {
-          playNotificationSound();
-          console.log('💬 NavLayout: New message sound');
+        // 🛑 ตรวจสอบความปลอดภัย: ข้อความต้องอยู่ในแชทที่เราเป็นสมาชิก และคนส่งต้องไม่ใช่เรา
+        const isMyChat = userChatIdsRef.current.includes(newMsg.chat_id);
+        const isNotFromMe = newMsg.sender_id !== user.id;
+
+        if (isMyChat && isNotFromMe) {
+          // เล่นเสียงเฉพาะตอนไม่ได้อยู่หน้า /messages
+          if (!pathnameRef.current?.startsWith('/messages')) {
+            playNotificationSound();
+            console.log('🔔 Nav: Sound played for chat', newMsg.chat_id);
+          }
+          loadUnreadMessages(user.id);
+        } else if (!isMyChat && isNotFromMe) {
+          // หากไม่มี ID ใน Ref อาจเป็นแชทใหม่ที่เพิ่งถูกดึงเข้า ให้ลองอัปเดตข้อมูล
+          loadUnreadMessages(user.id);
         }
-
-        loadUnreadMessages(user.id);
       })
       .on('postgres_changes', {
         event: 'UPDATE',
@@ -158,9 +157,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         if (!user || cp.user_id !== user.id) return;
         loadUnreadMessages(user.id);
       })
-      .subscribe((status) => {
-        console.log('📡 nav-messages:', status);
-      });
+      .subscribe();
 
     return () => {
       clearInterval(interval);
@@ -173,11 +170,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const loadUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single();
       setCurrentUser(userData);
       loadNotifications(user.id);
       loadFriendRequests(user.id);
@@ -187,41 +180,32 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   const loadNotifications = async (userId: string) => {
     try {
-      const { count } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', userId)
-        .eq('is_read', false);
+      const { count } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('is_read', false);
       setUnreadNotifCount(count || 0);
-    } catch (error) {
-      console.error('Error loading notifications:', error);
-    }
+    } catch (error) { console.error('Error loading notifications:', error); }
   };
 
   const loadFriendRequests = async (userId: string) => {
     try {
-      const { count } = await supabase
-        .from('friendships')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', userId)
-        .eq('status', 'pending');
+      const { count } = await supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('status', 'pending');
       setFriendRequestCount(count || 0);
-    } catch (error) {
-      console.error('Error loading friend requests:', error);
-    }
+    } catch (error) { console.error('Error loading friend requests:', error); }
   };
 
   const loadUnreadMessages = async (userId: string) => {
     try {
       const { data } = await supabase
         .from('chat_participants')
-        .select('unread_count')
+        .select('chat_id, unread_count')
         .eq('user_id', userId);
-      const total = data?.reduce((sum, p) => sum + (p.unread_count || 0), 0) || 0;
-      setUnreadMessageCount(total);
-    } catch (error) {
-      console.error('Error loading unread messages:', error);
-    }
+      
+      if (data) {
+        // ✅ สำคัญ: อัปเดตรายการ chat_id ทั้งหมดที่เรามีส่วนร่วมลง Ref เพื่อใช้กรอง Realtime
+        userChatIdsRef.current = data.map(d => d.chat_id);
+        const total = data.reduce((sum, p) => sum + (p.unread_count || 0), 0);
+        setUnreadMessageCount(total);
+      }
+    } catch (error) { console.error('Error loading unread messages:', error); }
   };
 
   const handleLogout = async () => {
@@ -231,12 +215,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   const isActive = (path: string) => pathname === path;
 
-  // ฟังก์ชันสำหรับจัดการการกดปุ่มหน้าหลัก
   const handleHomeClick = (e: React.MouseEvent) => {
     if (pathname === '/') {
-      e.preventDefault(); // ยกเลิกการเปลี่ยนหน้าปกติ
-      window.scrollTo({ top: 0, behavior: 'smooth' }); // เลื่อนขึ้นบนสุด
-      window.location.reload(); // สั่งรีเฟรชหน้าเพื่อให้ดึงข้อมูลโพสต์ล่าสุด
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.location.reload();
     }
   };
 
@@ -365,14 +348,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             )}
 
             <nav className="space-y-2">
-              <Link 
-                href="/" 
-                onClick={(e) => { 
-                  setShowMobileMenu(false); 
-                  handleHomeClick(e); 
-                }} 
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}
-              >
+              <Link href="/" onClick={(e) => { setShowMobileMenu(false); handleHomeClick(e); }} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}>
                 <Home className="w-5 h-5" />
                 <span>หน้าหลัก</span>
               </Link>
