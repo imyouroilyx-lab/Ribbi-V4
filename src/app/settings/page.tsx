@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+// หมายเหตุ: ในสภาพแวดล้อมจริงใช้ '@/lib/supabase' 
+// แต่เพื่อให้ตัวอย่างนี้รันได้ใน Preview จะใช้โครงสร้างพื้นฐาน
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import NavLayout from '@/components/NavLayout';
@@ -9,11 +11,19 @@ import {
   Edit2, AtSign, CheckCircle, AlertCircle, X, Moon, Sun, Monitor, Palette 
 } from 'lucide-react';
 
-export default function SettingsPage() {
+// กำหนด Interface สำหรับข้อมูลผู้ใช้
+interface UserData {
+  id: string;
+  email?: string;
+  username: string;
+  display_name: string;
+}
+
+export default function App() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState<string>('light');
 
   // --- Modal States ---
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -45,29 +55,33 @@ export default function SettingsPage() {
   }, []);
 
   const loadInitialData = async () => {
-    // 1. โหลดข้อมูลผู้ใช้
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      router.push('/login');
-      return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      setCurrentUser(userData);
+
+      // โหลดค่าธีมจาก LocalStorage
+      const savedTheme = localStorage.getItem('theme') || 'system';
+      setTheme(savedTheme);
+    } catch (err) {
+      console.error("Failed to load user data", err);
+    } finally {
+      setIsLoading(false);
     }
-
-    const { data: userData } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    setCurrentUser(userData);
-
-    // 2. โหลดค่าธีมจาก LocalStorage
-    const savedTheme = localStorage.getItem('theme') || 'system';
-    setTheme(savedTheme);
-    setIsLoading(false);
   };
 
   // --- Theme Controller ---
-  const applyTheme = (newTheme) => {
+  const applyTheme = (newTheme: string) => {
     setTheme(newTheme);
     const root = window.document.documentElement;
     
@@ -86,7 +100,7 @@ export default function SettingsPage() {
   };
 
   // --- Auth & Verification Helpers ---
-  const verifyCurrentPassword = async (email, password) => {
+  const verifyCurrentPassword = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -96,8 +110,9 @@ export default function SettingsPage() {
 
   // --- Form Handlers ---
 
-  const handlePasswordChange = async (e) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) return;
     setError('');
     setSuccess('');
     setIsSubmitting(true);
@@ -106,7 +121,7 @@ export default function SettingsPage() {
       if (passwordForm.newPassword.length < 6) throw new Error('รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร');
       if (passwordForm.newPassword !== passwordForm.confirmPassword) throw new Error('รหัสผ่านใหม่ไม่ตรงกัน');
 
-      const isValid = await verifyCurrentPassword(currentUser.email, passwordForm.currentPassword);
+      const isValid = await verifyCurrentPassword(currentUser.email || '', passwordForm.currentPassword);
       if (!isValid) throw new Error('รหัสผ่านปัจจุบันไม่ถูกต้อง');
 
       const { error: updateError } = await supabase.auth.updateUser({
@@ -121,15 +136,16 @@ export default function SettingsPage() {
         setShowPasswordModal(false);
         setSuccess('');
       }, 2000);
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message || 'เกิดข้อผิดพลาด');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleUsernameChange = async (e) => {
+  const handleUsernameChange = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) return;
     setError('');
     setSuccess('');
     setIsSubmitting(true);
@@ -139,7 +155,7 @@ export default function SettingsPage() {
       if (!/^[a-z0-9_]+$/.test(newU)) throw new Error('Username ต้องเป็น a-z, 0-9, _ เท่านั้น');
       if (newU.length < 3) throw new Error('Username ต้องมีอย่างน้อย 3 ตัวอักษร');
 
-      const isValid = await verifyCurrentPassword(currentUser.email, usernameForm.currentPassword);
+      const isValid = await verifyCurrentPassword(currentUser.email || '', usernameForm.currentPassword);
       if (!isValid) throw new Error('รหัสผ่านไม่ถูกต้อง');
 
       const { data: existingUser } = await supabase
@@ -165,15 +181,16 @@ export default function SettingsPage() {
         setSuccess('');
         setUsernameForm({ currentPassword: '', newUsername: '' });
       }, 2000);
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message || 'เกิดข้อผิดพลาด');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDisplayNameChange = async (e) => {
+  const handleDisplayNameChange = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) return;
     setError('');
     setSuccess('');
     setIsSubmitting(true);
@@ -182,7 +199,7 @@ export default function SettingsPage() {
       const newName = displayNameForm.newDisplayName.trim();
       if (!newName) throw new Error('กรุณากรอกชื่อที่แสดง');
 
-      const isValid = await verifyCurrentPassword(currentUser.email, displayNameForm.currentPassword);
+      const isValid = await verifyCurrentPassword(currentUser.email || '', displayNameForm.currentPassword);
       if (!isValid) throw new Error('รหัสผ่านไม่ถูกต้อง');
 
       const { error: updateError } = await supabase
@@ -199,7 +216,7 @@ export default function SettingsPage() {
         setSuccess('');
         setDisplayNameForm({ currentPassword: '', newDisplayName: '' });
       }, 2000);
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message || 'เกิดข้อผิดพลาด');
     } finally {
       setIsSubmitting(false);
@@ -207,9 +224,11 @@ export default function SettingsPage() {
   };
 
   const handleDeleteAccount = async () => {
-    if (!confirm('ต้องการลบบัญชีถาวร? การกระทำนี้ไม่สามารถย้อนกลับได้')) return;
-    if (!confirm('แน่ใจหรือไม่? ข้อมูลทั้งหมดจะถูกลบ!')) return;
-    alert('ฟีเจอร์นี้ยังไม่เปิดใช้งานในเวอร์ชัน Demo กรุณาติดต่อผู้ดูแลระบบ');
+    const confirmed = window.confirm('ต้องการลบบัญชีถาวร? การกระทำนี้ไม่สามารถย้อนกลับได้');
+    if (!confirmed) return;
+    const reconfirmed = window.confirm('แน่ใจหรือไม่? ข้อมูลทั้งหมดจะถูกลบ!');
+    if (!reconfirmed) return;
+    window.alert('ฟีเจอร์นี้ยังไม่เปิดใช้งานในเวอร์ชัน Demo กรุณาติดต่อผู้ดูแลระบบ');
   };
 
   if (isLoading) {
@@ -234,7 +253,7 @@ export default function SettingsPage() {
 
         <div className="space-y-6">
           
-          {/* --- Section 1: Appearance (NEW DARK MODE) --- */}
+          {/* --- Section 1: Appearance --- */}
           <section className="card-minimal dark:bg-gray-900/50 dark:border-gray-800 border border-gray-100">
             <h2 className="text-lg md:text-xl font-bold mb-4 flex items-center gap-2 dark:text-white">
               <Palette className="w-5 h-5 text-frog-500" />
@@ -270,7 +289,6 @@ export default function SettingsPage() {
             </h2>
             <div className="space-y-1">
               
-              {/* Password Row */}
               <div className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-2xl transition-colors">
                 <div className="flex-1">
                   <p className="font-medium flex items-center gap-2 dark:text-white text-gray-800">
@@ -281,7 +299,6 @@ export default function SettingsPage() {
                 <button onClick={() => setShowPasswordModal(true)} className="btn-secondary text-sm">แก้ไข</button>
               </div>
 
-              {/* Username Row */}
               <div className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-2xl transition-colors">
                 <div className="flex-1">
                   <p className="font-medium flex items-center gap-2 dark:text-white text-gray-800">
@@ -295,7 +312,6 @@ export default function SettingsPage() {
                 }} className="btn-secondary text-sm">แก้ไข</button>
               </div>
 
-              {/* Display Name Row */}
               <div className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-2xl transition-colors">
                 <div className="flex-1">
                   <p className="font-medium flex items-center gap-2 dark:text-white text-gray-800">
@@ -309,7 +325,6 @@ export default function SettingsPage() {
                 }} className="btn-secondary text-sm">แก้ไข</button>
               </div>
 
-              {/* Edit Profile Link */}
               <div className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-2xl transition-colors">
                 <div className="flex-1">
                   <p className="font-medium dark:text-white text-gray-800">แก้ไขข้อมูลโปรไฟล์</p>
