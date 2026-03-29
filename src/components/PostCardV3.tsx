@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-// แก้ไขจาก '@/lib/supabase' เป็น '../lib/supabase' เพื่อให้ระบบสามารถหาไฟล์เจอ
+// แก้ไข Path ให้ถูกต้องสำหรับโครงสร้างโปรเจกต์
 import { supabase, Post, User } from '../lib/supabase';
 import { Heart, MessageCircle, Trash2, MapPin, Image as ImageIcon, X, Edit2, Check } from 'lucide-react';
-// แก้ไขจาก '@/lib/utils' เป็น '../lib/utils'
 import { getRelativeTime } from '../lib/utils';
 import Link from 'next/link';
 
