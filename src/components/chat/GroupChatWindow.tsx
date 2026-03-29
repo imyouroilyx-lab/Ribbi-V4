@@ -74,8 +74,13 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
   useEffect(() => {
     loadGroupData();
     markAsRead();
+    
+    // ✅ แก้ไขปัญหา Type Error โดยการห่อหุ้ม Cleanup Function ไม่ให้คืนค่า Promise ตรง ๆ
     const cleanup = setupRealtimeSubscription();
-    return cleanup;
+    
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, [chatId]);
 
   useEffect(() => {
@@ -84,7 +89,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
 
   const loadGroupData = async () => {
     try {
-      // โหลดข้อมูลกลุ่ม
       const { data: chatData, error: chatError } = await supabase
         .from('chats')
         .select('*')
@@ -100,13 +104,11 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       setGroupData(chatData);
       if (chatData.theme_color) setThemeColor(chatData.theme_color);
 
-      // โหลดข้อมูลสมาชิกและ role
       const { data: participants, error: participantsError } = await supabase
         .from('chat_participants')
         .select('role, user_id')
         .eq('chat_id', chatId);
 
-      // ✅ ดักจับกรณีที่โดนเตะออกจากกลุ่มหรือไม่พบข้อมูลแล้ว
       if (participantsError || !participants || !participants.some(p => p.user_id === currentUser.id)) {
         alert('คุณถูกลบออกจากกลุ่มนี้แล้ว');
         onBack();
@@ -122,14 +124,13 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       const formattedMembers = participants.map(p => {
         const user = usersData?.find(u => u.id === p.user_id);
         return { ...user, role: p.role };
-      }).filter(m => m.id); // กรองคนที่มีข้อมูล
+      }).filter(m => m.id);
 
       setMembers(formattedMembers);
 
       const me = formattedMembers.find(m => m.id === currentUser.id);
       setIsAdmin(me?.role === 'admin' || chatData?.created_by === currentUser.id);
 
-      // โหลดข้อความ
       const { data: messagesData } = await supabase
         .from('messages')
         .select('id, sender_id, content, images, created_at, updated_at, deleted_by, event')
@@ -178,12 +179,11 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
         const newMessage = payload.new as any;
         if (newMessage.event) {
           if (['member_added', 'member_removed', 'member_left', 'group_updated'].includes(newMessage.event)) {
-            await loadGroupData(); // โหลดข้อมูลใหม่เวลามีการอัปเดตสมาชิกหรือกลุ่ม
+            await loadGroupData();
             scrollToBottom();
             return;
           }
           setMessages(prev => {
-            // ป้องกันข้อความซ้ำ
             if (prev.some(m => m.id === newMessage.id)) return prev;
             return [...prev, { ...newMessage, sender: null } as any];
           });
@@ -198,7 +198,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
         if (!sender) return;
         
         setMessages(prev => {
-          // ป้องกันข้อความซ้ำ
           if (prev.some(m => m.id === newMessage.id)) return prev;
           return [...prev, { ...newMessage, sender } as any];
         });
@@ -247,23 +246,25 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
           setGroupData((prev: any) => ({ ...prev, ...updated }));
         }
       })
-      .on('postgres_changes', { // ✅ ดักจับเมื่อโดนเตะออกจากกลุ่มแบบ Realtime
+      .on('postgres_changes', { 
         event: 'DELETE',
         schema: 'public',
         table: 'chat_participants',
         filter: `chat_id=eq.${chatId}`,
       }, (payload) => {
-        // หากคนโดนลบคือตัวเอง ให้เด้งออกทันที
         if (payload.old?.user_id === currentUser.id) {
           alert('คุณถูกลบออกจากกลุ่มนี้แล้ว');
           onBack();
         } else {
-          loadGroupData(); // หากเป็นคนอื่น ให้โหลดสมาชิกใหม่
+          loadGroupData();
         }
       })
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    // ✅ คืนค่าเป็น function ที่ไม่ return Promise เพื่อแก้ปัญหา Build Error
+    return () => {
+      supabase.removeChannel(channel);
+    };
   };
 
   const scrollToBottom = () => {
@@ -293,19 +294,23 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
     const messageIds = messages.map(m => m.id);
     if (messageIds.length === 0) { setShowMenu(false); return; }
 
-    const { data: currentMessages, error: fetchError } = await supabase
-      .from('messages').select('id, deleted_by').in('id', messageIds);
-    if (fetchError) { alert('ไม่สามารถลบประวัติได้'); return; }
+    try {
+      const { data: currentMessages } = await supabase
+        .from('messages').select('id, deleted_by').in('id', messageIds);
 
-    const updates = currentMessages?.map(msg => {
-      const existing: string[] = msg.deleted_by || [];
-      if (!existing.includes(currentUser.id)) existing.push(currentUser.id);
-      return supabase.from('messages').update({ deleted_by: existing }).eq('id', msg.id);
-    }) || [];
+      const updates = currentMessages?.map(msg => {
+        const existing: string[] = msg.deleted_by || [];
+        if (!existing.includes(currentUser.id)) existing.push(currentUser.id);
+        return supabase.from('messages').update({ deleted_by: existing }).eq('id', msg.id);
+      }) || [];
 
-    const results = await Promise.all(updates);
-    if (results.some(r => r.error)) alert('ไม่สามารถลบประวัติได้');
-    else { setMessages([]); setShowMenu(false); onRefreshChats(); }
+      await Promise.all(updates);
+      setMessages([]); 
+      setShowMenu(false); 
+      onRefreshChats();
+    } catch (error) {
+      alert('ไม่สามารถลบประวัติได้');
+    }
   };
 
   const handleLeaveGroup = async () => {
@@ -397,7 +402,7 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       });
 
       setShowAddMemberModal(false);
-      await loadGroupData(); // รีเฟรชสมาชิก
+      await loadGroupData();
       onRefreshChats();
     } catch (error) {
       console.error('Error adding members:', error);
@@ -439,21 +444,18 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
     }
   };
 
-  // ✅ Loading (เปลี่ยนเป็นความสูงแบบ fixed ให้เข้ากับ layout)
   if (isLoading || !groupData) {
     return (
-      <div className="flex items-center justify-center bg-white rounded-2xl shadow-sm border border-gray-200 h-[calc(100dvh-11rem)] lg:h-[calc(100vh-3rem)]">
+      <div className="h-full flex items-center justify-center">
         <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-16 h-16 animate-bounce" />
       </div>
     );
   }
 
   return (
-    // กำหนดความสูงของคอนเทนเนอร์ให้เป๊ะตามหน้าจอ ทำให้ส่วนบนและล่างไม่ต้องเลื่อนตามเนื้อหาตรงกลาง
-    <div className="flex flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden h-[calc(100dvh-11rem)] lg:h-[calc(100vh-3rem)]">
-      
-      {/* Header (flex-shrink-0 เพื่อไม่ให้หดตัว) */}
-      <div className="flex-shrink-0 p-4 border-b flex items-center gap-3 transition-colors duration-300 bg-white z-10"
+    <div className="h-full flex flex-col bg-white">
+      {/* Header */}
+      <div className="p-4 border-b flex items-center gap-3 transition-colors duration-300"
         style={{ borderColor: `${themeColor}40` }}>
         <button onClick={onBack} className="md:hidden p-2 hover:bg-gray-100 rounded-full -ml-2">
           <ArrowLeft className="w-5 h-5" />
@@ -485,7 +487,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
           </div>
         </button>
 
-        {/* ปุ่มสีธีม */}
         <div className="relative">
           <button onClick={() => { setShowColorPicker(!showColorPicker); setShowMenu(false); }}
             className="p-2 hover:bg-gray-100 rounded-full transition" title="เปลี่ยนธีมสี">
@@ -522,7 +523,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
           )}
         </div>
 
-        {/* เมนู ⋮ */}
         <div className="relative">
           <button onClick={() => { setShowMenu(!showMenu); setShowColorPicker(false); }}
             className="p-2 hover:bg-gray-100 rounded-full">
@@ -562,8 +562,8 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
         </div>
       </div>
 
-      {/* Messages (สามารถเลื่อนได้เฉพาะพื้นที่ตรงนี้) */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 relative">
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <Users className="w-20 h-20 mb-4 opacity-30" style={{ color: themeColor }} />
@@ -573,7 +573,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
         ) : (
           <>
             {messages.map((message) => {
-              // ✅ ดักจับ Event ของกลุ่มและนำมาแสดงผลแจ้งเตือนตรงกลาง
               if (message.event && ['member_added', 'member_removed', 'member_left', 'group_updated', 'group_created'].includes(message.event)) {
                 return (
                   <div key={message.id} className="flex items-center justify-center my-2">
@@ -602,7 +601,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
         )}
       </div>
 
-      {/* Message Input (ถูกดันให้อยู่ด้านล่างสุดโดย flex เสมอ) */}
       <MessageInput
         chatId={chatId}
         currentUserId={currentUser.id}
@@ -637,7 +635,7 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
                     {editGroupImgUrl ? (
                       <img src={editGroupImgUrl} alt="Preview" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = '')} />
                     ) : (
-                      <ImageIcon className="w-5 h-5 text-gray-400" />
+                      ImageIcon className="w-5 h-5 text-gray-400" />
                     )}
                   </div>
                   <input type="url" value={editGroupImgUrl} onChange={(e) => setEditGroupImgUrl(e.target.value)}
