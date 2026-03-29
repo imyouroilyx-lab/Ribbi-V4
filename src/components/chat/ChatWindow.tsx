@@ -53,11 +53,47 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
     loadChatData();
     markAsRead();
     
-    // ✅ แก้ไขปัญหา Type Error โดยการไม่คืนค่า Promise ตรง ๆ จาก useEffect
-    const cleanup = setupRealtimeSubscription();
+    // ตั้งค่า Realtime Subscription
+    const channel = supabase
+      .channel(`chat-${chatId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `chat_id=eq.${chatId}`,
+      }, (payload) => {
+        const newMessage = payload.new as Message;
+        setMessages(prev => [...prev, newMessage]);
+        markAsRead();
+        scrollToBottom();
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `chat_id=eq.${chatId}`,
+      }, (payload) => {
+        const updatedMessage = payload.new as Message;
+        if (updatedMessage.deleted_by?.includes(currentUser.id)) {
+          setMessages(prev => prev.filter(m => m.id !== updatedMessage.id));
+        } else {
+          setMessages(prev => prev.map(m => m.id === updatedMessage.id ? updatedMessage : m));
+        }
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'chats',
+        filter: `id=eq.${chatId}`,
+      }, (payload) => {
+        const updatedChat = payload.new as any;
+        if (updatedChat.theme_color) setThemeColor(updatedChat.theme_color);
+      })
+      .subscribe();
     
+    // ✅ Cleanup Function: แก้ไขโดยการไม่คืนค่า Promise ของ removeChannel ออกไปข้างนอก
     return () => {
-      if (cleanup) cleanup();
+      void supabase.removeChannel(channel);
     };
   }, [chatId]);
 
@@ -116,50 +152,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
       .eq('chat_id', chatId)
       .eq('user_id', currentUser.id);
     onRefreshChats();
-  };
-
-  const setupRealtimeSubscription = () => {
-    const channel = supabase
-      .channel(`chat-${chatId}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `chat_id=eq.${chatId}`,
-      }, (payload) => {
-        const newMessage = payload.new as Message;
-        setMessages(prev => [...prev, newMessage]);
-        markAsRead();
-        scrollToBottom();
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'messages',
-        filter: `chat_id=eq.${chatId}`,
-      }, (payload) => {
-        const updatedMessage = payload.new as Message;
-        if (updatedMessage.deleted_by?.includes(currentUser.id)) {
-          setMessages(prev => prev.filter(m => m.id !== updatedMessage.id));
-        } else {
-          setMessages(prev => prev.map(m => m.id === updatedMessage.id ? updatedMessage : m));
-        }
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'chats',
-        filter: `id=eq.${chatId}`,
-      }, (payload) => {
-        const updatedChat = payload.new as any;
-        if (updatedChat.theme_color) setThemeColor(updatedChat.theme_color);
-      })
-      .subscribe();
-
-    // ✅ คืนค่าเป็น function ที่ไม่ return Promise เพื่อแก้ปัญหา Build Error
-    return () => {
-      supabase.removeChannel(channel);
-    };
   };
 
   const scrollToBottom = () => {
