@@ -692,11 +692,11 @@ export default function ProfilePage() {
                         <Users className="w-4 h-4 flex-shrink-0" />
                         <span className="font-medium">สถานะ:</span>
                         <span>
-                          {profileUser.relationship_status === 'single' && '💔 โสด'}
+                          {profileUser.relationship_status === 'single' && '👤 โสด'}
                           {profileUser.relationship_status === 'in_relationship' && '❤️ เป็นแฟน'}
                           {profileUser.relationship_status === 'engaged' && '💍 หมั้น'}
                           {profileUser.relationship_status === 'married' && '💒 แต่งงาน'}
-                          {profileUser.relationship_status === 'complicated' && '😵 ไม่ชัดเจน'}
+                          {profileUser.relationship_status === 'complicated' && '❓ ไม่ชัดเจน'}
                           {profileUser.relationship_custom_name && ` กับ ${profileUser.relationship_custom_name}`}
                         </span>
                       </div>
