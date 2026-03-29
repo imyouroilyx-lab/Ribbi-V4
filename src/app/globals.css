@@ -7,6 +7,16 @@
 :root {
   --background: #faf8f5;
   --foreground: #1a1a1a;
+  --card-bg: #ffffff;
+  --border-color: #e5e7eb;
+}
+
+/* 2. กำหนดสีสำหรับ Dark Mode */
+.dark {
+  --background: #121212;
+  --foreground: #f5f5f5;
+  --card-bg: #1e1e1e;
+  --border-color: #2d2d2d;
 }
 
 @layer base {
@@ -17,27 +27,37 @@
   body {
     color: var(--foreground);
     background: var(--background);
-    font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    transition: background-color 0.3s ease, color 0.3s ease;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 }
 
 @layer components {
+  /* 3. อัปเดต Component ให้รองรับ Dark Mode */
   .card-minimal {
-    @apply bg-white rounded-3xl p-6 shadow-soft;
+    @apply rounded-3xl p-6 shadow-soft transition-colors;
+    background-color: var(--card-bg);
+  }
+  
+  .dark .card-minimal {
+    @apply shadow-dark-soft border border-gray-800;
   }
 
   .btn-primary {
-    @apply bg-frog-500 hover:bg-frog-400 text-white font-medium px-6 py-3 rounded-2xl transition shadow-sm hover:shadow-md;
+    @apply bg-frog-500 hover:bg-frog-400 text-white font-medium px-6 py-3 rounded-2xl transition shadow-sm hover:shadow-md disabled:opacity-50;
   }
 
   .btn-secondary {
-    @apply bg-white hover:bg-gray-50 text-gray-700 font-medium px-6 py-3 rounded-2xl transition border border-gray-200 shadow-sm;
+    @apply font-medium px-6 py-3 rounded-2xl transition border shadow-sm;
+    @apply bg-white border-gray-200 text-gray-700 hover:bg-gray-50;
+    @apply dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-750;
   }
 
   .input-minimal {
-    @apply w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:outline-none focus:border-frog-500 focus:ring-2 focus:ring-frog-100 transition;
+    @apply w-full px-4 py-3 rounded-2xl focus:outline-none focus:ring-2 focus:ring-frog-100 transition;
+    @apply bg-white border border-gray-200 focus:border-frog-500;
+    @apply dark:bg-gray-900 dark:border-gray-700 dark:focus:border-frog-400 dark:text-white;
   }
 }
 
@@ -49,26 +69,10 @@
   .shadow-soft-lg {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   }
-}
-
-/* Loading Screen Animation */
-@keyframes frog-jump {
-  0%, 100% {
-    transform: translateY(0) translateX(0);
+  
+  .dark .shadow-soft {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   }
-  25% {
-    transform: translateY(-40px) translateX(25vw);
-  }
-  50% {
-    transform: translateY(0) translateX(50vw);
-  }
-  75% {
-    transform: translateY(-40px) translateX(75vw);
-  }
-}
-
-.frog-loading {
-  animation: frog-jump 2s ease-in-out infinite;
 }
 
 /* Modal Animations */
