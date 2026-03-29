@@ -1,10 +1,60 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase, Post, User } from '@/lib/supabase';
 import { Heart, MessageCircle, Trash2, MapPin, Image as ImageIcon, X, Edit2, Check, Link2 } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
-import Link from 'next/link';
+
+// สำหรับนำไปใช้ในโปรเจกต์จริง ให้เปิดการใช้งาน Import ด้านล่างนี้แทน
+// import { supabase, Post, User } from '@/lib/supabase';
+// import Link from 'next/link';
+
+// --- Mock สำหรับระบบ Preview เพื่อป้องกัน Error ---
+export interface User {
+  id: string;
+  username: string;
+  display_name: string;
+  profile_img_url: string | null;
+}
+
+export interface Post {
+  id: string;
+  author_id: string;
+  target_id?: string;
+  content: string | null;
+  images: string[] | null;
+  mood?: string | null;
+  activity?: string | null;
+  location?: string | null;
+  created_at: string;
+  author: User;
+  target?: User;
+}
+
+const supabase: any = {
+  channel: () => ({ on: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }) }),
+  from: () => ({
+    select: () => ({ 
+      eq: () => ({ 
+        order: () => Promise.resolve({ data: [] }), 
+        maybeSingle: () => Promise.resolve({ data: null }), 
+        in: () => Promise.resolve({ data: [] }) 
+      }),
+      in: () => ({
+        eq: () => Promise.resolve({ data: [] })
+      })
+    }),
+    insert: () => Promise.resolve({ error: null }),
+    delete: () => ({ eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
+    update: () => ({ eq: () => Promise.resolve({ error: null }) })
+  })
+};
+
+const Link = ({ href, children, className, onClick }: any) => (
+  <a href={href} className={className} onClick={onClick}>
+    {children}
+  </a>
+);
+// ------------------------------------------
 
 interface Comment {
   id: string;
@@ -109,7 +159,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
 
       if (data) {
         const commentsWithAuthors = await Promise.all(
-          data.map(async (comment) => {
+          data.map(async (comment: any) => {
             const { data: author } = await supabase
               .from('users')
               .select('*')
@@ -142,7 +192,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
       setLikeCount(likesData?.length || 0);
 
       if (likesData && likesData.length > 0) {
-        const userIds = likesData.map(like => like.user_id);
+        const userIds = likesData.map((like: any) => like.user_id);
         const { data: usersData } = await supabase
           .from('users')
           .select('*')
@@ -202,9 +252,9 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
 
       if (!users || users.length === 0) return;
 
-      const usersToNotify = users.filter(u => u.id !== currentUserId);
+      const usersToNotify = users.filter((u: any) => u.id !== currentUserId);
 
-      const notifications = usersToNotify.map(u => ({
+      const notifications = usersToNotify.map((u: any) => ({
         receiver_id: u.id, 
         sender_id: currentUserId,
         type: 'tag_comment',
@@ -290,7 +340,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
       const mdMatch = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
       if (mdMatch) {
         return (
-          <Link key={index} href={`/profile/${mdMatch[2]}`} className="text-[#34a35c] hover:underline font-semibold" onClick={(e) => e.stopPropagation()}>
+          <Link key={index} href={`/profile/${mdMatch[2]}`} className="text-[#34a35c] hover:underline font-semibold" onClick={(e: any) => e.stopPropagation()}>
             {mdMatch[1]}
           </Link>
         );
@@ -299,7 +349,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
       const plainMatch = part.match(/^@([a-zA-Z0-9_]+)$/);
       if (plainMatch) {
          return (
-          <Link key={index} href={`/profile/${plainMatch[1]}`} className="text-[#34a35c] hover:underline font-semibold" onClick={(e) => e.stopPropagation()}>
+          <Link key={index} href={`/profile/${plainMatch[1]}`} className="text-[#34a35c] hover:underline font-semibold" onClick={(e: any) => e.stopPropagation()}>
             @{plainMatch[1]}
           </Link>
         );
@@ -487,7 +537,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
 
       if (!commentsData || commentsData.length === 0) return;
 
-      const commentIds = commentsData.map(c => c.id);
+      const commentIds = commentsData.map((c: any) => c.id);
 
       const { data: likesData } = await supabase
         .from('comment_likes')
@@ -495,7 +545,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         .in('comment_id', commentIds);
 
       const likeCounts: Record<string, number> = {};
-      likesData?.forEach(like => {
+      likesData?.forEach((like: any) => {
         likeCounts[like.comment_id] = (likeCounts[like.comment_id] || 0) + 1;
       });
       setCommentLikes(likeCounts);
@@ -506,7 +556,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         .in('comment_id', commentIds)
         .eq('user_id', currentUserId);
 
-      const likedSet = new Set(userLikes?.map(l => l.comment_id) || []);
+      const likedSet = new Set(userLikes?.map((l: any) => l.comment_id) || []);
       setLikedComments(likedSet);
     } catch (error) {
       console.error('Error loading comment likes:', error);
