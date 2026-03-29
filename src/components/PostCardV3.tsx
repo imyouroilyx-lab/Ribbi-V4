@@ -225,14 +225,12 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     }
   };
 
-  // ✅ ฟังก์ชันตรวจจับ YouTube ID
   const getYouTubeId = (url: string) => {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
     const match = url.match(regExp);
     return (match && match[2].length === 11) ? match[2] : null;
   };
 
-  // ✅ ฟังก์ชัน Render Embed จาก URL (แสดง YouTube หรือการ์ดลิงก์เว็บทั่วไป)
   const renderEmbeds = (text: string) => {
     if (!text) return null;
     const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -240,7 +238,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     if (!urls || urls.length === 0) return null;
 
     const firstUrl = urls[0]; 
-    if (!firstUrl) return null; // Safe guard สำหรับ TypeScript
+    if (!firstUrl) return null;
 
     const ytId = getYouTubeId(firstUrl);
 
@@ -258,7 +256,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         </div>
       );
     } else {
-      // สำหรับเว็บไซต์ทั่วไป แสดงเป็น Link Card
       try {
         const domain = new URL(firstUrl).hostname;
         return (
@@ -278,16 +275,18 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     }
   };
 
-  // ✅ อัปเดตให้รองรับ URL ในการทำ Clickable Link
+  // ✅ ปรับปรุงให้รองรับ Hashtag สีฟ้า (#ข้อความ)
   const renderTextWithTags = (text: string) => {
     if (!text) return null;
     
-    const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|https?:\/\/[^\s]+)/g;
+    // Regex รองรับ @Mention, @[Mention](username), URL และ #Hashtag (ไทย/อังกฤษ)
+    const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|#[a-zA-Z0-9_ก-๙]+|https?:\/\/[^\s]+)/g;
     const parts = text.split(regex);
     
     return parts.map((part, index) => {
       if (!part) return null;
       
+      // 1. ตรวจจับ Mention แบบ Markdown
       const mdMatch = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
       if (mdMatch) {
         return (
@@ -297,6 +296,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         );
       }
       
+      // 2. ตรวจจับ Mention แบบธรรมดา
       const plainMatch = part.match(/^@([a-zA-Z0-9_]+)$/);
       if (plainMatch) {
          return (
@@ -306,6 +306,17 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         );
       }
 
+      // 3. ตรวจจับ Hashtag และเปลี่ยนเป็นสีฟ้า
+      const hashtagMatch = part.match(/^#([a-zA-Z0-9_ก-๙]+)$/);
+      if (hashtagMatch) {
+        return (
+          <span key={index} className="text-blue-500 hover:underline cursor-pointer font-medium">
+            {part}
+          </span>
+        );
+      }
+
+      // 4. ตรวจจับ URL
       if (part.startsWith('http://') || part.startsWith('https://')) {
         return (
           <a key={index} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all" onClick={(e) => e.stopPropagation()}>
@@ -813,7 +824,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
           <p className="text-sm md:text-base text-gray-800 mb-4 whitespace-pre-wrap break-words">
             {renderTextWithTags(post.content || '')}
           </p>
-          {/* ✅ แสดงการฝัง Embed YouTube หรือ Website Card ตรงนี้ */}
           {renderEmbeds(post.content || '')}
         </>
       )}
