@@ -53,8 +53,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     }, 30 * 1000);
 
     // ─── Realtime: notifications ───
-    // ไม่ใช้ filter ใน subscribe เพราะต้องการ Supabase config พิเศษ
-    // กรองใน callback แทน — ทำงานได้เสมอ
     const notifChannel = supabase
       .channel('nav-notifications')
       .on('postgres_changes', {
@@ -68,7 +66,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
         loadNotifications(user.id);
 
-        // เล่นเสียงเฉพาะตอนไม่ได้อยู่หน้า /notifications
         if (!pathnameRef.current?.startsWith('/notifications')) {
           playNotificationSound();
           console.log('🔔 NavLayout: New notification sound');
@@ -102,7 +99,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
         loadFriendRequests(user.id);
 
-        // เล่นเสียงเฉพาะ pending และไม่ได้อยู่หน้า /friends
         if (
           friendship.status === 'pending' &&
           !pathnameRef.current?.startsWith('/friends')
@@ -119,7 +115,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         const friendship = payload.new as any;
         const user = currentUserRef.current;
         if (!user) return;
-        // อัปเดตเมื่อเป็น receiver หรือ sender
         if (
           friendship.receiver_id === user.id ||
           friendship.sender_id === user.id
@@ -143,7 +138,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         const user = currentUserRef.current;
         if (!user) return;
 
-        // เล่นเสียงเฉพาะ: ไม่ใช่ข้อความตัวเอง และไม่อยู่หน้า /messages
         if (
           newMsg.sender_id !== user.id &&
           !pathnameRef.current?.startsWith('/messages')
@@ -237,19 +231,28 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   const isActive = (path: string) => pathname === path;
 
+  // ฟังก์ชันสำหรับจัดการการกดปุ่มหน้าหลัก
+  const handleHomeClick = (e: React.MouseEvent) => {
+    if (pathname === '/') {
+      e.preventDefault(); // ยกเลิกการเปลี่ยนหน้าปกติ
+      window.scrollTo({ top: 0, behavior: 'smooth' }); // เลื่อนขึ้นบนสุด
+      window.location.reload(); // สั่งรีเฟรชหน้าเพื่อให้ดึงข้อมูลโพสต์ล่าสุด
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:block w-64 fixed left-0 top-0 h-screen bg-white border-r border-gray-200 p-4">
         <div className="mb-8">
-          <Link href="/" className="flex items-center gap-2">
+          <Link href="/" onClick={handleHomeClick} className="flex items-center gap-2">
             <img src="https://iili.io/qbtgKBt.png" alt="Ribbi" className="w-10 h-10" />
             <span className="text-2xl font-bold text-frog-600">Ribbi</span>
           </Link>
         </div>
 
         <nav className="space-y-2">
-          <Link href="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
+          <Link href="/" onClick={handleHomeClick} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
             <Home className="w-5 h-5" />
             <span>หน้าหลัก</span>
           </Link>
@@ -317,7 +320,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
       {/* Mobile Top Bar */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-40">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/" onClick={handleHomeClick} className="flex items-center gap-2">
           <img src="https://iili.io/qbtgKBt.png" alt="Ribbi" className="w-8 h-8" />
           <span className="text-xl font-bold text-frog-600">Ribbi</span>
         </Link>
@@ -362,7 +365,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             )}
 
             <nav className="space-y-2">
-              <Link href="/" onClick={() => setShowMobileMenu(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}>
+              <Link 
+                href="/" 
+                onClick={(e) => { 
+                  setShowMobileMenu(false); 
+                  handleHomeClick(e); 
+                }} 
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}
+              >
                 <Home className="w-5 h-5" />
                 <span>หน้าหลัก</span>
               </Link>
@@ -421,7 +431,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       {/* Mobile Bottom Navigation */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40">
         <div className="flex justify-around items-center h-16">
-          <Link href="/" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full ${isActive('/') ? 'text-frog-600' : 'text-gray-600'}`}>
+          <Link href="/" onClick={handleHomeClick} className={`flex flex-col items-center justify-center gap-1 flex-1 h-full ${isActive('/') ? 'text-frog-600' : 'text-gray-600'}`}>
             <Home className="w-6 h-6" />
             <span className="text-xs">หน้าหลัก</span>
           </Link>
