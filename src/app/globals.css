@@ -4,117 +4,85 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 1. กำหนดตัวแปรสีให้ครอบคลุมทุกส่วน */
 :root {
-  --background: #faf8f5;
-  --foreground: #1a1a1a;
-  --card-bg: #ffffff;
-  --border-color: #e5e7eb;
-  --muted-text: #6b7280; /* gray-500 */
-  --nav-active-bg: #dcfce7; /* frog-100 */
-  --nav-active-text: #166534; /* frog-800 */
-}
-
-/* 2. สีสำหรับ Dark Mode - ต้องสว่างพอให้เห็นบนพื้นหลังมืด */
-.dark {
-  --background: #0f1115; /* พื้นหลังหลักที่มืดลง */
-  --foreground: #f3f4f6; /* สีข้อความหลัก (ขาวนวล) */
-  --card-bg: #1c1f26;   /* สีการ์ด */
-  --border-color: #2d333b;
-  --muted-text: #9ca3af; /* gray-400 */
-  --nav-active-bg: #16653433; /* frog-800 โปร่งแสง */
-  --nav-active-text: #4ade80; /* frog-400 */
+  --background: #faf8f5;
+  --foreground: #1a1a1a;
 }
 
 @layer base {
-  * {
-    font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  }
-  
-  /* บังคับให้พื้นหลังเปลี่ยนตามตัวแปร */
-  html, body {
-    background-color: var(--background) !important;
-    color: var(--foreground) !important;
-    transition: background-color 0.3s ease, color 0.3s ease;
-  }
-
-  /* จัดการสีข้อความมาตรฐาน */
-  h1, h2, h3, h4, h5, h6, p, span {
-    @apply transition-colors duration-300;
-  }
+  * {
+    font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  }
+  
+  body {
+    color: var(--foreground);
+    background: var(--background);
+    font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 }
 
 @layer components {
-  .card-minimal {
-    @apply rounded-3xl p-6 shadow-soft transition-all duration-300;
-    background-color: var(--card-bg);
-    border: 1px solid var(--border-color);
-  }
-  
-  .dark .card-minimal {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-  }
+  .card-minimal {
+    @apply bg-white rounded-3xl p-6 shadow-soft;
+  }
 
-  /* Sidebar Items - ปรับให้เปลี่ยนสีตามธีม */
-  .nav-item {
-    @apply flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-200;
-    color: var(--muted-text);
-  }
+  .btn-primary {
+    @apply bg-frog-500 hover:bg-frog-400 text-white font-medium px-6 py-3 rounded-2xl transition shadow-sm hover:shadow-md;
+  }
 
-  .nav-item:hover {
-    @apply bg-gray-100 dark:bg-gray-800;
-    color: var(--foreground);
-  }
+  .btn-secondary {
+    @apply bg-white hover:bg-gray-50 text-gray-700 font-medium px-6 py-3 rounded-2xl transition border border-gray-200 shadow-sm;
+  }
 
-  .nav-item.active {
-    background-color: var(--nav-active-bg);
-    color: var(--nav-active-text);
-  }
-
-  .btn-primary {
-    @apply bg-frog-500 hover:bg-frog-400 text-white font-medium px-6 py-3 rounded-2xl transition shadow-sm hover:shadow-md disabled:opacity-50;
-  }
-
-  .btn-secondary {
-    @apply font-medium px-6 py-3 rounded-2xl transition border shadow-sm;
-    @apply bg-white border-gray-200 text-gray-700 hover:bg-gray-50;
-    @apply dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700;
-  }
-
-  .input-minimal {
-    @apply w-full px-4 py-3 rounded-2xl focus:outline-none focus:ring-2 focus:ring-frog-100 transition;
-    @apply bg-white border border-gray-200 focus:border-frog-500;
-    @apply dark:bg-gray-900 dark:border-gray-700 dark:focus:border-frog-400 dark:text-white;
-  }
+  .input-minimal {
+    @apply w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:outline-none focus:border-frog-500 focus:ring-2 focus:ring-frog-100 transition;
+  }
 }
 
 @layer utilities {
-  .shadow-soft {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  }
-  
-  .dark .shadow-soft {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  }
+  .shadow-soft {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+
+  .shadow-soft-lg {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  }
 }
 
-/* Animations... (คงเดิม) */
+/* Loading Screen Animation */
 @keyframes frog-jump {
-  0%, 100% { transform: translateY(0) translateX(0); }
-  25% { transform: translateY(-40px) translateX(25vw); }
-  50% { transform: translateY(0) translateX(50vw); }
-  75% { transform: translateY(-40px) translateX(75vw); }
+  0%, 100% {
+    transform: translateY(0) translateX(0);
+  }
+  25% {
+    transform: translateY(-40px) translateX(25vw);
+  }
+  50% {
+    transform: translateY(0) translateX(50vw);
+  }
+  75% {
+    transform: translateY(-40px) translateX(75vw);
+  }
 }
 
 .frog-loading {
-  animation: frog-jump 2s ease-in-out infinite;
+  animation: frog-jump 2s ease-in-out infinite;
 }
 
+/* Modal Animations */
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .animate-scale-in {
-  animation: scale-in 0.2s ease-out;
+  animation: scale-in 0.2s ease-out;
 }
