@@ -1,65 +1,47 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from './supabase';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+/**
+ * สร้างการแจ้งเตือนใหม่ (อิงตามโครงสร้างคอลัมน์จริงใน DB)
+ */
+export async function createNotification(
+  receiverId: string,
+  senderId: string,
+  type: 'like' | 'comment' | 'reply' | 'comment_like' | 'friend_request' | 'friend_accept' | 'post_on_profile' | 'tag_post' | 'tag_comment' | 'message',
+  postId?: string,
+  commentId?: string
+) {
+  try {
+    const { error } = await supabase.from('notifications').insert({
+      receiver_id: receiverId,
+      sender_id: senderId,
+      type,
+      post_id: postId,
+      comment_id: commentId,
+      is_read: false,
+    });
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-// Types
-export interface User {
-  id: string;
-  username: string;
-  display_name: string;
-  bio?: string | null;
-  profile_img_url?: string | null;
-  cover_img_url?: string | null;
-  music_url?: string | null;
-  music_name?: string | null;
-  birthday?: string | null;
-  occupation?: string | null;
-  address?: string | null;
-  workplace?: string | null;
-  hobbies?: any; 
-  relationship_status?: string | null;
-  relationship_custom_name?: string | null;
-  theme_color?: string | null;
-  bg_style?: string | null;
-  created_at: string;
-  updated_at: string;
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error('Error creating notification:', error);
+    return false;
+  }
 }
 
-export interface Post {
-  id: string;
-  author_id: string;
-  target_id: string;
-  content: string;
-  images?: string[] | null;
-  mood?: string | null;
-  activity?: string | null;
-  location?: string | null;
-  created_at: string;
-  author?: User; 
-  target?: User;
+export async function notifyProfilePost(profileOwnerId: string, postAuthorId: string, postId: string) {
+  if (profileOwnerId === postAuthorId) return;
+  await createNotification(profileOwnerId, postAuthorId, 'post_on_profile', postId);
 }
 
-export interface Notification {
-  id: string;
-  receiver_id: string;
-  sender_id: string;
-  type: 'like' | 'comment' | 'reply' | 'comment_like' | 'friend_request' | 'friend_accept' | 'post_on_profile' | 'tag_post' | 'tag_comment' | 'message';
-  is_read: boolean;
-  post_id?: string;
-  comment_id?: string;
-  created_at: string;
-  sender?: User;
-  post?: {
-    id: string;
-    content: string;
-    author_id: string;
-  };
-  comment?: {
-    id: string;
-    content: string;
-    author_id: string;
-  };
+export async function notifyFriendRequest(receiverId: string, senderId: string) {
+  await createNotification(receiverId, senderId, 'friend_request');
+}
+
+export async function notifyFriendAccept(receiverId: string, senderId: string) {
+  await createNotification(receiverId, senderId, 'friend_accept');
+}
+
+export async function notifyTag(taggedUserId: string, taggerId: string, postId: string, commentId?: string) {
+  if (taggedUserId === taggerId) return;
+  await createNotification(taggedUserId, taggerId, commentId ? 'tag_comment' : 'tag_post', postId, commentId);
 }
