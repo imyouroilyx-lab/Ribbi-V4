@@ -75,99 +75,7 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
     loadGroupData();
     markAsRead();
     
-    // ✅ แก้ไขปัญหา Type Error โดยการห่อหุ้ม Cleanup Function ไม่ให้คืนค่า Promise ตรง ๆ
-    const cleanup = setupRealtimeSubscription();
-    
-    return () => {
-      if (cleanup) cleanup();
-    };
-  }, [chatId]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const loadGroupData = async () => {
-    try {
-      const { data: chatData, error: chatError } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('id', chatId)
-        .single();
-
-      if (chatError || !chatData) {
-        alert('ไม่พบกลุ่ม หรือคุณไม่ได้เป็นสมาชิกของกลุ่มนี้แล้ว');
-        onBack();
-        return;
-      }
-
-      setGroupData(chatData);
-      if (chatData.theme_color) setThemeColor(chatData.theme_color);
-
-      const { data: participants, error: participantsError } = await supabase
-        .from('chat_participants')
-        .select('role, user_id')
-        .eq('chat_id', chatId);
-
-      if (participantsError || !participants || !participants.some(p => p.user_id === currentUser.id)) {
-        alert('คุณถูกลบออกจากกลุ่มนี้แล้ว');
-        onBack();
-        return;
-      }
-
-      const userIds = participants.map(p => p.user_id);
-      const { data: usersData } = await supabase
-        .from('users')
-        .select('id, username, display_name, profile_img_url, is_online')
-        .in('id', userIds);
-
-      const formattedMembers = participants.map(p => {
-        const user = usersData?.find(u => u.id === p.user_id);
-        return { ...user, role: p.role };
-      }).filter(m => m.id);
-
-      setMembers(formattedMembers);
-
-      const me = formattedMembers.find(m => m.id === currentUser.id);
-      setIsAdmin(me?.role === 'admin' || chatData?.created_by === currentUser.id);
-
-      const { data: messagesData } = await supabase
-        .from('messages')
-        .select('id, sender_id, content, images, created_at, updated_at, deleted_by, event')
-        .eq('chat_id', chatId)
-        .not('deleted_by', 'cs', `{${currentUser.id}}`)
-        .order('created_at', { ascending: true });
-
-      if (messagesData) {
-        const senderIds = [...new Set(
-          messagesData.filter(m => !m.event && m.sender_id).map(m => m.sender_id)
-        )];
-        const { data: sendersData } = senderIds.length > 0
-          ? await supabase.from('users').select('id, username, display_name, profile_img_url').in('id', senderIds)
-          : { data: [] };
-
-        setMessages(messagesData.map(msg => ({
-          ...msg,
-          sender: sendersData?.find(s => s.id === msg.sender_id) || null
-        })) as any);
-      }
-    } catch (error) {
-      console.error('Error loading group data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const markAsRead = async () => {
-    await supabase
-      .from('chat_participants')
-      .update({ unread_count: 0, last_read_at: new Date().toISOString() })
-      .eq('chat_id', chatId)
-      .eq('user_id', currentUser.id);
-    onRefreshChats();
-  };
-
-  const setupRealtimeSubscription = () => {
+    // ตั้งค่า Realtime Subscription
     const channel = supabase
       .channel(`group-chat-${chatId}`)
       .on('postgres_changes', {
@@ -261,10 +169,94 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       })
       .subscribe();
 
-    // ✅ คืนค่าเป็น function ที่ไม่ return Promise เพื่อแก้ปัญหา Build Error
+    // ✅ Cleanup Function: ห่อหุ้ม removeChannel เพื่อไม่ให้คืนค่า Promise ไปยัง EffectCallback
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
+  }, [chatId]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const loadGroupData = async () => {
+    try {
+      const { data: chatData, error: chatError } = await supabase
+        .from('chats')
+        .select('*')
+        .eq('id', chatId)
+        .single();
+
+      if (chatError || !chatData) {
+        alert('ไม่พบกลุ่ม หรือคุณไม่ได้เป็นสมาชิกของกลุ่มนี้แล้ว');
+        onBack();
+        return;
+      }
+
+      setGroupData(chatData);
+      if (chatData.theme_color) setThemeColor(chatData.theme_color);
+
+      const { data: participants, error: participantsError } = await supabase
+        .from('chat_participants')
+        .select('role, user_id')
+        .eq('chat_id', chatId);
+
+      if (participantsError || !participants || !participants.some(p => p.user_id === currentUser.id)) {
+        alert('คุณถูกลบออกจากกลุ่มนี้แล้ว');
+        onBack();
+        return;
+      }
+
+      const userIds = participants.map(p => p.user_id);
+      const { data: usersData } = await supabase
+        .from('users')
+        .select('id, username, display_name, profile_img_url, is_online')
+        .in('id', userIds);
+
+      const formattedMembers = participants.map(p => {
+        const user = usersData?.find(u => u.id === p.user_id);
+        return { ...user, role: p.role };
+      }).filter(m => m.id);
+
+      setMembers(formattedMembers);
+
+      const me = formattedMembers.find(m => m.id === currentUser.id);
+      setIsAdmin(me?.role === 'admin' || chatData?.created_by === currentUser.id);
+
+      const { data: messagesData } = await supabase
+        .from('messages')
+        .select('id, sender_id, content, images, created_at, updated_at, deleted_by, event')
+        .eq('chat_id', chatId)
+        .not('deleted_by', 'cs', `{${currentUser.id}}`)
+        .order('created_at', { ascending: true });
+
+      if (messagesData) {
+        const senderIds = [...new Set(
+          messagesData.filter(m => !m.event && m.sender_id).map(m => m.sender_id)
+        )];
+        const { data: sendersData } = senderIds.length > 0
+          ? await supabase.from('users').select('id, username, display_name, profile_img_url').in('id', senderIds)
+          : { data: [] };
+
+        setMessages(messagesData.map(msg => ({
+          ...msg,
+          sender: sendersData?.find(s => s.id === msg.sender_id) || null
+        })) as any);
+      }
+    } catch (error) {
+      console.error('Error loading group data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const markAsRead = async () => {
+    await supabase
+      .from('chat_participants')
+      .update({ unread_count: 0, last_read_at: new Date().toISOString() })
+      .eq('chat_id', chatId)
+      .eq('user_id', currentUser.id);
+    onRefreshChats();
   };
 
   const scrollToBottom = () => {
@@ -635,7 +627,7 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
                     {editGroupImgUrl ? (
                       <img src={editGroupImgUrl} alt="Preview" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = '')} />
                     ) : (
-                      ImageIcon className="w-5 h-5 text-gray-400" />
+                      <ImageIcon className="w-5 h-5 text-gray-400" />
                     )}
                   </div>
                   <input type="url" value={editGroupImgUrl} onChange={(e) => setEditGroupImgUrl(e.target.value)}
