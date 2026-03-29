@@ -132,7 +132,6 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
 
       const usersToNotify = users.filter(u => u.id !== currentUser.id);
 
-      // ✅ เพิ่ม is_read: false เข้าไปให้ชัวร์ว่าฐานข้อมูลไม่ตีกลับเพราะค่าว่าง
       const notifications = usersToNotify.map(u => ({
         receiver_id: u.id,
         sender_id: currentUser.id,
@@ -143,9 +142,7 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
 
       if (notifications.length > 0) {
         const { error: insertError } = await supabase.from('notifications').insert(notifications);
-        
         if (insertError) {
-          // ✅ ดึง .message และ .details ออกมาโชว์ตรงๆ
           console.error("❌ [ERROR] บันทึกการแจ้งเตือนลงตารางล้มเหลว:", insertError.message, insertError.details);
         } else {
           console.log("✅ [SUCCESS] บันทึกการแจ้งเตือนสำเร็จ");
