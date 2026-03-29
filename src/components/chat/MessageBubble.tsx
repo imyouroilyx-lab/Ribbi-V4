@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Edit2, Trash2, Check, X, Palette, Pencil, Heart } from 'lucide-react';
+import { Edit2, Trash2, Check, X, Palette, Pencil } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface Message {
@@ -33,37 +33,6 @@ interface MessageBubbleProps {
 export default function MessageBubble({ message, isOwn, currentUserId, themeColor = '#22c55e', showSenderName }: MessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message?.content || '');
-  const [likes, setLikes] = useState<any[]>([]);
-  const [isLiked, setIsLiked] = useState(false);
-
-  useEffect(() => {
-    if (message?.id) {
-      loadLikes();
-    }
-  }, [message?.id]);
-
-  const loadLikes = async () => {
-    try {
-      const { data } = await supabase.from('message_likes').select('*').eq('message_id', message.id);
-      setLikes(data || []);
-      setIsLiked(data?.some(l => l.user_id === currentUserId) || false);
-    } catch (error) {
-      console.error('Error loading likes:', error);
-    }
-  };
-
-  const handleLike = async () => {
-    try {
-      if (isLiked) {
-        await supabase.from('message_likes').delete().eq('message_id', message.id).eq('user_id', currentUserId);
-      } else {
-        await supabase.from('message_likes').insert({ message_id: message.id, user_id: currentUserId });
-      }
-      loadLikes();
-    } catch (error) {
-      console.error('Error toggling like:', error);
-    }
-  };
 
   if (!message) return null;
 
@@ -213,16 +182,11 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
                 {message.content && (
                   <p className="text-sm md:text-base whitespace-pre-wrap">{message.content}</p>
                 )}
-              </div> {/* ⬅️ เพิ่ม </div> ตรงนี้ครับ */}
+              </div>
 
               <div className="flex items-center gap-2 mt-1 px-1">
                 <span className="text-xs text-gray-500">{formatTime(message.created_at)}</span>
                 {message.updated_at && <span className="text-xs text-gray-400 italic">(แก้ไข)</span>}
-                {likes.length > 0 && (
-                   <span className="text-[10px] text-red-500 flex items-center gap-0.5 ml-2">
-                     <Heart className="w-3 h-3 fill-red-500" /> {likes.length}
-                   </span>
-                )}
               </div>
             </>
           )}
