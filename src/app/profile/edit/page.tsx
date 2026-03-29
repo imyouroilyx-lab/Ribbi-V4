@@ -22,11 +22,11 @@ const POPULAR_HOBBIES = [
 ];
 
 const RELATIONSHIP_OPTIONS = [
-  { id: 'single', label: 'โสด', emoji: '💔' },
+  { id: 'single', label: 'โสด', emoji: '👤' },
   { id: 'in_relationship', label: 'มีแฟน', emoji: '❤️' },
   { id: 'engaged', label: 'หมั้น', emoji: '💍' },
   { id: 'married', label: 'แต่งงาน', emoji: '💒' },
-  { id: 'complicated', label: 'ซับซ้อน', emoji: '😵' },
+  { id: 'complicated', label: 'ซับซ้อน', emoji: '❓' },
 ];
 
 interface FamilyMember {
