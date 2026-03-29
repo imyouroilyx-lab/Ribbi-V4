@@ -13,7 +13,6 @@ export interface User {
   bio?: string | null;
   profile_img_url?: string | null;
   cover_img_url?: string | null;
-  // แก้ไขปัญหา Build Error บน Vercel โดยการเพิ่มฟิลด์ให้ครบถ้วน
   music_url?: string | null;
   music_name?: string | null;
   birthday?: string | null;
@@ -101,11 +100,9 @@ export interface Message {
 export interface Notification {
   id: string;
   receiver_id: string;
-  sender_id?: string;
+  sender_id: string;
   type: 'like' | 'comment' | 'reply' | 'comment_like' | 'friend_request' | 'friend_accept' | 'post_on_profile' | 'tag_post' | 'tag_comment' | 'message';
   is_read: boolean;
-  link_url?: string;
-  content?: string;
   post_id?: string;
   comment_id?: string;
   deleted_by?: string[];
