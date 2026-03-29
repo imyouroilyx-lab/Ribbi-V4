@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase, User, Notification } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import NavLayout from '@/components/NavLayout';
-import { Heart, MessageCircle, Reply, Bell, UserPlus, UserCheck, Edit, Trash2, AtSign } from 'lucide-react';
+import { Heart, MessageCircle, Reply, Bell, UserPlus, UserCheck, Edit, Trash2, AtSign, Check } from 'lucide-react';
 import Link from 'next/link';
 import { getRelativeTime } from '@/lib/utils';
 
@@ -68,13 +68,54 @@ export default function NotificationsPage() {
     } catch (error) {}
   };
 
+  const markAllAsRead = async () => {
+    if (!currentUser) return;
+    try {
+      // อัปเดตการแจ้งเตือนที่ยังไม่ได้อ่านทั้งหมดให้เป็นอ่านแล้ว
+      await supabase.from('notifications')
+        .update({ is_read: true })
+        .eq('receiver_id', currentUser.id)
+        .eq('is_read', false);
+        
+      setNotifications(notifications.map(n => ({ ...n, is_read: true })));
+    } catch (error) {
+      console.error('Error marking all as read:', error);
+    }
+  };
+
   const deleteNotification = async (e: React.MouseEvent, id: string) => {
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault(); 
+    e.stopPropagation();
     setDeletingId(id);
     try {
       await supabase.from('notifications').delete().eq('id', id);
       setNotifications(prev => prev.filter(n => n.id !== id));
     } catch (error) {} finally { setDeletingId(null); }
+  };
+
+  const deleteAllNotifications = async () => {
+    if (!currentUser) return;
+    if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบการแจ้งเตือนทั้งหมด?')) return;
+
+    try {
+      // 1. ส่งค่าให้อ่านทั้งหมดก่อนลบ เพื่อป้องกันบัคตัวเลข badge ค้างใน NavLayout
+      await supabase.from('notifications')
+        .update({ is_read: true })
+        .eq('receiver_id', currentUser.id)
+        .eq('is_read', false);
+      
+      // Update UI state ชั่วคราว (เผื่อ UI กระพริบ)
+      setNotifications(notifications.map(n => ({ ...n, is_read: true })));
+
+      // 2. ลบการแจ้งเตือนของตัวเองทั้งหมด
+      await supabase.from('notifications')
+        .delete()
+        .eq('receiver_id', currentUser.id);
+        
+      setNotifications([]);
+    } catch (error) {
+      console.error('Error deleting all notifications:', error);
+    }
   };
 
   const getNotificationIcon = (type: string) => {
@@ -108,10 +149,32 @@ export default function NotificationsPage() {
     <NavLayout>
       <div className="max-w-3xl mx-auto px-4">
         <h1 className="text-2xl md:text-3xl font-bold mb-6">การแจ้งเตือน</h1>
-        <div className="flex gap-2 mb-6">
-          <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-xl transition ${filter === 'all' ? 'bg-frog-500 text-white' : 'bg-gray-100'}`}>ทั้งหมด</button>
-          <button onClick={() => setFilter('unread')} className={`px-4 py-2 rounded-xl transition ${filter === 'unread' ? 'bg-frog-500 text-white' : 'bg-gray-100'}`}>ยังไม่อ่าน</button>
+        
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex gap-2">
+            <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-xl transition ${filter === 'all' ? 'bg-frog-500 text-white' : 'bg-gray-100'}`}>ทั้งหมด</button>
+            <button onClick={() => setFilter('unread')} className={`px-4 py-2 rounded-xl transition ${filter === 'unread' ? 'bg-frog-500 text-white' : 'bg-gray-100'}`}>ยังไม่อ่าน</button>
+          </div>
+          
+          {/* ปุ่ม Action ลบทั้งหมด / อ่านทั้งหมด (แสดงเมื่อมีการแจ้งเตือนอยู่) */}
+          {notifications.length > 0 && (
+            <div className="flex gap-2">
+              <button 
+                onClick={markAllAsRead} 
+                className="flex items-center gap-1 px-4 py-2 text-sm text-[#34a35c] bg-green-50 hover:bg-green-100 rounded-xl transition font-medium"
+              >
+                <Check className="w-4 h-4" /> อ่านทั้งหมด
+              </button>
+              <button 
+                onClick={deleteAllNotifications} 
+                className="flex items-center gap-1 px-4 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition font-medium"
+              >
+                <Trash2 className="w-4 h-4" /> ลบทั้งหมด
+              </button>
+            </div>
+          )}
         </div>
+
         <div className="space-y-3">
           {notifications.map((n) => (
             <div key={n.id} className="relative group">
@@ -131,7 +194,9 @@ export default function NotificationsPage() {
                   </div>
                 </div>
               </Link>
-              <button onClick={(e) => deleteNotification(e, n.id)} className="absolute top-3 right-3 p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"><Trash2 className="w-4 h-4" /></button>
+              <button onClick={(e) => deleteNotification(e, n.id)} className="absolute top-3 right-3 p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
           ))}
           {notifications.length === 0 && <div className="text-center py-20 text-gray-500">ยังไม่มีการแจ้งเตือน</div>}
