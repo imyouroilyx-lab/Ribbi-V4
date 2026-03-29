@@ -10,7 +10,7 @@ import ConfirmModal from '@/components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Palette, Users, Music, ExternalLink,
-  MessageCircle, Ban, EyeOff, Trash2, X, Plus
+  MessageCircle, Ban, EyeOff, Trash2, X, Plus, Clock
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '@/lib/utils';
@@ -90,7 +90,7 @@ export default function ProfilePage() {
   const username = params.username as string;
   
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [profileUser, setProfileUser] = useState<User | null>(null);
+  const [profileUser, setProfileUser] = useState<any | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -158,6 +158,19 @@ export default function ProfilePage() {
       const year = date.getFullYear();
       const age = calculateAge(dateStr);
       return `${day} ${month} ${year} (${age} ปี)`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatJoinDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      const day = date.getDate();
+      const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+      const month = months[date.getMonth()];
+      const year = date.getFullYear();
+      return `${day} ${month} ${year}`;
     } catch {
       return dateStr;
     }
@@ -535,6 +548,15 @@ export default function ProfilePage() {
                         <span>{formatBirthday(profileUser.birthday)}</span>
                       </div>
                     )}
+                    
+                    {/* วันที่สมัคร (ดึงจาก created_at) */}
+                    {profileUser.created_at && (
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <Clock className="w-4 h-4 flex-shrink-0" />
+                        <span>สมัครเมื่อ: {formatJoinDate(profileUser.created_at)}</span>
+                      </div>
+                    )}
+
                     {profileUser.occupation && (
                       <div className="flex items-center gap-2 text-gray-600">
                         <Briefcase className="w-4 h-4 flex-shrink-0" />
