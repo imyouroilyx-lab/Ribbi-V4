@@ -26,11 +26,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const [friendRequestCount, setFriendRequestCount] = useState(0);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
-  // ใช้ Ref เพื่อให้ callback ของ Realtime อ่านค่าล่าสุดได้ถูกต้อง
   const pathnameRef = useRef<string | null>(pathname);
   const currentUserRef = useRef<any>(null);
-  // ✅ Ref สำหรับเก็บรายการ ID ของแชทที่เราเป็นสมาชิกอยู่ เพื่อใช้กรองเสียงแจ้งเตือน
-  const userChatIdsRef = useRef<string[]>([]);
+  
+  // ✅ 1. เพิ่ม Ref สำหรับเก็บ ID ของแชทที่เราเป็นสมาชิกจริงๆ
+  const myChatIdsRef = useRef<string[]>([]);
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -47,10 +47,9 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
     currentUserRef.current = currentUser;
 
-    // โหลดข้อมูลแชทเริ่มต้นทันทีเพื่อให้มีข้อมูลใน Ref
+    // โหลดข้อมูลแชทเพื่อเอา ID มาเก็บไว้ใน Ref ทันทีที่ Login
     loadUnreadMessages(currentUser.id);
 
-    // Interval fallback ทุก 30 วิ
     const interval = setInterval(() => {
       loadNotifications(currentUser.id);
       loadFriendRequests(currentUser.id);
@@ -68,58 +67,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         const notif = payload.new as any;
         const user = currentUserRef.current;
         if (!user || notif.receiver_id !== user.id) return;
-
         loadNotifications(user.id);
-
         if (!pathnameRef.current?.startsWith('/notifications')) {
           playNotificationSound();
         }
       })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'notifications',
-      }, (payload) => {
-        const notif = payload.new as any;
-        const user = currentUserRef.current;
-        if (!user || notif.receiver_id !== user.id) return;
-        loadNotifications(user.id);
-      })
       .subscribe();
 
-    // ─── Realtime: friend requests ───
-    const friendChannel = supabase
-      .channel('nav-friendships')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'friendships',
-      }, (payload) => {
-        const friendship = payload.new as any;
-        const user = currentUserRef.current;
-        if (!user || friendship.receiver_id !== user.id) return;
-
-        loadFriendRequests(user.id);
-
-        if (friendship.status === 'pending' && !pathnameRef.current?.startsWith('/friends')) {
-          playNotificationSound();
-        }
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'friendships',
-      }, (payload) => {
-        const friendship = payload.new as any;
-        const user = currentUserRef.current;
-        if (!user) return;
-        if (friendship.receiver_id === user.id || friendship.sender_id === user.id) {
-          loadFriendRequests(user.id);
-        }
-      })
-      .subscribe();
-
-    // ─── Realtime: unread messages (จุดแก้ไขเรื่องเสียงรั่ว) ───
+    // ─── Realtime: unread messages (จุดที่แก้เสียงรั่ว) ───
     const msgChannel = supabase
       .channel('nav-messages')
       .on('postgres_changes', {
@@ -131,19 +86,20 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         const user = currentUserRef.current;
         if (!user || newMsg.event) return;
 
-        // 🛑 ตรวจสอบความปลอดภัย: ข้อความต้องอยู่ในแชทที่เราเป็นสมาชิก และคนส่งต้องไม่ใช่เรา
-        const isMyChat = userChatIdsRef.current.includes(newMsg.chat_id);
+        // ✅ 2. ตรวจสอบ: เราเป็นสมาชิกของแชทนี้หรือไม่? และคนส่งต้องไม่ใช่เรา
+        const isMyChat = myChatIdsRef.current.includes(newMsg.chat_id);
         const isNotFromMe = newMsg.sender_id !== user.id;
 
         if (isMyChat && isNotFromMe) {
-          // เล่นเสียงเฉพาะตอนไม่ได้อยู่หน้า /messages
+          // เล่นเสียงเฉพาะตอนไม่ได้อยู่หน้า /messages เท่านั้น (เพราะในหน้าแชทจะมีตัวจัดการเสียงเอง)
           if (!pathnameRef.current?.startsWith('/messages')) {
             playNotificationSound();
-            console.log('🔔 Nav: Sound played for chat', newMsg.chat_id);
+            console.log('🔔 Nav: ดังเพราะเป็นแชทของเรา:', newMsg.chat_id);
           }
           loadUnreadMessages(user.id);
         } else if (!isMyChat && isNotFromMe) {
-          // หากไม่มี ID ใน Ref อาจเป็นแชทใหม่ที่เพิ่งถูกดึงเข้า ให้ลองอัปเดตข้อมูล
+          // ถ้าไม่ใช่แชทเรา "ห้ามดัง" และไม่ต้องทำอะไร
+          // อาจจะลองโหลดแชทใหม่เผื่อกรณีถูกลากเข้ากลุ่มใหม่
           loadUnreadMessages(user.id);
         }
       })
@@ -162,7 +118,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     return () => {
       clearInterval(interval);
       supabase.removeChannel(notifChannel);
-      supabase.removeChannel(friendChannel);
       supabase.removeChannel(msgChannel);
     };
   }, [currentUser]);
@@ -179,33 +134,25 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   };
 
   const loadNotifications = async (userId: string) => {
-    try {
-      const { count } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('is_read', false);
-      setUnreadNotifCount(count || 0);
-    } catch (error) { console.error('Error loading notifications:', error); }
+    const { count } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('is_read', false);
+    setUnreadNotifCount(count || 0);
   };
 
   const loadFriendRequests = async (userId: string) => {
-    try {
-      const { count } = await supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('status', 'pending');
-      setFriendRequestCount(count || 0);
-    } catch (error) { console.error('Error loading friend requests:', error); }
+    const { count } = await supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('status', 'pending');
+    setFriendRequestCount(count || 0);
   };
 
   const loadUnreadMessages = async (userId: string) => {
     try {
-      const { data } = await supabase
-        .from('chat_participants')
-        .select('chat_id, unread_count')
-        .eq('user_id', userId);
-      
+      const { data } = await supabase.from('chat_participants').select('chat_id, unread_count').eq('user_id', userId);
       if (data) {
-        // ✅ สำคัญ: อัปเดตรายการ chat_id ทั้งหมดที่เรามีส่วนร่วมลง Ref เพื่อใช้กรอง Realtime
-        userChatIdsRef.current = data.map(d => d.chat_id);
+        // ✅ 3. อัปเดตรายการ chat_id ที่เรามีสิทธิ์เข้าถึงลงใน Ref
+        myChatIdsRef.current = data.map(d => d.chat_id);
         const total = data.reduce((sum, p) => sum + (p.unread_count || 0), 0);
         setUnreadMessageCount(total);
       }
-    } catch (error) { console.error('Error loading unread messages:', error); }
+    } catch (error) { console.error(error); }
   };
 
   const handleLogout = async () => {
@@ -225,7 +172,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Desktop Sidebar */}
       <aside className="hidden lg:block w-64 fixed left-0 top-0 h-screen bg-white border-r border-gray-200 p-4">
         <div className="mb-8">
           <Link href="/" onClick={handleHomeClick} className="flex items-center gap-2">
@@ -233,13 +179,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             <span className="text-2xl font-bold text-frog-600">Ribbi</span>
           </Link>
         </div>
-
         <nav className="space-y-2">
           <Link href="/" onClick={handleHomeClick} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
             <Home className="w-5 h-5" />
             <span>หน้าหลัก</span>
           </Link>
-
           <Link href="/friends" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/friends') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
             <Users className="w-5 h-5" />
             <span>เพื่อน</span>
@@ -249,7 +193,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               </span>
             )}
           </Link>
-
           <Link href="/messages" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/messages') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
             <MessageCircle className="w-5 h-5" />
             <span>แชท</span>
@@ -259,7 +202,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               </span>
             )}
           </Link>
-
           <Link href="/notifications" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/notifications') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
             <Bell className="w-5 h-5" />
             <span>การแจ้งเตือน</span>
@@ -269,25 +211,21 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               </span>
             )}
           </Link>
-
           {currentUser && (
             <Link href={`/profile/${currentUser.username}`} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${(pathname?.startsWith('/profile/') && pathname !== '/profile/edit') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
               <User className="w-5 h-5" />
               <span>โปรไฟล์</span>
             </Link>
           )}
-
           <Link href="/settings" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${(pathname === '/settings' || pathname?.startsWith('/settings/') || pathname === '/profile/edit') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
             <Settings className="w-5 h-5" />
             <span>ตั้งค่า</span>
           </Link>
-
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 text-red-600 transition">
             <LogOut className="w-5 h-5" />
             <span>ออกจากระบบ</span>
           </button>
         </nav>
-
         {currentUser && (
           <div className="absolute bottom-4 left-4 right-4">
             <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
@@ -301,13 +239,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         )}
       </aside>
 
-      {/* Mobile Top Bar */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-40">
         <Link href="/" onClick={handleHomeClick} className="flex items-center gap-2">
           <img src="https://iili.io/qbtgKBt.png" alt="Ribbi" className="w-8 h-8" />
           <span className="text-xl font-bold text-frog-600">Ribbi</span>
         </Link>
-
         <div className="flex items-center gap-2">
           <Link href="/notifications" className="p-2 hover:bg-gray-100 rounded-lg relative">
             <Bell className="w-6 h-6" />
@@ -323,7 +259,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* Mobile Slide Menu */}
       {showMobileMenu && (
         <>
           <div className="lg:hidden fixed inset-0 bg-black/50 z-50" onClick={() => setShowMobileMenu(false)} />
@@ -334,7 +269,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                 <X className="w-6 h-6" />
               </button>
             </div>
-
             {currentUser && (
               <div className="mb-6 p-3 bg-gray-50 rounded-xl">
                 <div className="flex items-center gap-3">
@@ -346,13 +280,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
             )}
-
             <nav className="space-y-2">
               <Link href="/" onClick={(e) => { setShowMobileMenu(false); handleHomeClick(e); }} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}>
                 <Home className="w-5 h-5" />
                 <span>หน้าหลัก</span>
               </Link>
-
               <Link href="/friends" onClick={() => setShowMobileMenu(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/friends') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}>
                 <Users className="w-5 h-5" />
                 <span>เพื่อน</span>
@@ -362,7 +294,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                   </span>
                 )}
               </Link>
-
               <Link href="/messages" onClick={() => setShowMobileMenu(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/messages') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}>
                 <MessageCircle className="w-5 h-5" />
                 <span>แชท</span>
@@ -372,7 +303,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                   </span>
                 )}
               </Link>
-
               <Link href="/notifications" onClick={() => setShowMobileMenu(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/notifications') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}>
                 <Bell className="w-5 h-5" />
                 <span>การแจ้งเตือน</span>
@@ -382,19 +312,16 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                   </span>
                 )}
               </Link>
-
               {currentUser && (
                 <Link href={`/profile/${currentUser.username}`} onClick={() => setShowMobileMenu(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${(pathname?.startsWith('/profile/') && pathname !== '/profile/edit') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}>
                   <User className="w-5 h-5" />
                   <span>โปรไฟล์</span>
                 </Link>
               )}
-
               <Link href="/settings" onClick={() => setShowMobileMenu(false)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${(pathname === '/settings' || pathname?.startsWith('/settings/') || pathname === '/profile/edit') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}>
                 <Settings className="w-5 h-5" />
                 <span>ตั้งค่า</span>
               </Link>
-
               <button onClick={() => { setShowMobileMenu(false); handleLogout(); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 text-red-600">
                 <LogOut className="w-5 h-5" />
                 <span>ออกจากระบบ</span>
@@ -404,14 +331,12 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </>
       )}
 
-      {/* Mobile Bottom Navigation */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40">
         <div className="flex justify-around items-center h-16">
           <Link href="/" onClick={handleHomeClick} className={`flex flex-col items-center justify-center gap-1 flex-1 h-full ${isActive('/') ? 'text-frog-600' : 'text-gray-600'}`}>
             <Home className="w-6 h-6" />
             <span className="text-xs">หน้าหลัก</span>
           </Link>
-
           <Link href="/friends" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full relative ${isActive('/friends') ? 'text-frog-600' : 'text-gray-600'}`}>
             <Users className="w-6 h-6" />
             <span className="text-xs">เพื่อน</span>
@@ -421,7 +346,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               </span>
             )}
           </Link>
-
           <Link href="/messages" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full relative ${isActive('/messages') ? 'text-frog-600' : 'text-gray-600'}`}>
             <MessageCircle className="w-6 h-6" />
             <span className="text-xs">แชท</span>
@@ -431,7 +355,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               </span>
             )}
           </Link>
-
           {currentUser && (
             <Link href={`/profile/${currentUser.username}`} className={`flex flex-col items-center justify-center gap-1 flex-1 h-full ${(pathname?.startsWith('/profile/') && pathname !== '/profile/edit') ? 'text-frog-600' : 'text-gray-600'}`}>
               <User className="w-6 h-6" />
@@ -441,7 +364,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
 
-      {/* Main Content */}
       <main className="lg:ml-64 pt-16 lg:pt-0 pb-20 lg:pb-0 min-h-screen">
         <div className="max-w-7xl mx-auto p-4 lg:p-6">
           {children}
