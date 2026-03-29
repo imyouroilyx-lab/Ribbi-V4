@@ -214,17 +214,6 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
                   <p className="text-sm md:text-base whitespace-pre-wrap">{message.content}</p>
                 )}
 
-                {/* ปุ่ม Like */}
-                {!isEditing && (
-                  <button 
-                    onClick={handleLike}
-                    className={`absolute -bottom-3 ${isOwn ? '-left-4' : '-right-4'} p-1.5 rounded-full bg-white shadow border border-gray-100 transition hover:scale-110 opacity-0 group-hover:opacity-100 sm:opacity-100 z-10`}
-                  >
-                    <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />
-                  </button>
-                )}
-              </div>
-
               <div className="flex items-center gap-2 mt-1 px-1">
                 <span className="text-xs text-gray-500">{formatTime(message.created_at)}</span>
                 {message.updated_at && <span className="text-xs text-gray-400 italic">(แก้ไข)</span>}
