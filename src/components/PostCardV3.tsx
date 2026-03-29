@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { supabase, Post, User } from '@/lib/supabase';
 import { Heart, MessageCircle, Trash2, MapPin, Image as ImageIcon, X, Edit2, Check, Link2 } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
-import { supabase, Post, User } from '@/lib/supabase';
 import Link from 'next/link';
 
 interface Comment {
@@ -239,8 +239,8 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     const urls = text.match(urlRegex);
     if (!urls || urls.length === 0) return null;
 
-    const firstUrl = urls[0]; // ดึงเฉพาะลิงก์แรกมาทำเป็น Embed เพื่อไม่ให้รก
-    if (!firstUrl) return null; // เช็ค undefined เพื่อแก้ปัญหา TypeScript Type Check
+    const firstUrl = urls[0]; 
+    if (!firstUrl) return null; // Safe guard สำหรับ TypeScript
 
     const ytId = getYouTubeId(firstUrl);
 
@@ -282,7 +282,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
   const renderTextWithTags = (text: string) => {
     if (!text) return null;
     
-    // แยกข้อความด้วย Regex ที่รองรับ Mention แบบเก่า, แบบใหม่ และ HTTP/HTTPS
     const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|https?:\/\/[^\s]+)/g;
     const parts = text.split(regex);
     
@@ -307,7 +306,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         );
       }
 
-      // ตรวจจับลิงก์ URL ทั่วไปเพื่อให้กดได้
       if (part.startsWith('http://') || part.startsWith('https://')) {
         return (
           <a key={index} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all" onClick={(e) => e.stopPropagation()}>
@@ -700,19 +698,23 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     <div className="card-minimal">
       {/* Header */}
       <div className="flex items-start gap-2 md:gap-3 mb-4">
-        <Link href={`/profile/${post.author.username}`} className="flex-shrink-0">
-          <img
-            src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'}
-            alt={post.author.display_name}
-            className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover hover:opacity-80 transition"
-          />
-        </Link>
+        {post.author && (
+          <Link href={`/profile/${post.author.username}`} className="flex-shrink-0">
+            <img
+              src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'}
+              alt={post.author.display_name}
+              className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover hover:opacity-80 transition"
+            />
+          </Link>
+        )}
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <Link href={`/profile/${post.author.username}`} className="font-bold text-sm md:text-base hover:underline">
-              {post.author.display_name}
-            </Link>
+            {post.author && (
+              <Link href={`/profile/${post.author.username}`} className="font-bold text-sm md:text-base hover:underline">
+                {post.author.display_name}
+              </Link>
+            )}
 
             {post.author_id !== post.target_id && post.target && (
               <>
@@ -743,7 +745,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
           </div>
 
           <div className="flex items-center gap-1 md:gap-2 text-xs md:text-sm text-gray-500 mt-1 flex-wrap">
-            <span className="truncate">@{post.author.username}</span>
+            {post.author && <span className="truncate">@{post.author.username}</span>}
             <span>·</span>
             <Link href={`/post/${post.id}`} className="hover:underline text-gray-500">
               {getRelativeTime(post.created_at)}
@@ -760,7 +762,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
           </div>
         </div>
 
-        {/* ปุ่ม Edit/Delete */}
         {(canEdit || canDelete) && (
           <div className="flex gap-1 flex-shrink-0">
             {canEdit && !isEditingPost && (
