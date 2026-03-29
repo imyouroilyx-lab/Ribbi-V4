@@ -196,7 +196,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         .in('username', usernames);
 
       if (fetchError) {
-        console.error("❌ [ERROR] ดึงข้อมูล User จากฐานข้อมูลไม่ได้:", fetchError.message);
+        console.error("❌ [ERROR] ดึงข้อมูล User จากฐานข้อมูลไม่ได้ :", fetchError.message);
         return;
       }
 
@@ -204,7 +204,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
 
       const usersToNotify = users.filter(u => u.id !== currentUserId);
 
-      // ✅ เพิ่ม is_read: false เข้าไปให้ชัวร์
       const notifications = usersToNotify.map(u => ({
         receiver_id: u.id, 
         sender_id: currentUserId,
@@ -216,13 +215,13 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
       if (notifications.length > 0) {
         const { error: insertError } = await supabase.from('notifications').insert(notifications);
         if (insertError) {
-          console.error("❌ [ERROR] บันทึกการแจ้งเตือนลงตารางล้มเหลว:", insertError.message, insertError.details);
+          console.error("❌ [ERROR] บันทึกการแจ้งเตือนลงตารางล้มเหลว :", insertError.message, insertError.details);
         } else {
           console.log("✅ [SUCCESS] บันทึกการแจ้งเตือนสำเร็จ");
         }
       }
     } catch (error) {
-      console.error('❌ [ERROR] ระบบแจ้งเตือนพัง:', error);
+      console.error('❌ [ERROR] ระบบแจ้งเตือนพัง :', error);
     }
   };
 
@@ -632,6 +631,9 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
       </div>
     </div>
   );
+
+  // ✅ การแก้ปัญหา Build Error เรื่อง 'post.author' is possibly 'undefined'
+  if (!post.author) return null;
 
   return (
     <div className="card-minimal">
