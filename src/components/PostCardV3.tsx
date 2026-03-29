@@ -3,58 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Heart, MessageCircle, Trash2, MapPin, Image as ImageIcon, X, Edit2, Check, Link2 } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
-
-// สำหรับนำไปใช้ในโปรเจกต์จริง ให้เปิดการใช้งาน Import ด้านล่างนี้แทน
-// import { supabase, Post, User } from '@/lib/supabase';
-// import Link from 'next/link';
-
-// --- Mock สำหรับระบบ Preview เพื่อป้องกัน Error ---
-export interface User {
-  id: string;
-  username: string;
-  display_name: string;
-  profile_img_url: string | null;
-}
-
-export interface Post {
-  id: string;
-  author_id: string;
-  target_id?: string;
-  content: string | null;
-  images: string[] | null;
-  mood?: string | null;
-  activity?: string | null;
-  location?: string | null;
-  created_at: string;
-  author: User;
-  target?: User;
-}
-
-const supabase: any = {
-  channel: () => ({ on: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }) }),
-  from: () => ({
-    select: () => ({ 
-      eq: () => ({ 
-        order: () => Promise.resolve({ data: [] }), 
-        maybeSingle: () => Promise.resolve({ data: null }), 
-        in: () => Promise.resolve({ data: [] }) 
-      }),
-      in: () => ({
-        eq: () => Promise.resolve({ data: [] })
-      })
-    }),
-    insert: () => Promise.resolve({ error: null }),
-    delete: () => ({ eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
-    update: () => ({ eq: () => Promise.resolve({ error: null }) })
-  })
-};
-
-const Link = ({ href, children, className, onClick }: any) => (
-  <a href={href} className={className} onClick={onClick}>
-    {children}
-  </a>
-);
-// ------------------------------------------
+import { supabase, Post, User } from '@/lib/supabase';
+import Link from 'next/link';
 
 interface Comment {
   id: string;
