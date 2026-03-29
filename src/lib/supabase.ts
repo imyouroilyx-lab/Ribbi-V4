@@ -5,7 +5,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// ✅ ปรับปรุง User Interface ให้มีครบทุกฟิลด์เพื่อป้องกัน Build Error บน Vercel
+// Types
 export interface User {
   id: string;
   username: string;
@@ -46,7 +46,6 @@ export interface Notification {
   id: string;
   receiver_id: string;
   sender_id: string;
-  // ✅ รองรับทุกประเภทกิจกรรมรวมถึงการแท็ก
   type: 'like' | 'comment' | 'reply' | 'comment_like' | 'friend_request' | 'friend_accept' | 'post_on_profile' | 'tag_post' | 'tag_comment' | 'message';
   is_read: boolean;
   post_id?: string;
