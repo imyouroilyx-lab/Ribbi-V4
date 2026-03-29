@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { Edit2, Trash2, Check, X, Palette, Pencil, Heart } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
 interface Message {
   id: string;
@@ -32,7 +31,6 @@ interface MessageBubbleProps {
 }
 
 export default function MessageBubble({ message, isOwn, currentUserId, themeColor = '#22c55e', showSenderName }: MessageBubbleProps) {
-  const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message?.content || '');
   const [likes, setLikes] = useState<any[]>([]);
@@ -92,10 +90,6 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
     } catch { return ''; }
   };
 
-  const goToProfile = () => {
-    router.push(`/profile/${message.sender!.username}`);
-  };
-
   const handleDelete = async () => {
     if (!confirm('ต้องการลบข้อความนี้? (ทั้งสองฝ่ายจะไม่เห็น)')) return;
     const { error } = await supabase.from('messages').delete().eq('id', message.id);
@@ -133,9 +127,9 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
 
         {/* Avatar (คนอื่น) — คลิกไปโปรไฟล์ */}
         {!isOwn && (
-          <button
-            onClick={goToProfile}
-            className="flex-shrink-0 hover:opacity-80 transition self-end"
+          <a
+            href={`/profile/${message.sender!.username}`}
+            className="flex-shrink-0 hover:opacity-80 transition self-end block"
             title={`ดูโปรไฟล์ ${message.sender.display_name}`}
           >
             <img
@@ -143,7 +137,7 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
               alt={message.sender.display_name}
               className="w-8 h-8 rounded-full object-cover"
             />
-          </button>
+          </a>
         )}
 
         {/* ปุ่ม Action (ข้อความตัวเอง) */}
