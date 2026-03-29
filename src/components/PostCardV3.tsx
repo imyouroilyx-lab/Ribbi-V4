@@ -236,10 +236,12 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
   const renderEmbeds = (text: string) => {
     if (!text) return null;
     const urlRegex = /(https?:\/\/[^\s]+)/g;
-    const urls = text.match(urlRegex) || [];
-    if (urls.length === 0) return null;
+    const urls = text.match(urlRegex);
+    if (!urls || urls.length === 0) return null;
 
     const firstUrl = urls[0]; // ดึงเฉพาะลิงก์แรกมาทำเป็น Embed เพื่อไม่ให้รก
+    if (!firstUrl) return null; // เช็ค undefined เพื่อแก้ปัญหา TypeScript Type Check
+
     const ytId = getYouTubeId(firstUrl);
 
     if (ytId) {
