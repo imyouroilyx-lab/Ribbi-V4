@@ -156,7 +156,7 @@ export default function NotificationsPage() {
       <NavLayout>
         <div className="flex flex-col items-center justify-center py-20">
           <Loader2 className="w-10 h-10 text-frog-500 animate-spin mb-4" />
-          <p className="text-gray-400 font-bold uppercase tracking-widest text-xs animate-pulse">Loading Notifications...</p>
+          <p className="text-gray-400 font-bold uppercase tracking-widest text-xs animate-pulse">กำลังโหลดการแจ้งเตือน...</p>
         </div>
       </NavLayout>
     );
