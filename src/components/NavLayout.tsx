@@ -43,6 +43,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     loadUser();
   }, []);
 
+  // ✅ ฟังก์ชันจัดการการคลิกกลับหน้าหลัก (ถ้าอยู่ที่หน้าหลักอยู่แล้วให้รีเฟรช)
+  const handleHomeClick = (e: React.MouseEvent) => {
+    if (pathname === '/') {
+      e.preventDefault();
+      window.location.reload();
+    }
+  };
+
   useEffect(() => {
     if (!currentUser) return;
     currentUserRef.current = currentUser;
@@ -56,7 +64,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       loadUnreadMessages(currentUser.id);
     }, 45 * 1000);
 
-    // Realtime Notifications
     const notifChannel = supabase
       .channel('nav-notifications')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
@@ -71,7 +78,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       })
       .subscribe();
 
-    // Realtime Messages
     const msgChannel = supabase
       .channel('nav-messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
@@ -96,7 +102,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(msgChannel);
     };
-  }, [currentUser]);
+  }, [currentUser, pathname]);
 
   const loadUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -142,30 +148,30 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       {/* Sidebar - Desktop */}
       <aside className="hidden lg:block w-64 fixed left-0 top-0 h-screen bg-white border-r border-gray-200 p-4">
         <div className="mb-8">
-          <Link href="/" className="flex items-center gap-2">
-            <img src="https://iili.io/qbtgKBt.png" alt="Ribbi" className="w-10 h-10" />
-            <span className="text-2xl font-bold text-frog-600">Ribbi</span>
+          <Link href="/" onClick={handleHomeClick} className="flex items-center gap-2 group">
+            <img src="https://iili.io/qbtgKBt.png" alt="Ribbi" className="w-10 h-10 group-hover:scale-110 transition-transform" />
+            <span className="text-2xl font-black text-frog-600 tracking-tighter">Ribbi</span>
           </Link>
         </div>
         <nav className="space-y-1">
-          <Link href="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
+          <Link href="/" onClick={handleHomeClick} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Home className="w-5 h-5" />
             <span>หน้าหลัก</span>
           </Link>
           <Link href="/friends" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/friends') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Users className="w-5 h-5" />
             <span>เพื่อน</span>
-            {friendRequestCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-xs rounded-full flex items-center justify-center font-black">{friendRequestCount}</span>}
+            {friendRequestCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm">{friendRequestCount}</span>}
           </Link>
           <Link href="/messages" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/messages') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <MessageCircle className="w-5 h-5" />
             <span>แชท</span>
-            {unreadMessageCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-xs rounded-full flex items-center justify-center font-black">{unreadMessageCount}</span>}
+            {unreadMessageCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm">{unreadMessageCount}</span>}
           </Link>
           <Link href="/notifications" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/notifications') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Bell className="w-5 h-5" />
             <span>แจ้งเตือน</span>
-            {unreadNotifCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-black">{unreadNotifCount}</span>}
+            {unreadNotifCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm">{unreadNotifCount}</span>}
           </Link>
           <Link href="/settings" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/settings') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Settings className="w-5 h-5" />
@@ -173,17 +179,17 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           </Link>
         </nav>
 
-        {/* ✅ ข้อมูลผู้ใช้ด้านล่าง Sidebar (Desktop) */}
+        {/* ข้อมูลผู้ใช้ด้านล่าง Sidebar (Desktop) */}
         {currentUser && (
           <div className="absolute bottom-4 left-4 right-4 space-y-2">
             <Link 
               href={`/profile/${currentUser.username}`} 
-              className="flex items-center gap-3 p-3 bg-gray-50 hover:bg-gray-100 transition-all rounded-2xl border border-gray-100 group"
+              className={`flex items-center gap-3 p-3 transition-all rounded-2xl border group ${pathname?.startsWith(`/profile/${currentUser.username}`) ? 'bg-frog-50 border-frog-100' : 'bg-gray-50 border-gray-100 hover:bg-gray-100'}`}
             >
               <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm group-hover:scale-105 transition-transform" />
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-sm truncate text-gray-900">{currentUser.display_name}</p>
-                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{currentUser.username}</p>
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">My Profile</p>
               </div>
             </Link>
             <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 text-red-500 transition-colors text-sm font-bold">
@@ -196,14 +202,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
       {/* Header - Mobile */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-40">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/" onClick={handleHomeClick} className="flex items-center gap-2">
           <img src="https://iili.io/qbtgKBt.png" alt="Ribbi" className="w-8 h-8" />
-          <span className="text-xl font-bold text-frog-600">Ribbi</span>
+          <span className="text-xl font-black text-frog-600 tracking-tighter">Ribbi</span>
         </Link>
         <div className="flex items-center gap-2">
           <Link href="/notifications" className="p-2 hover:bg-gray-100 rounded-lg relative">
             <Bell className="w-6 h-6" />
-            {unreadNotifCount > 0 && <span className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">{unreadNotifCount}</span>}
+            {unreadNotifCount > 0 && <span className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm">{unreadNotifCount}</span>}
           </Link>
           <button onClick={() => setShowMobileMenu(true)} className="p-2 hover:bg-gray-100 rounded-lg">
             <Menu className="w-6 h-6" />
@@ -217,38 +223,38 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           <div className="lg:hidden fixed inset-0 bg-black/50 z-50 animate-in fade-in duration-200" onClick={() => setShowMobileMenu(false)} />
           <aside className="lg:hidden fixed right-0 top-0 h-screen w-72 bg-white z-50 p-6 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
             <div className="flex items-center justify-between mb-8">
-              <span className="text-2xl font-black text-frog-600 tracking-tight">Menu</span>
+              <span className="text-2xl font-black text-frog-600 tracking-tight uppercase">Menu</span>
               <button onClick={() => setShowMobileMenu(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                 <X className="w-6 h-6" />
               </button>
             </div>
 
-            {/* ✅ ข้อมูลผู้ใช้ด้านบน (Mobile Menu) */}
+            {/* ข้อมูลผู้ใช้ด้านบน (Mobile Menu) */}
             {currentUser && (
               <Link 
                 href={`/profile/${currentUser.username}`} 
                 onClick={() => setShowMobileMenu(false)}
-                className="flex items-center gap-4 p-4 bg-gray-50 rounded-[1.5rem] border border-gray-100 mb-6"
+                className="flex items-center gap-4 p-4 bg-gray-50 rounded-[1.5rem] border border-gray-100 mb-6 group"
               >
                 <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-white shadow-md" />
                 <div className="flex-1 min-w-0">
                   <p className="font-black text-gray-900 truncate">{currentUser.display_name}</p>
-                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">View Profile</p>
+                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">ดูโปรไฟล์</p>
                 </div>
               </Link>
             )}
 
             <nav className="space-y-1 flex-1">
-              <Link href="/" onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 px-4 py-4 rounded-2xl hover:bg-gray-50 font-bold text-gray-700">
-                <Home className="w-6 h-6 text-gray-400" />
+              <Link href="/" onClick={(e) => { setShowMobileMenu(false); handleHomeClick(e); }} className={`flex items-center gap-4 px-4 py-4 rounded-2xl hover:bg-gray-50 font-bold ${isActive('/') ? 'text-frog-600 bg-frog-50/50' : 'text-gray-700'}`}>
+                <Home className="w-6 h-6" />
                 <span>หน้าหลัก</span>
               </Link>
-              <Link href="/notifications" onClick={() => setShowMobileMenu(false)} className="flex items-center justify-between px-4 py-4 rounded-2xl hover:bg-gray-50 font-bold text-gray-700">
-                <div className="flex items-center gap-4"><Bell className="w-6 h-6 text-gray-400" /><span>แจ้งเตือน</span></div>
-                {unreadNotifCount > 0 && <span className="bg-red-500 text-white text-xs px-2.5 py-1 rounded-full font-black">{unreadNotifCount}</span>}
+              <Link href="/notifications" onClick={() => setShowMobileMenu(false)} className={`flex items-center justify-between px-4 py-4 rounded-2xl hover:bg-gray-50 font-bold ${isActive('/notifications') ? 'text-frog-600 bg-frog-50/50' : 'text-gray-700'}`}>
+                <div className="flex items-center gap-4"><Bell className="w-6 h-6" /><span>แจ้งเตือน</span></div>
+                {unreadNotifCount > 0 && <span className="bg-red-500 text-white text-xs px-2.5 py-1 rounded-full font-black shadow-sm">{unreadNotifCount}</span>}
               </Link>
-              <Link href="/settings" onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 px-4 py-4 rounded-2xl hover:bg-gray-50 font-bold text-gray-700">
-                <Settings className="w-6 h-6 text-gray-400" />
+              <Link href="/settings" onClick={() => setShowMobileMenu(false)} className={`flex items-center gap-4 px-4 py-4 rounded-2xl hover:bg-gray-50 font-bold ${isActive('/settings') ? 'text-frog-600 bg-frog-50/50' : 'text-gray-700'}`}>
+                <Settings className="w-6 h-6" />
                 <span>ตั้งค่า</span>
               </Link>
             </nav>
@@ -260,6 +266,32 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           </aside>
         </>
       )}
+
+      {/* Mobile Bottom Nav */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 pb-safe">
+        <div className="flex justify-around items-center h-16">
+          <Link href="/" onClick={handleHomeClick} className={`flex flex-col items-center justify-center gap-1 flex-1 h-full ${isActive('/') ? 'text-frog-600' : 'text-gray-400'}`}>
+            <Home className="w-6 h-6" />
+            <span className="text-[10px] font-bold">หน้าหลัก</span>
+          </Link>
+          <Link href="/friends" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full relative ${isActive('/friends') ? 'text-frog-600' : 'text-gray-400'}`}>
+            <Users className="w-6 h-6" />
+            <span className="text-[10px] font-bold">เพื่อน</span>
+            {friendRequestCount > 0 && <span className="absolute top-2 right-4 bg-frog-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-black border-2 border-white">{friendRequestCount}</span>}
+          </Link>
+          <Link href="/messages" className={`flex flex-col items-center justify-center gap-1 flex-1 h-full relative ${isActive('/messages') ? 'text-frog-600' : 'text-gray-400'}`}>
+            <MessageCircle className="w-6 h-6" />
+            <span className="text-[10px] font-bold">แชท</span>
+            {unreadMessageCount > 0 && <span className="absolute top-2 right-4 bg-frog-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-black border-2 border-white">{unreadMessageCount}</span>}
+          </Link>
+          {currentUser && (
+            <Link href={`/profile/${currentUser.username}`} className={`flex flex-col items-center justify-center gap-1 flex-1 h-full ${pathname?.startsWith(`/profile/${currentUser.username}`) ? 'text-frog-600' : 'text-gray-400'}`}>
+              <User className="w-6 h-6" />
+              <span className="text-[10px] font-bold">โปรไฟล์</span>
+            </Link>
+          )}
+        </div>
+      </nav>
 
       {/* Main Content Area */}
       <main className="lg:ml-64 pt-16 lg:pt-0 pb-20 lg:pb-0 min-h-screen">
