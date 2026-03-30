@@ -11,7 +11,10 @@ const playNotificationSound = () => {
   try {
     const audio = new Audio('/sounds/ribbi.wav');
     audio.volume = 0.5;
-    audio.play().catch(err => console.log('Sound play failed:', err));
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(err => console.log('Sound play blocked by browser:', err));
+    }
   } catch (err) {
     console.log('Sound not available:', err);
   }
@@ -29,6 +32,9 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const pathnameRef = useRef<string | null>(pathname);
   const currentUserRef = useRef<any>(null);
   const myChatIdsRef = useRef<string[]>([]);
+  
+  // ใช้ Ref เก็บค่าจำนวนคำขอเพื่อนก่อนหน้า เพื่อเช็กว่ามันเพิ่มขึ้นหรือไม่
+  const prevFriendReqCountRef = useRef(-1); 
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -70,7 +76,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         const user = currentUserRef.current;
         if (!user || notif.receiver_id !== user.id) return;
         
-        // ✅ กรองออก: ถ้าเป็นการส่งคำขอเพื่อน ไม่ต้องเด้งแจ้งเตือน ไม่ต้องมีเสียงที่นี่
+        // กรองออก: ถ้าเป็นการส่งคำขอเพื่อน ไม่ต้องเด้งแจ้งเตือน ไม่ต้องมีเสียงที่นี่
         if (notif.type === 'friend_request') return;
 
         if (pathnameRef.current !== '/notifications') {
@@ -99,7 +105,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       })
       .subscribe();
 
-    // ✅ เพิ่ม Channel สำหรับตรวจจับคำขอเป็นเพื่อนแบบ Real-time
+    // ✅ ปรับปรุง Channel สำหรับตรวจจับคำขอเป็นเพื่อนแบบ Real-time ให้ชัวร์ 100% ว่าจะเล่นเสียง
     const friendChannel = supabase
       .channel('nav-friendships')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'friendships' }, (payload) => {
@@ -109,12 +115,23 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         // ตรวจสอบว่าเป็นคำขอที่ส่งมาถึงเราและมีสถานะเป็นรอยืนยันหรือไม่
         if (!user || newReq.receiver_id !== user.id || newReq.status !== 'pending') return;
 
-        setFriendRequestCount(prev => prev + 1);
-        playNotificationSound(); // เล่นเสียงแจ้งเตือน
+        playNotificationSound(); // ✅ เล่นเสียงแจ้งเตือน
+        setFriendRequestCount(prev => {
+          const nextCount = prev + 1;
+          prevFriendReqCountRef.current = nextCount;
+          return nextCount;
+        });
       })
-      // รีเฟรชเมื่อมีการรับเพื่อนหรือลบคำขอ
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'friendships' }, () => {
-        if (currentUserRef.current) loadFriendRequests(currentUserRef.current.id);
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'friendships' }, (payload) => {
+        const newReq = payload.new as any;
+        const oldReq = payload.old as any;
+        const user = currentUserRef.current;
+        
+        // ถ้าสถานะเปลี่ยนเป็น pending (เผื่อกรณีระบบใช้วิธีอัปเดต)
+        if (user && newReq.receiver_id === user.id && newReq.status === 'pending' && oldReq.status !== 'pending') {
+          playNotificationSound();
+        }
+        if (user) loadFriendRequests(user.id);
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'friendships' }, () => {
         if (currentUserRef.current) loadFriendRequests(currentUserRef.current.id);
@@ -146,14 +163,22 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       .select('*', { count: 'exact', head: true })
       .eq('receiver_id', userId)
       .eq('is_read', false)
-      .neq('type', 'friend_request'); // ตัดประเภท friend_request ออกจากการนับ Badge รูปกระดิ่ง
+      .neq('type', 'friend_request');
       
     setUnreadNotifCount(count || 0);
   };
 
   const loadFriendRequests = async (userId: string) => {
     const { count } = await supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('status', 'pending');
-    setFriendRequestCount(count || 0); // อันนี้จะไปโชว์ที่ไอคอน "เพื่อน (Friends)" แบบปกติ
+    const newCount = count || 0;
+
+    // ✅ ถ้าโหลดครั้งแรกเสร็จแล้ว และมีจำนวนคำขอใหม่เพิ่มขึ้นจากรอบก่อนหน้า ให้เล่นเสียง
+    if (prevFriendReqCountRef.current !== -1 && newCount > prevFriendReqCountRef.current) {
+      playNotificationSound();
+    }
+    
+    prevFriendReqCountRef.current = newCount;
+    setFriendRequestCount(newCount);
   };
 
   const loadUnreadMessages = async (userId: string) => {
@@ -190,7 +215,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             <span>หน้าหลัก</span>
           </Link>
           
-          {/* แถบ "เพื่อน" จะโชว์แจ้งเตือนคนแอดมา (นับจาก pending status ในตาราง friendships) */}
+          {/* ✅ แถบ "เพื่อน" พร้อม Badge และระบบแจ้งเตือนเสียง */}
           <Link href="/friends" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/friends') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Users className="w-5 h-5" />
             <span>เพื่อน</span>
@@ -203,7 +228,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             {unreadMessageCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm">{unreadMessageCount}</span>}
           </Link>
 
-          {/* แถบ "การแจ้งเตือน" ปกติ (ไม่รวมแอดเพื่อน) */}
           <Link href="/notifications" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/notifications') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Bell className="w-5 h-5" />
             <span>แจ้งเตือน</span>
