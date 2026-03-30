@@ -13,14 +13,18 @@ import {
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
   UserPlus,
+  UserCheck,
+  Clock,
   UserMinus
 } from 'lucide-react';
 
 const USERS_PER_PAGE = 20;
 const ALPHABETS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
+// ปรับปรุง Interface ให้รองรับสถานะความสัมพันธ์
 interface UserWithFriendship extends Omit<User, 'updated_at'> {
-  isFriend?: boolean;
+  friendshipStatus?: 'none' | 'pending' | 'accepted' | 'sent';
+  friendshipId?: string;
   updated_at?: string; 
 }
 
@@ -46,7 +50,7 @@ export default function UsersPage() {
       }
       setCurrentUserId(authUser.id);
 
-      // 1. ดึงข้อมูล User หลัก
+      // 1. ดึงข้อมูล User ทั้งหมดที่เข้าเงื่อนไข
       let query = supabase
         .from('users')
         .select('id, username, display_name, profile_img_url, created_at, updated_at', { count: 'exact' });
@@ -72,23 +76,37 @@ export default function UsersPage() {
       if (userData && userData.length > 0) {
         const userIdsInPage = userData.map(u => u.id);
         
-        // 2. ตรวจสอบความเป็นเพื่อน (ใช้ sender_id และ receiver_id ตาม Schema จริง)
+        // 2. ตรวจสอบสถานะความสัมพันธ์จากตาราง friendships (ใช้ sender_id/receiver_id)
         const { data: friendshipData } = await supabase
           .from('friendships')
-          .select('sender_id, receiver_id')
-          .eq('status', 'accepted')
-          .or(`sender_id.in.(${userIdsInPage.join(',')}),receiver_id.in.(${userIdsInPage.join(',')})`);
+          .select('id, sender_id, receiver_id, status')
+          .or(`sender_id.in.(${userIdsInPage.join(',')}),receiver_id.in.(${userIdsInPage.join(',')})`)
+          .or(`sender_id.eq.${authUser.id},receiver_id.eq.${authUser.id}`);
 
-        const friendIdSet = new Set<string>();
-        friendshipData?.forEach(f => {
-          if (f.sender_id === authUser.id) friendIdSet.add(f.receiver_id);
-          if (f.receiver_id === authUser.id) friendIdSet.add(f.sender_id);
+        // สร้างแผนผังความสัมพันธ์เพื่อความเร็วในการ Map
+        const finalUsers: UserWithFriendship[] = userData.map(u => {
+          const rel = friendshipData?.find(f => 
+            (f.sender_id === authUser.id && f.receiver_id === u.id) || 
+            (f.sender_id === u.id && f.receiver_id === authUser.id)
+          );
+
+          let status: 'none' | 'pending' | 'accepted' | 'sent' = 'none';
+          if (rel) {
+            if (rel.status === 'accepted') {
+              status = 'accepted';
+            } else if (rel.sender_id === authUser.id) {
+              status = 'sent'; // เราส่งไปหาเขา
+            } else {
+              status = 'pending'; // เขาส่งมาหาเรา
+            }
+          }
+
+          return {
+            ...u,
+            friendshipStatus: status,
+            friendshipId: rel?.id || null
+          };
         });
-
-        const finalUsers: UserWithFriendship[] = userData.map(u => ({
-          ...u,
-          isFriend: friendIdSet.has(u.id)
-        }));
 
         setUsers(finalUsers);
       } else {
@@ -108,36 +126,48 @@ export default function UsersPage() {
     return () => clearTimeout(handler);
   }, [fetchUsers]);
 
-  const handleToggleFriend = async (e: React.MouseEvent, targetUser: UserWithFriendship) => {
-    e.stopPropagation();
+  // ฟังก์ชันจัดการเพิ่มเพื่อน (ส่งคำขอจริง)
+  const handleAddFriend = async (targetId: string) => {
     if (!currentUserId || actionId) return;
-
+    setActionId(targetId);
     try {
-      setActionId(targetUser.id);
-      
-      if (targetUser.isFriend) {
-        // ลบเพื่อน
-        await supabase
-          .from('friendships')
-          .delete()
-          .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${targetUser.id}),and(sender_id.eq.${targetUser.id},receiver_id.eq.${currentUserId})`);
-      } else {
-        // เพิ่มเพื่อน (ในหน้า User Directory เราให้เป็น accepted ทันทีเพื่อความง่าย หรือเปลี่ยนเป็น pending ตามต้องการ)
-        await supabase
-          .from('friendships')
-          .insert({
-            sender_id: currentUserId,
-            receiver_id: targetUser.id,
-            status: 'accepted'
-          });
-      }
+      // 1. ส่งคำขอลงตาราง friendships เป็น pending
+      await supabase.from('friendships').insert({
+        sender_id: currentUserId,
+        receiver_id: targetId,
+        status: 'pending'
+      });
 
+      // 2. ส่ง Notification
+      await supabase.from('notifications').insert({
+        receiver_id: targetId,
+        sender_id: currentUserId,
+        type: 'friend_request'
+      });
+
+      // Update UI ทันที
       setUsers(prev => prev.map(u => 
-        u.id === targetUser.id ? { ...u, isFriend: !u.isFriend } : u
+        u.id === targetId ? { ...u, friendshipStatus: 'sent' } : u
       ));
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setActionId(null);
+    }
+  };
 
-    } catch (err: any) {
-      console.error('Toggle error:', err.message);
+  // ฟังก์ชันลบเพื่อน หรือ ยกเลิกคำขอ
+  const handleCancelOrRemove = async (targetUser: UserWithFriendship) => {
+    if (!currentUserId || !targetUser.friendshipId || actionId) return;
+    setActionId(targetUser.id);
+    try {
+      await supabase.from('friendships').delete().eq('id', targetUser.friendshipId);
+      
+      setUsers(prev => prev.map(u => 
+        u.id === targetUser.id ? { ...u, friendshipStatus: 'none', friendshipId: undefined } : u
+      ));
+    } catch (error) {
+      console.error(error);
     } finally {
       setActionId(null);
     }
@@ -156,8 +186,8 @@ export default function UsersPage() {
                   <Users className="text-indigo-600" size={24} />
                   สมาชิก Ribbi
                 </h1>
-                <p className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">
-                  ทั้งหมด {totalCount.toLocaleString()} รายชื่อ
+                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">
+                  MEMBER DIRECTORY ({totalCount.toLocaleString()})
                 </p>
               </div>
 
@@ -166,7 +196,7 @@ export default function UsersPage() {
                 <input 
                   type="text"
                   placeholder="ค้นหาชื่อ..."
-                  className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent rounded-xl focus:border-indigo-500 focus:bg-white focus:outline-none transition-all text-sm font-medium"
+                  className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent rounded-xl focus:border-indigo-500 focus:bg-white focus:outline-none transition-all text-sm font-medium shadow-inner"
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
@@ -176,7 +206,6 @@ export default function UsersPage() {
               </div>
             </div>
 
-            {/* Alphabet Bar - เล็ก กะทัดรัด */}
             <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
               <button 
                 onClick={() => { setSelectedLetter(null); setCurrentPage(1); }}
@@ -211,7 +240,7 @@ export default function UsersPage() {
                     onClick={() => router.push(`/profile/${user.username}`)}
                     className="group bg-white border border-slate-200 rounded-2xl p-3 flex items-center gap-3 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer active:scale-[0.98]"
                   >
-                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-100">
+                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-50">
                       <img 
                         src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} 
                         alt="" 
@@ -227,23 +256,50 @@ export default function UsersPage() {
 
                     <div className="flex-shrink-0">
                       {user.id !== currentUserId ? (
-                        <button
-                          onClick={(e) => handleToggleFriend(e, user)}
-                          disabled={actionId === user.id}
-                          className={`min-w-[85px] px-3 py-1.5 rounded-xl text-[10px] font-black transition-all border shadow-sm flex items-center justify-center gap-1.5
-                            ${user.isFriend 
-                              ? 'bg-white border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200' 
-                              : 'bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-700'
-                            }`}
-                        >
-                          {actionId === user.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : user.isFriend ? (
-                            <><UserMinus size={14} /> ลบเพื่อน</>
-                          ) : (
-                            <><UserPlus size={14} /> เพิ่มเพื่อน</>
+                        <div className="flex items-center">
+                          {user.friendshipStatus === 'none' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleAddFriend(user.id); }}
+                              disabled={actionId === user.id}
+                              className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black hover:bg-indigo-700 transition flex items-center gap-1.5 shadow-sm"
+                            >
+                              {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={14} />}
+                              เพิ่มเพื่อน
+                            </button>
                           )}
-                        </button>
+                          
+                          {user.friendshipStatus === 'sent' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleCancelOrRemove(user); }}
+                              disabled={actionId === user.id}
+                              className="px-3 py-1.5 bg-slate-100 text-slate-400 rounded-xl text-[10px] font-black hover:text-red-500 hover:bg-red-50 transition flex items-center gap-1.5"
+                            >
+                              <Clock size={14} />
+                              ยกเลิกคำขอ
+                            </button>
+                          )}
+
+                          {user.friendshipStatus === 'accepted' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleCancelOrRemove(user); }}
+                              disabled={actionId === user.id}
+                              className="px-3 py-1.5 bg-white border border-slate-200 text-slate-400 rounded-xl text-[10px] font-black hover:text-red-500 hover:border-red-200 transition flex items-center gap-1.5 shadow-sm"
+                            >
+                              <UserCheck size={14} className="text-green-500" />
+                              เพื่อน
+                            </button>
+                          )}
+
+                          {user.friendshipStatus === 'pending' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); router.push('/friends'); }}
+                              className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black hover:bg-indigo-100 transition flex items-center gap-1.5 shadow-sm border border-indigo-100"
+                            >
+                              <Clock size={14} />
+                              รอยืนยัน
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-[9px] text-slate-300 font-black px-2 uppercase tracking-widest italic">You</span>
                       )}
@@ -252,25 +308,24 @@ export default function UsersPage() {
                 ))}
               </div>
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="mt-10 flex items-center justify-center gap-2">
                   <button 
                     disabled={currentPage === 1 || loading}
                     onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0 }); }}
-                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50 transition-all"
+                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50"
                   >
                     <ChevronLeft size={18} />
                   </button>
                   
-                  <div className="bg-white border border-slate-200 px-4 py-1.5 rounded-xl text-[10px] font-black text-slate-600 shadow-sm uppercase tracking-tighter">
+                  <div className="bg-white border border-slate-200 px-4 py-1.5 rounded-xl text-[10px] font-black text-slate-500 uppercase tracking-tighter">
                     Page {currentPage} of {totalPages}
                   </div>
 
                   <button 
                     disabled={currentPage === totalPages || loading}
                     onClick={() => { setCurrentPage(p => p + 1); window.scrollTo({ top: 0 }); }}
-                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50 transition-all"
+                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50"
                   >
                     <ChevronRightIcon size={18} />
                   </button>
@@ -278,12 +333,8 @@ export default function UsersPage() {
               )}
             </>
           ) : (
-            <div className="py-20 text-center flex flex-col items-center">
-              <Users size={40} className="text-slate-200 mb-2" />
-              <p className="text-slate-400 text-sm font-medium">ไม่พบสมาชิกในขณะนี้</p>
-              {(searchTerm || selectedLetter) && (
-                <button onClick={() => {setSearchTerm(''); setSelectedLetter(null);}} className="mt-2 text-indigo-600 text-xs font-bold hover:underline">ล้างการค้นหา</button>
-              )}
+            <div className="py-20 text-center text-slate-400 text-sm font-medium">
+               ไม่พบสมาชิกที่คุณต้องการ
             </div>
           )}
         </main>
