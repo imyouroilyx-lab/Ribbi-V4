@@ -1,241 +1,195 @@
-'use client';
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase, User } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
 import { 
   Search, 
-  UserPlus, 
-  MoreVertical, 
-  UserCheck, 
-  Filter,
-  ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
-  Edit2,
-  Trash2,
+  Users, 
+  ChevronRight, 
+  AtSign, 
+  Calendar,
+  Sparkles,
+  ArrowRight,
   Loader2,
-  AlertCircle,
-  AtSign
+  AlertCircle
 } from 'lucide-react';
 
-export default function UsersPage() {
-  const router = useRouter();
-  const [users, setUsers] = useState<User[]>([]);
+/**
+ * หน้าแสดงรายการสมาชิก (Member Directory)
+ * เน้นการค้นหาและกดเข้าไปดูโปรไฟล์รายบุคคล
+ */
+
+// จำลอง Supabase Client (ในระบบจริงจะ import จาก @/lib/supabase)
+const mockUsers = [
+  { id: '1', username: 'alex_knight', display_name: 'Alex Knight', profile_img_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex', created_at: '2024-01-15T08:00:00Z' },
+  { id: '2', username: 'sarah_j', display_name: 'Sarah Jenkins', profile_img_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah', created_at: '2024-02-10T10:30:00Z' },
+  { id: '3', username: 'm_somsak', display_name: 'Somsak Meedee', profile_img_url: '', created_at: '2024-03-05T14:20:00Z' },
+  { id: '4', username: 'jane_doe', display_name: 'Jane Doe', profile_img_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jane', created_at: '2024-03-20T09:15:00Z' },
+];
+
+export default function App() {
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // จำลองการโหลดข้อมูล
   useEffect(() => {
-    checkAuthAndFetchUsers();
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        // ในระบบจริง: const { data } = await supabase.from('users').select('*');
+        setTimeout(() => {
+          setUsers(mockUsers);
+          setLoading(false);
+        }, 800);
+      } catch (err) {
+        setError(err.message);
+        setLoading(false);
+      }
+    };
+    loadData();
   }, []);
 
-  const checkAuthAndFetchUsers = async () => {
-    try {
-      setLoading(true);
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) {
-        router.push('/login');
-        return;
-      }
-      await fetchUsers();
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchUsers = async () => {
-    try {
-      const { data, error: supabaseError } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (supabaseError) throw supabaseError;
-      setUsers(data || []);
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  // กรองข้อมูลโดยใช้เฉพาะฟิลด์ที่มีใน Type User (display_name, username)
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
-      const displayName = user.display_name || '';
-      const username = user.username || '';
       const search = searchTerm.toLowerCase();
-      
-      return displayName.toLowerCase().includes(search) || 
-             username.toLowerCase().includes(search);
+      return (
+        (user.display_name?.toLowerCase().includes(search)) ||
+        (user.username?.toLowerCase().includes(search))
+      );
     });
   }, [users, searchTerm]);
 
+  const handleViewProfile = (username) => {
+    // ใน Next.js จะใช้: router.push(`/profile/${username}`)
+    console.log(`Navigating to /profile/${username}`);
+    // แสดง Feedback ว่ามีการคลิก
+    window.parent.postMessage({ type: 'navigation', path: `/profile/${username}` }, '*');
+  };
+
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <img 
-            src="https://iili.io/qbtgKBt.png" 
-            className="w-16 h-16 mx-auto mb-4 animate-bounce opacity-50" 
-            alt="Loading" 
-          />
-          <Loader2 className="w-6 h-6 animate-spin text-indigo-600 mx-auto" />
-          <p className="text-gray-500 mt-2 text-sm">กำลังโหลดรายชื่อสมาชิก...</p>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
+        <div className="relative">
+          <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+          <Users className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600" size={24} />
         </div>
+        <p className="mt-4 text-slate-500 font-medium animate-pulse">กำลังเตรียมรายชื่อเพื่อนๆ...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-slate-900">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">จัดการสมาชิก</h1>
-            <p className="text-slate-500 text-sm">แสดงรายชื่อผู้ใช้งานทั้งหมดในระบบ</p>
-          </div>
-          <button className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 text-sm font-semibold">
-            <UserPlus size={18} />
-            <span>เพิ่มสมาชิกใหม่</span>
-          </button>
-        </div>
-
-        {/* Stats Card */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6 flex items-center gap-4">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
-            <UserCheck size={24} />
-          </div>
-          <div>
-            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider">สมาชิกทั้งหมด</p>
-            <p className="text-2xl font-black text-slate-800">{users.length} <span className="text-sm font-normal text-slate-400">คน</span></p>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-white p-3 rounded-t-2xl border border-slate-200 border-b-0 flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text"
-              placeholder="ค้นหาด้วยชื่อแสดงตัวตน หรือ username..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-sm"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <button 
-            onClick={fetchUsers}
-            className="flex items-center justify-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600 transition-all text-sm font-medium"
-          >
-            <Filter size={18} />
-            <span>รีเฟรชข้อมูล</span>
-          </button>
-        </div>
-
-        {/* Table Container */}
-        <div className="bg-white rounded-b-2xl border border-slate-200 overflow-hidden shadow-sm">
-          {error ? (
-            <div className="p-16 text-center">
-              <AlertCircle size={48} className="mx-auto mb-4 text-red-200" />
-              <p className="font-bold text-slate-800">เกิดข้อผิดพลาด</p>
-              <p className="text-sm text-slate-500 max-w-xs mx-auto mt-1">{error}</p>
-              <button onClick={fetchUsers} className="mt-4 text-indigo-600 font-semibold text-sm hover:underline">ลองใหม่อีกครั้ง</button>
+    <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-900 pb-20">
+      {/* Header Section */}
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+        <div className="max-w-5xl mx-auto px-4 py-6 md:py-8">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm uppercase tracking-wider">
+                <Sparkles size={16} />
+                <span>Our Community</span>
+              </div>
+              <h1 className="text-3xl font-black text-slate-900 tracking-tight">ทำความรู้จักสมาชิก</h1>
+              <p className="text-slate-500">พบปะและเชื่อมต่อกับผู้คนในคอมมูนิตี้ของเรา</p>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs font-bold uppercase tracking-widest">
-                    <th className="px-6 py-4">โปรไฟล์</th>
-                    <th className="px-6 py-4">ชื่อผู้ใช้ (Username)</th>
-                    <th className="px-6 py-4">วันที่เข้าร่วม</th>
-                    <th className="px-6 py-4 text-right">จัดการ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredUsers.length > 0 ? (
-                    filteredUsers.map((user) => (
-                      <tr key={user.id} className="hover:bg-indigo-50/30 transition-colors group">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-11 h-11 rounded-full border-2 border-white shadow-sm bg-slate-200 flex-shrink-0 overflow-hidden group-hover:scale-105 transition-transform">
-                              {user.profile_img_url ? (
-                                <img src={user.profile_img_url} alt={user.display_name} className="w-full h-full object-cover" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs font-black uppercase">
-                                  {user.display_name?.charAt(0) || user.username?.charAt(0) || '?'}
-                                </div>
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="font-bold text-slate-800 truncate leading-tight">{user.display_name || 'General Member'}</div>
-                              <div className="text-[10px] text-indigo-500 font-bold uppercase tracking-tighter mt-0.5">Verified User</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-1.5 text-slate-600 font-medium">
-                            <AtSign size={14} className="text-slate-400" />
-                            <span className="text-sm">{user.username}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-500 font-medium">
-                          {user.created_at ? new Date(user.created_at).toLocaleDateString('th-TH', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric'
-                          }) : '-'}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                            <button className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg shadow-sm border border-transparent hover:border-slate-100 transition-all">
-                              <Edit2 size={16} />
-                            </button>
-                            <button className="p-2 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg shadow-sm border border-transparent hover:border-slate-100 transition-all">
-                              <Trash2 size={16} />
-                            </button>
-                            <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-white rounded-lg shadow-sm border border-transparent hover:border-slate-100 transition-all">
-                              <MoreVertical size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={4} className="px-6 py-16 text-center">
-                        <div className="text-slate-300 mb-2 flex justify-center">
-                          <Search size={40} />
-                        </div>
-                        <p className="text-slate-400 text-sm font-medium">
-                          {searchTerm ? `ไม่พบข้อมูลที่ตรงกับ "${searchTerm}"` : 'ยังไม่มีสมาชิกในระบบ'}
-                        </p>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
 
-          {/* Table Footer */}
-          <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-              Total: {filteredUsers.length} Users
-            </span>
-            <div className="flex gap-2">
-              <button disabled className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-300 cursor-not-allowed">
-                <ChevronLeft size={16} />
-              </button>
-              <button disabled className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-300 cursor-not-allowed">
-                <ChevronRight size={16} />
-              </button>
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input 
+                type="text"
+                placeholder="ค้นหาชื่อเพื่อน หรือ username..."
+                className="w-full pl-11 pr-4 py-3 bg-slate-100 border-transparent border focus:border-indigo-500 focus:bg-white rounded-2xl focus:outline-none transition-all shadow-inner text-sm"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Main Content */}
+      <main className="max-w-5xl mx-auto px-4 mt-8">
+        {error ? (
+          <div className="bg-white p-12 rounded-3xl border border-red-100 shadow-sm text-center">
+            <AlertCircle size={48} className="mx-auto mb-4 text-red-400" />
+            <h3 className="text-lg font-bold text-slate-800">ขออภัย เกิดข้อผิดพลาด</h3>
+            <p className="text-slate-500 mt-2">{error}</p>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between mb-6 px-2">
+              <div className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <Users size={14} />
+                <span>ผลการค้นหา {filteredUsers.length} คน</span>
+              </div>
+            </div>
+
+            {filteredUsers.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+                {filteredUsers.map((user) => (
+                  <div 
+                    key={user.id}
+                    onClick={() => handleViewProfile(user.username)}
+                    className="group bg-white border border-slate-200 rounded-3xl p-5 flex items-center gap-4 hover:border-indigo-300 hover:shadow-xl hover:shadow-indigo-500/5 transition-all cursor-pointer active:scale-[0.98]"
+                  >
+                    {/* Avatar */}
+                    <div className="relative flex-shrink-0">
+                      <div className="w-16 h-16 rounded-2xl overflow-hidden bg-slate-100 border-2 border-slate-50 group-hover:border-indigo-100 transition-colors shadow-sm">
+                        {user.profile_img_url ? (
+                          <img src={user.profile_img_url} alt={user.display_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400 font-bold text-xl uppercase">
+                            {user.display_name?.charAt(0) || user.username?.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-4 border-white rounded-full"></div>
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
+                        {user.display_name || 'Anonymous User'}
+                      </h3>
+                      <div className="flex items-center gap-1 text-slate-500 text-xs mt-1">
+                        <AtSign size={12} className="text-indigo-400" />
+                        <span className="font-medium truncate">{user.username}</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-slate-400 text-[10px] mt-2 font-medium uppercase tracking-tighter">
+                        <Calendar size={10} />
+                        Joined {new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                      </div>
+                    </div>
+
+                    {/* Action Icon */}
+                    <div className="bg-slate-50 p-2 rounded-xl group-hover:bg-indigo-50 group-hover:text-indigo-600 text-slate-300 transition-all">
+                      <ChevronRight size={20} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-300">
+                <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Search size={32} className="text-slate-300" />
+                </div>
+                <h3 className="font-bold text-slate-800">ไม่พบสมาชิกที่ต้องการ</h3>
+                <p className="text-slate-500 text-sm mt-1">ลองใช้คำค้นหาอื่นดูสิ</p>
+                <button 
+                  onClick={() => setSearchTerm('')}
+                  className="mt-4 text-indigo-600 text-sm font-bold hover:underline"
+                >
+                  ล้างการค้นหา
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      {/* Floating Welcome (Optional Decor) */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 text-sm font-semibold whitespace-nowrap md:hidden">
+        <Users size={16} className="text-indigo-400" />
+        <span>เลือกชมโปรไฟล์ที่น่าสนใจ</span>
       </div>
     </div>
   );
