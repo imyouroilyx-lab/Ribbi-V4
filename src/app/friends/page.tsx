@@ -14,9 +14,12 @@ import {
   Users, 
   ChevronLeft, 
   ChevronRight,
-  Send
+  Send,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
+
+// นำเข้าฟังก์ชันแจ้งเตือน
 import { notifyFriendAccept } from '@/lib/notifications';
 
 interface Friendship {
@@ -41,7 +44,7 @@ export default function FriendsPage() {
   const [totalFriends, setTotalFriends] = useState(0);
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState(''); 
   const [currentPage, setCurrentPage] = useState(1);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [selectedFriendshipId, setSelectedFriendshipId] = useState<string | null>(null);
@@ -50,11 +53,15 @@ export default function FriendsPage() {
     loadInitialData();
   }, []);
 
+  // ✅ ระบบหน่วงเวลาค้นหา (Debounce)
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 500);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // โหลดรายชื่อเพื่อนเมื่อเปลี่ยนหน้า หรือ ค้นหา
   useEffect(() => {
     if (currentUser?.id) loadFriendsData();
   }, [currentPage, debouncedSearch, currentUser?.id]);
@@ -65,16 +72,16 @@ export default function FriendsPage() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
 
-      // ✅ Optimize: ดึงเฉพาะข้อมูลที่ต้องใช้
+      // ✅ Optimize: ดึงเฉพาะข้อมูลที่ต้องใช้ และใส่ 'as any' เพื่อแก้ Build Error
       const { data: userData } = await supabase
         .from('users')
         .select('id, username, display_name, profile_img_url')
         .eq('id', authUser.id)
         .single();
       
-      setCurrentUser(userData);
+      setCurrentUser(userData as any);
 
-      // โหลดคำขอพร้อมกัน
+      // โหลดคำขอเข้า-ออกพร้อมกัน (Parallel)
       const [pending, sent] = await Promise.all([
         supabase.from('friendships')
           .select('*, sender:sender_id(id, username, display_name, profile_img_url)')
@@ -91,7 +98,7 @@ export default function FriendsPage() {
       setPendingRequests(pending.data || []);
       setSentRequests(sent.data || []);
     } catch (error) {
-      console.error(error);
+      console.error('Error loading initial data:', error);
     } finally {
       setIsLoading(false);
     }
@@ -103,7 +110,6 @@ export default function FriendsPage() {
     const to = from + FRIENDS_PER_PAGE - 1;
 
     try {
-      // ✅ Optimize: ปรับการ Select ให้เบาที่สุด
       let query = supabase
         .from('friendships')
         .select(`
@@ -115,12 +121,11 @@ export default function FriendsPage() {
         .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`);
 
       if (debouncedSearch) {
-        // ค้นหาเฉพาะชื่อที่ขึ้นต้นด้วย (ใช้ Index ได้ดีกว่า %...%)
-        query = query.or(`sender.display_name.ilike.${debouncedSearch}%,receiver.display_name.ilike.${debouncedSearch}%`);
+        query = query.or(`sender.display_name.ilike.%${debouncedSearch}%,receiver.display_name.ilike.%${debouncedSearch}%`);
       }
 
       const { data, count } = await query
-        .order('created_at', { ascending: false }) // เรียงตามวันที่เป็นเพื่อนกัน (แนะนำ)
+        .order('created_at', { ascending: false })
         .range(from, to);
 
       setTotalFriends(count || 0);
@@ -132,7 +137,7 @@ export default function FriendsPage() {
 
       setFriends(friendsList);
     } catch (error) {
-      console.error(error);
+      console.error('Error loading friends list:', error);
     }
   };
 
@@ -144,6 +149,7 @@ export default function FriendsPage() {
       
       await notifyFriendAccept(senderId, currentUser.id);
       
+      // อัปเดต UI ทันที (Optimistic)
       const acceptedUser = pendingRequests.find(r => r.id === id);
       setPendingRequests(prev => prev.filter(r => r.id !== id));
       
@@ -186,14 +192,25 @@ export default function FriendsPage() {
 
   const totalPages = Math.ceil(totalFriends / FRIENDS_PER_PAGE);
 
-  if (isLoading) return <NavLayout><div className="flex justify-center py-20 text-gray-400 font-bold uppercase tracking-widest text-xs animate-pulse">กำลังโหลด...</div></NavLayout>;
+  if (isLoading) {
+    return (
+      <NavLayout>
+        <div className="flex flex-col items-center justify-center py-20">
+          <Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" />
+          <p className="text-gray-400 font-black uppercase tracking-widest text-xs">กำลังโหลดรายชื่อเพื่อน...</p>
+        </div>
+      </NavLayout>
+    );
+  }
+
+  if (!currentUser) return null;
 
   return (
     <NavLayout>
-      <div className="max-w-4xl mx-auto px-4 py-4 space-y-8">
+      <div className="max-w-4xl mx-auto px-4 py-4 space-y-8 animate-in fade-in duration-500">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-black text-gray-900 tracking-tight">เพื่อนของฉัน</h1>
+            <h1 className="text-2xl font-black text-gray-900 tracking-tight leading-tight">เพื่อนของฉัน</h1>
             <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">ทั้งหมด {totalFriends} คน</p>
           </div>
           <div className="relative w-full md:w-64">
@@ -203,7 +220,7 @@ export default function FriendsPage() {
               placeholder="ค้นหาชื่อเพื่อน..."
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              className="w-full pl-9 pr-4 py-2 bg-gray-100 border-transparent rounded-xl focus:ring-2 focus:ring-frog-500 outline-none transition-all text-sm font-medium"
+              className="w-full pl-9 pr-4 py-2.5 bg-gray-100 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-frog-500 outline-none transition-all text-sm font-bold shadow-inner"
             />
           </div>
         </div>
@@ -211,20 +228,20 @@ export default function FriendsPage() {
         {/* Pending Requests */}
         {pendingRequests.length > 0 && (
           <div className="space-y-3">
-            <h2 className="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2 px-1">
+            <h2 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] flex items-center gap-2 px-1">
               <UserPlus size={14} /> คำขอเป็นเพื่อน ({pendingRequests.length})
             </h2>
-            <div className="bg-indigo-50/50 rounded-3xl p-4 border border-indigo-100 grid grid-cols-1 sm:grid-cols-2 gap-3 shadow-inner">
+            <div className="bg-indigo-50/50 rounded-[2rem] p-4 border border-indigo-100 grid grid-cols-1 sm:grid-cols-2 gap-3 shadow-inner">
                {pendingRequests.map(r => (
-                 <div key={r.id} className="flex items-center gap-3 p-3 bg-white rounded-2xl shadow-sm border border-indigo-50 group">
-                   <img src={r.sender?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-indigo-100" />
+                 <div key={r.id} className="flex items-center gap-3 p-3 bg-white rounded-2xl shadow-sm border border-indigo-50 group hover:scale-[1.02] transition-transform">
+                   <img src={r.sender?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-indigo-100 shadow-sm" alt="" />
                    <div className="flex-1 min-w-0">
                      <p className="font-bold text-xs truncate text-gray-900">{r.sender?.display_name}</p>
-                     <p className="text-[10px] text-gray-400">ส่งคำขอมาถึงคุณ</p>
+                     <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">ส่งคำขอมาถึงคุณ</p>
                    </div>
                    <div className="flex gap-1.5">
-                      <button onClick={() => handleAcceptRequest(r.id, r.sender_id)} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-sm"><Check size={14} /></button>
-                      <button onClick={() => handleCancelRequest(r.id, 'pending')} className="p-2 bg-gray-100 text-gray-400 rounded-xl hover:bg-red-50 hover:text-red-500 transition"><X size={14} /></button>
+                      <button onClick={() => handleAcceptRequest(r.id, r.sender_id)} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-md active:scale-90"><Check size={14} strokeWidth={3} /></button>
+                      <button onClick={() => handleCancelRequest(r.id, 'pending')} className="p-2 bg-gray-100 text-gray-400 rounded-xl hover:bg-red-50 hover:text-red-500 transition active:scale-90"><X size={14} strokeWidth={3} /></button>
                    </div>
                  </div>
                ))}
@@ -235,17 +252,17 @@ export default function FriendsPage() {
         {/* Sent Requests */}
         {sentRequests.length > 0 && (
           <div className="space-y-3">
-            <h2 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 px-1">
+            <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2 px-1">
               <Send size={14} /> คำขอที่ส่งไปแล้ว ({sentRequests.length})
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                {sentRequests.map(r => (
-                 <div key={r.id} className="flex items-center gap-3 p-3 bg-gray-50/50 rounded-2xl border border-gray-100">
-                   <img src={r.receiver?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover opacity-60 grayscale" />
+                 <div key={r.id} className="flex items-center gap-3 p-3 bg-gray-50/50 rounded-2xl border border-gray-100 opacity-80 hover:opacity-100 transition-opacity">
+                   <img src={r.receiver?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover opacity-60 grayscale" alt="" />
                    <div className="flex-1 min-w-0">
                      <p className="font-bold text-[10px] truncate text-gray-500">{r.receiver?.display_name}</p>
                    </div>
-                   <button onClick={() => handleCancelRequest(r.id, 'sent')} className="text-[10px] font-black text-gray-400 hover:text-red-500 uppercase tracking-tighter">ยกเลิก</button>
+                   <button onClick={() => handleCancelRequest(r.id, 'sent')} className="text-[9px] font-black text-gray-400 hover:text-red-500 uppercase tracking-widest transition-colors">ยกเลิก</button>
                  </div>
                ))}
             </div>
@@ -254,28 +271,28 @@ export default function FriendsPage() {
 
         {/* Friends List Grid */}
         <div className="space-y-4">
-          <h2 className="text-xs font-black text-gray-900 uppercase tracking-widest px-1 flex items-center gap-2">
+          <h2 className="text-[10px] font-black text-gray-900 uppercase tracking-[0.2em] px-1 flex items-center gap-2">
             <Users size={14} /> รายชื่อเพื่อน ({totalFriends})
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {friends.length === 0 ? (
-              <div className="col-span-full py-20 text-center bg-white rounded-[2rem] border border-dashed border-gray-200">
+              <div className="col-span-full py-20 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-gray-100 shadow-sm">
                 <Users size={40} className="mx-auto mb-4 text-gray-100" />
-                <p className="text-gray-400 text-sm font-bold">ไม่พบรายชื่อเพื่อน</p>
+                <p className="text-gray-400 text-xs font-black uppercase tracking-widest">ไม่พบรายชื่อเพื่อน</p>
               </div>
             ) : (
               friends.map(f => (
-                <div key={f.id} className="p-3 bg-white border border-gray-100 rounded-[1.5rem] hover:border-frog-200 hover:shadow-lg transition-all group flex items-center gap-3">
-                  <Link href={`/profile/${f.username}`} className="relative flex-shrink-0 group-hover:scale-105 transition-transform">
-                    <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border border-gray-50 shadow-sm" loading="lazy" />
-                    {f.is_online && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>}
+                <div key={f.id} className="p-3 bg-white border border-gray-100 rounded-[1.5rem] hover:border-frog-200 hover:shadow-xl hover:shadow-frog-500/5 transition-all group flex items-center gap-3">
+                  <Link href={`/profile/${f.username}`} className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
+                    <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border border-gray-50 shadow-sm" loading="lazy" alt="" />
+                    {f.is_online && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full shadow-sm"></div>}
                   </Link>
                   <div className="flex-1 min-w-0">
-                    <Link href={`/profile/${f.username}`} className="font-black text-sm hover:text-frog-600 truncate block transition-colors">{f.display_name}</Link>
+                    <Link href={`/profile/${f.username}`} className="font-black text-sm hover:text-frog-600 truncate block transition-colors leading-tight">{f.display_name}</Link>
                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{f.username}</p>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => { setSelectedFriendshipId(f.friendshipId); setShowRemoveConfirm(true); }} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="ลบเพื่อน"><Trash2 size={16} /></button>
+                    <button onClick={() => { setSelectedFriendshipId(f.friendshipId); setShowRemoveConfirm(true); }} className="p-2.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all active:scale-90" title="ลบเพื่อน"><Trash2 size={16} /></button>
                   </div>
                 </div>
               ))
@@ -285,10 +302,10 @@ export default function FriendsPage() {
 
         {/* Pagination Controls */}
         {totalPages > 1 && (
-          <div className="mt-8 flex items-center justify-center gap-2 pb-10">
-            <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-2 bg-white border border-gray-100 rounded-xl disabled:opacity-20 shadow-sm hover:bg-gray-50"><ChevronLeft size={18} /></button>
-            <div className="bg-white border border-gray-100 px-6 py-2 rounded-xl text-[10px] font-black text-gray-400 uppercase tracking-widest shadow-sm">PAGE {currentPage} OF {totalPages}</div>
-            <button disabled={currentPage === totalPages} onClick={() => { setCurrentPage(p => p + 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-2 bg-white border border-gray-100 rounded-xl disabled:opacity-20 shadow-sm hover:bg-gray-50"><ChevronRight size={18} /></button>
+          <div className="mt-8 flex items-center justify-center gap-3 pb-10">
+            <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-3 bg-white border border-gray-100 rounded-2xl disabled:opacity-20 shadow-sm hover:bg-gray-50 active:scale-90 transition-all"><ChevronLeft size={18} /></button>
+            <div className="bg-white border border-gray-100 px-6 py-2.5 rounded-2xl text-[10px] font-black text-gray-400 uppercase tracking-widest shadow-sm">PAGE {currentPage} OF {totalPages}</div>
+            <button disabled={currentPage === totalPages} onClick={() => { setCurrentPage(p => p + 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-3 bg-white border border-gray-100 rounded-2xl disabled:opacity-20 shadow-sm hover:bg-gray-50 active:scale-90 transition-all"><ChevronRight size={18} /></button>
           </div>
         )}
       </div>
