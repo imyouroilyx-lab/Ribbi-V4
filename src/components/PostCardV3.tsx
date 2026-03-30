@@ -76,7 +76,7 @@ const LinkPreview = ({ url }: { url: string }) => {
 };
 
 export default function PostCardV3({ post, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
-  // Post States
+  // States
   const [comments, setComments] = useState<Comment[]>([]);
   const [showComments, setShowComments] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -86,37 +86,34 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // Like List States
+  // Like List
   const [showLikeModal, setShowLikeModal] = useState(false);
   const [likedUsers, setLikedUsers] = useState<User[]>([]);
   const [isLoadingLikes, setIsLoadingLikes] = useState(false);
   const [likePage, setLikePage] = useState(0);
   const [hasMoreLikes, setHasMoreLikes] = useState(true);
 
-  // Comment States
+  // Comment & Reply inputs
   const [newComment, setNewComment] = useState('');
   const [commentImageUrl, setCommentImageUrl] = useState('');
   const [showCommentImageInput, setShowCommentImageInput] = useState(false);
-
-  // Reply States
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
   const [replyImageUrl, setReplyImageUrl] = useState('');
   const [showReplyImageInput, setShowReplyImageInput] = useState(false);
 
-  // Edit Comment States
+  // Edit Comment
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentContent, setEditCommentContent] = useState('');
   const [editCommentImageUrl, setEditCommentImageUrl] = useState('');
 
-  // Comment Interaction States
+  // Likes for comments
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
   const canDeletePost = post.author_id === currentUserId || profileOwnerId === currentUserId;
   const canEditPost = post.author_id === currentUserId;
 
-  // Like List Infinite Scroll Observer
   const likeObserver = useRef<IntersectionObserver | null>(null);
   const lastLikeRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoadingLikes) return;
@@ -203,14 +200,24 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     const to = from + LIKES_PER_PAGE - 1;
 
     try {
+      // ✅ ใช้ข้อมูลจริง: ดึงข้อมูลโปรไฟล์ผู้ใช้แบบเต็ม
       const { data } = await supabase
         .from('likes')
-        .select('users(id, username, display_name, profile_img_url)')
+        .select(`
+          users (
+            id, 
+            username, 
+            display_name, 
+            profile_img_url, 
+            created_at, 
+            updated_at
+          )
+        `)
         .eq('post_id', post.id)
         .range(from, to);
 
       if (data) {
-        const users = data.map(d => d.users).filter(Boolean) as User[];
+        const users = data.map((d: any) => d.users).filter(Boolean) as User[];
         setLikedUsers(prev => reset ? users : [...prev, ...users]);
         setHasMoreLikes(users.length === LIKES_PER_PAGE);
       }
@@ -343,8 +350,19 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     return parts.map((part, i) => {
       if (!part) return null;
       const mdMatch = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
-      if (mdMatch) return <Link key={i} href={`/profile/${mdMatch[2]}`} className="text-frog-600 font-semibold">{mdMatch[1]}</Link>;
-      if (part.startsWith('#')) return <span key={i} className="text-blue-500 font-medium">{part}</span>;
+      if (mdMatch) return <Link key={i} href={`/profile/${mdMatch[2]}`} className="text-frog-600 font-semibold hover:underline">{mdMatch[1]}</Link>;
+      
+      // ✅ Hashtag: คลิกได้ มีเส้นใต้ตอน Hover และ Pointer cursor
+      if (part.startsWith('#')) return (
+        <span 
+          key={i} 
+          onClick={(e) => e.preventDefault()} 
+          className="text-blue-500 font-bold hover:underline cursor-pointer transition-all"
+        >
+          {part}
+        </span>
+      );
+      
       if (part.startsWith('http')) return <a key={i} href={part} target="_blank" className="text-blue-500 hover:underline">{part}</a>;
       return <span key={i}>{part}</span>;
     });
@@ -491,7 +509,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
       )}
 
       <div className="flex items-center gap-6 pt-4 border-t border-gray-50">
-        {/* Like Button & Count (Clickable count) */}
         <div className="flex items-center gap-1.5 group/like">
           <button onClick={handleLike} className={`transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}>
             <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
@@ -557,17 +574,15 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         </div>
       )}
 
-      {/* --- Modals & Overlays --- */}
-
-      {/* Like List Modal */}
+      {/* --- Modals --- */}
       {showLikeModal && (
         <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowLikeModal(false)}>
           <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-black text-gray-900 flex items-center gap-2 uppercase tracking-widest text-xs">
-                <Heart size={16} className="text-red-500 fill-current" /> People who liked
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <h3 className="font-black text-gray-900 flex items-center gap-2 uppercase tracking-widest text-[10px]">
+                <Heart size={14} className="text-red-500 fill-current" /> People who liked
               </h3>
-              <button onClick={() => setShowLikeModal(false)} className="p-1 hover:bg-gray-100 rounded-full transition"><X size={20} /></button>
+              <button onClick={() => setShowLikeModal(false)} className="p-1.5 hover:bg-white rounded-full transition shadow-sm"><X size={18} /></button>
             </div>
             
             <div className="flex-1 overflow-y-auto no-scrollbar p-2">
@@ -576,17 +591,16 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
               ) : (
                 <div className="space-y-1">
                   {likedUsers.map((user, idx) => (
-                    <Link key={`${user.id}-${idx}`} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors">
-                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
+                    <Link key={`${user.id}-${idx}`} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors group">
+                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm group-hover:scale-105 transition-transform" />
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm text-gray-900 truncate">{user.display_name}</p>
                         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{user.username}</p>
                       </div>
-                      <ChevronRight size={14} className="text-gray-300" />
+                      <ChevronRight size={14} className="text-gray-300 group-hover:text-indigo-500 transition-colors" />
                     </Link>
                   ))}
                   
-                  {/* Intersection Point for Infinite Scroll */}
                   <div ref={lastLikeRef} className="h-4 w-full flex justify-center py-6">
                     {isLoadingLikes && <Loader2 size={20} className="animate-spin text-frog-500" />}
                   </div>
@@ -597,7 +611,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         </div>
       )}
 
-      {/* Image Lightbox */}
       {selectedImage && (
         <div className="fixed inset-0 bg-black/95 z-[120] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setSelectedImage(null)}>
           <button className="absolute top-6 right-6 text-white hover:scale-110 transition"><X size={32} /></button>
