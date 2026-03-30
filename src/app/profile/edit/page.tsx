@@ -14,6 +14,7 @@ const RELATIONSHIP_OPTIONS = [
   { id: 'engaged', label: 'หมั้น', emoji: '💍' },
   { id: 'married', label: 'แต่งงาน', emoji: '💒' },
   { id: 'complicated', label: 'ไม่ชัดเจน', emoji: '❓' },
+  { id: 'divorced', label: 'หย่าร้าง', emoji: '💔' }, // ✅ เพิ่มสถานะ หย่าร้าง
 ];
 
 interface FamilyMember {
@@ -112,7 +113,6 @@ export default function EditProfilePage() {
   const handleAddHobby = () => {
     const val = newHobbyInput.trim();
     if (!val) return;
-    // ป้องกันการกรอกซ้ำ
     if (formData.hobbies.some(h => h.name === val)) { 
       setNewHobbyInput(''); 
       return; 
@@ -125,7 +125,6 @@ export default function EditProfilePage() {
     setFormData({ ...formData, hobbies: formData.hobbies.filter((_, i) => i !== index) });
   };
 
-  // ✅ แก้ไขส่วนสำคัญ: ระบบบันทึก (เอา updated_at ออก และกำหนด Payload ตรงๆ)
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault(); 
     if (!currentUser) return;
@@ -214,7 +213,14 @@ export default function EditProfilePage() {
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Users className="w-5 h-5" /> ความสัมพันธ์</h2>
             <div className="space-y-4">
               <div><label className="block text-sm font-medium mb-2">สถานะ</label><select value={formData.relationship_status} onChange={(e) => setFormData({ ...formData, relationship_status: e.target.value })} className="input-minimal"><option value="">ไม่ระบุ</option>{RELATIONSHIP_OPTIONS.map(o => (<option key={o.id} value={o.id}>{o.emoji} {o.label}</option>))}</select></div>
-              {(formData.relationship_status === 'in_relationship' || formData.relationship_status === 'married') && (<div><label className="block text-sm font-medium mb-2">ชื่อคู่</label><input type="text" value={formData.relationship_custom_name} onChange={(e) => setFormData({ ...formData, relationship_custom_name: e.target.value })} className="input-minimal" placeholder="ชื่อคนพิเศษ" /></div>)}
+              
+              {/* ✅ เพิ่มเงื่อนไขให้สถานะ "หมั้น" สามารถกรอกชื่อคู่ได้ด้วย */}
+              {(formData.relationship_status === 'in_relationship' || formData.relationship_status === 'married' || formData.relationship_status === 'engaged') && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">ชื่อคู่</label>
+                  <input type="text" value={formData.relationship_custom_name} onChange={(e) => setFormData({ ...formData, relationship_custom_name: e.target.value })} className="input-minimal" placeholder="ชื่อคนพิเศษ" />
+                </div>
+              )}
               
               <div className="pt-2">
                 <p className="text-xs font-bold mb-3 text-gray-500 uppercase tracking-widest">ครอบครัวและเพื่อนสนิท</p>
@@ -270,7 +276,6 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* ✅ งานอดิเรก: นำตัวเลือก Default ออก ให้กรอกเองทั้งหมด */}
           <div className="card-minimal">
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Heart className="w-5 h-5 text-red-500" /> งานอดิเรก</h2>
             <div className="space-y-4">
