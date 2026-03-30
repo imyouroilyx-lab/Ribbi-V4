@@ -43,6 +43,7 @@ export default function FriendsPage() {
   const [totalFriends, setTotalFriends] = useState(0);
   
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState(''); // ✅ State สำหรับการหน่วงเวลาค้นหา
   const [currentPage, setCurrentPage] = useState(1);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [selectedFriendshipId, setSelectedFriendshipId] = useState<string | null>(null);
@@ -51,10 +52,18 @@ export default function FriendsPage() {
     loadInitialData();
   }, []);
 
-  // ✅ โหลดข้อมูลใหม่เมื่อ เปลี่ยนหน้า, พิมพ์ค้นหา หรือข้อมูล User พร้อม
+  // ✅ หน่วงเวลาการค้นหา 0.5 วินาที เพื่อไม่ให้ยิง Database ถี่เกินไป (ลดภาระ Disk IO)
   useEffect(() => {
-    if (currentUser) loadFriendsData();
-  }, [currentPage, searchQuery, currentUser]);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // โหลดข้อมูลเมื่อเปลี่ยนหน้า, พิมพ์ค้นหาเสร็จ หรือข้อมูล User พร้อม
+  useEffect(() => {
+    if (currentUser?.id) loadFriendsData();
+  }, [currentPage, debouncedSearch, currentUser?.id]);
 
   const loadInitialData = async () => {
     setIsLoading(true);
@@ -94,7 +103,6 @@ export default function FriendsPage() {
     const to = from + FRIENDS_PER_PAGE - 1;
 
     try {
-      // ✅ เรียงลำดับ a-z ผ่าน query และทำ Pagination 20 คน
       let query = supabase
         .from('friendships')
         .select(`
@@ -105,9 +113,9 @@ export default function FriendsPage() {
         .eq('status', 'accepted')
         .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`);
 
-      // ค้นหา
-      if (searchQuery) {
-        query = query.or(`sender.display_name.ilike.%${searchQuery}%,receiver.display_name.ilike.%${searchQuery}%`);
+      // ใช้คำค้นหาที่ถูกหน่วงเวลาแล้ว
+      if (debouncedSearch) {
+        query = query.or(`sender.display_name.ilike.%${debouncedSearch}%,receiver.display_name.ilike.%${debouncedSearch}%`);
       }
 
       const { data, count } = await query
@@ -124,7 +132,6 @@ export default function FriendsPage() {
         return null;
       }).filter(u => u !== null);
 
-      // ✅ จัดการเรียงลำดับ A-Z ในฝั่ง Client อีกรอบเพื่อความชัวร์ของชื่อแสดงผล
       const sortedFriends = friendsList.sort((a, b) => 
         a.display_name.localeCompare(b.display_name, 'th')
       );
@@ -135,32 +142,58 @@ export default function FriendsPage() {
     }
   };
 
+  // ✅ ปรับปรุง: อัปเดตหน้าจอทันที ไม่ต้องสั่งโหลด DB ใหม่ทั้งหมด
   const handleAcceptRequest = async (id: string, senderId: string) => {
     if (!currentUser) return;
     try {
       const { error } = await supabase.from('friendships').update({ status: 'accepted' }).eq('id', id);
       if (error) throw error;
+      
       await notifyFriendAccept(senderId, currentUser.id);
-      loadInitialData();
-      loadFriendsData();
+      
+      // ลบคำขอออกจากกล่อง Pending
+      const acceptedUser = pendingRequests.find(r => r.id === id);
+      setPendingRequests(prev => prev.filter(r => r.id !== id));
+      
+      // เพิ่มเข้าในรายชื่อเพื่อนทันที
+      if (acceptedUser && acceptedUser.sender) {
+        setFriends(prev => {
+          const newFriends = [...prev, { ...acceptedUser.sender, friendshipId: id }];
+          return newFriends.sort((a, b) => a.display_name.localeCompare(b.display_name, 'th'));
+        });
+        setTotalFriends(prev => prev + 1);
+      }
     } catch (error) {
       console.error('Error accepting friend:', error);
     }
   };
 
-  const handleCancelRequest = async (id: string) => {
-    await supabase.from('friendships').delete().eq('id', id);
-    loadInitialData();
+  // ✅ ปรับปรุง: อัปเดตหน้าจอทันที ไม่ต้องสั่งโหลด DB ใหม่ทั้งหมด
+  const handleCancelRequest = async (id: string, type: 'pending' | 'sent') => {
+    try {
+      await supabase.from('friendships').delete().eq('id', id);
+      if (type === 'pending') {
+        setPendingRequests(prev => prev.filter(r => r.id !== id));
+      } else {
+        setSentRequests(prev => prev.filter(r => r.id !== id));
+      }
+    } catch (error) {
+      console.error(error);
+    }
   };
 
+  // ✅ ปรับปรุง: ลบเพื่อนออกจากหน้าจอทันที
   const handleRemoveFriend = async () => {
     if (!selectedFriendshipId) return;
     try {
       const { error } = await supabase.from('friendships').delete().eq('id', selectedFriendshipId);
       if (error) throw error;
+      
+      setFriends(prev => prev.filter(f => f.friendshipId !== selectedFriendshipId));
+      setTotalFriends(prev => prev - 1);
+      
       setShowRemoveConfirm(false);
       setSelectedFriendshipId(null);
-      loadFriendsData();
     } catch (error) {
       console.error('Error removing friend:', error);
     }
@@ -206,7 +239,7 @@ export default function FriendsPage() {
                    </div>
                    <div className="flex gap-1.5">
                       <button onClick={() => handleAcceptRequest(r.id, r.sender_id)} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-sm"><Check size={14} /></button>
-                      <button onClick={() => handleCancelRequest(r.id)} className="p-2 bg-gray-100 text-gray-400 rounded-xl hover:bg-red-50 hover:text-red-500 transition"><X size={14} /></button>
+                      <button onClick={() => handleCancelRequest(r.id, 'pending')} className="p-2 bg-gray-100 text-gray-400 rounded-xl hover:bg-red-50 hover:text-red-500 transition"><X size={14} /></button>
                    </div>
                  </div>
                ))}
@@ -227,7 +260,7 @@ export default function FriendsPage() {
                    <div className="flex-1 min-w-0">
                      <p className="font-bold text-[10px] truncate text-gray-500">{r.receiver?.display_name}</p>
                    </div>
-                   <button onClick={() => handleCancelRequest(r.id)} className="text-[10px] font-black text-gray-400 hover:text-red-500 uppercase tracking-tighter">ยกเลิก</button>
+                   <button onClick={() => handleCancelRequest(r.id, 'sent')} className="text-[10px] font-black text-gray-400 hover:text-red-500 uppercase tracking-tighter">ยกเลิก</button>
                  </div>
                ))}
             </div>
