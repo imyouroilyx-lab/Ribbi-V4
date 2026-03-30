@@ -411,98 +411,92 @@ export default function ProfilePage() {
 
   const themeColor = profileUser.theme_color || '#9de5a8';
 
-  const RelationshipWidget = () => {
-    const hasData = profileUser.relationship_status || familyMembers.length > 0;
-    const canInteract = isOwnProfile || friendshipStatus === 'accepted';
+  // ✅ แก้ปัญหา Focus หลุด: ใช้การ Inline โค้ดแทนการนิยาม Function component ข้างใน
+  const relationshipContent = (
+    <div className="card-minimal bg-white shadow-sm border border-gray-100">
+      <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
+        <Heart className="w-4 h-4 text-red-500" />
+        ความสัมพันธ์
+      </h3>
+      
+      {profileUser.relationship_status && (
+        <div className="mb-4 p-3 bg-red-50/50 rounded-2xl border border-red-50">
+           <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1 opacity-70">สถานะหัวใจ</p>
+           <p className="text-sm font-bold text-gray-900">
+              {profileUser.relationship_status === 'single' && '👤 โสด'}
+              {profileUser.relationship_status === 'in_relationship' && '❤️ มีแฟนแล้ว'}
+              {profileUser.relationship_status === 'engaged' && '💍 หมั้นแล้ว'}
+              {profileUser.relationship_status === 'married' && '💒 แต่งงานแล้ว'}
+              {profileUser.relationship_status === 'complicated' && '❓ ไม่ชัดเจน'}
+              {profileUser.relationship_custom_name && <span className="text-frog-600"> กับ {profileUser.relationship_custom_name}</span>}
+           </p>
+        </div>
+      )}
 
-    if (!hasData && !canInteract) return null;
+      {familyMembers.length > 0 ? (
+        <div className="space-y-3">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">ครอบครัวและคนใกล้ชิด</p>
+          {familyMembers.map((fm) => (
+            <div key={fm.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-2xl group transition hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100">
+              <img src={fm.member.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-9 h-9 rounded-xl object-cover shadow-sm" alt="" />
+              <div className="flex-1 min-w-0">
+                <Link href={`/profile/${fm.member.username}`} className="font-bold text-xs hover:text-frog-600 truncate block">{fm.member.display_name}</Link>
+                <p className="text-[10px] text-gray-400 font-medium">{fm.relationship_label}</p>
+              </div>
+              {isOwnProfile && (
+                <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="p-1.5 text-gray-300 hover:text-red-500 transition opacity-0 lg:group-hover:opacity-100">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (profileUser.relationship_status || familyMembers.length > 0) && (
+        <p className="text-[10px] text-gray-400 italic px-1">ยังไม่มีรายชื่อคนใกล้ชิด</p>
+      )}
 
-    return (
-      <div className="card-minimal bg-white shadow-sm border border-gray-100">
-        <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
-          <Heart className="w-4 h-4 text-red-500" />
-          ความสัมพันธ์
-        </h3>
-        
-        {profileUser.relationship_status && (
-          <div className="mb-4 p-3 bg-red-50/50 rounded-2xl border border-red-50">
-             <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1 opacity-70">สถานะหัวใจ</p>
-             <p className="text-sm font-bold text-gray-900">
-                {profileUser.relationship_status === 'single' && '👤 โสด'}
-                {profileUser.relationship_status === 'in_relationship' && '❤️ มีแฟนแล้ว'}
-                {profileUser.relationship_status === 'engaged' && '💍 หมั้นแล้ว'}
-                {profileUser.relationship_status === 'married' && '💒 แต่งงานแล้ว'}
-                {profileUser.relationship_status === 'complicated' && '❓ ไม่ชัดเจน'}
-                {profileUser.relationship_custom_name && <span className="text-frog-600"> กับ {profileUser.relationship_custom_name}</span>}
-             </p>
-          </div>
-        )}
-
-        {familyMembers.length > 0 ? (
-          <div className="space-y-3">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">ครอบครัวและคนใกล้ชิด</p>
-            {familyMembers.map((fm) => (
-              <div key={fm.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-2xl group transition hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100">
-                <img src={fm.member.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-9 h-9 rounded-xl object-cover shadow-sm" alt="" />
-                <div className="flex-1 min-w-0">
-                  <Link href={`/profile/${fm.member.username}`} className="font-bold text-xs hover:text-frog-600 truncate block">{fm.member.display_name}</Link>
-                  <p className="text-[10px] text-gray-400 font-medium">{fm.relationship_label}</p>
+      {!isOwnProfile && friendshipStatus === 'accepted' && (
+        <div className="mt-4">
+          {!showAddFamily ? (
+            <button onClick={() => setShowAddFamily(true)} className="w-full py-2.5 text-[10px] font-black uppercase text-frog-600 hover:bg-frog-50 rounded-xl transition border border-dashed border-frog-200 flex items-center justify-center gap-2">
+              <Plus size={14} /> เพิ่มไปยังโปรไฟล์ของฉัน
+            </button>
+          ) : (
+            <div className="p-3 bg-frog-50 rounded-2xl border border-frog-100 animate-in fade-in slide-in-from-top-1">
+              {isSaved ? (
+                <div className="flex flex-col items-center py-2 text-frog-600 animate-in zoom-in">
+                  <CheckCircle2 size={32} className="mb-2" />
+                  <p className="text-xs font-black">บันทึกเรียบร้อย!</p>
+                  <p className="text-[10px] opacity-70">ดูได้ที่หน้าโปรไฟล์ของคุณ</p>
                 </div>
-                {isOwnProfile && (
-                  <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="p-1.5 text-gray-300 hover:text-red-500 transition opacity-0 lg:group-hover:opacity-100">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : hasData && (
-          <p className="text-[10px] text-gray-400 italic px-1">ยังไม่มีรายชื่อคนใกล้ชิด</p>
-        )}
-
-        {!isOwnProfile && friendshipStatus === 'accepted' && (
-          <div className="mt-4">
-            {!showAddFamily ? (
-              <button onClick={() => setShowAddFamily(true)} className="w-full py-2.5 text-[10px] font-black uppercase text-frog-600 hover:bg-frog-50 rounded-xl transition border border-dashed border-frog-200 flex items-center justify-center gap-2">
-                <Plus size={14} /> เพิ่มไปยังโปรไฟล์ของฉัน
-              </button>
-            ) : (
-              <div className="p-3 bg-frog-50 rounded-2xl border border-frog-100 animate-in fade-in slide-in-from-top-1">
-                {isSaved ? (
-                  <div className="flex flex-col items-center py-2 text-frog-600 animate-in zoom-in">
-                    <CheckCircle2 size={32} className="mb-2" />
-                    <p className="text-xs font-black">บันทึกเรียบร้อย!</p>
-                    <p className="text-[10px] opacity-70">ดูได้ที่หน้าโปรไฟล์ของคุณ</p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold text-frog-700">เพิ่ม {profileUser.display_name} เป็น...</p>
+                    <button onClick={() => setShowAddFamily(false)}><X className="w-4 h-4 text-frog-400" /></button>
                   </div>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-bold text-frog-700">เพิ่ม {profileUser.display_name} เป็น...</p>
-                      <button onClick={() => setShowAddFamily(false)}><X className="w-4 h-4 text-frog-400" /></button>
-                    </div>
-                    <input 
-                      type="text" 
-                      value={newRelationship} 
-                      onChange={(e) => setNewRelationship(e.target.value)} 
-                      placeholder="เช่น พี่ชาย, เพื่อนสนิท..." 
-                      className="w-full px-3 py-2 bg-white border border-frog-200 rounded-xl text-xs focus:ring-2 focus:ring-frog-500 outline-none mb-2" 
-                    />
-                    <button 
-                      onClick={handleAddFamilyMember} 
-                      disabled={!newRelationship.trim()}
-                      className="w-full py-2 bg-frog-600 text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50"
-                    >
-                      บันทึกความสัมพันธ์
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
+                  <input 
+                    type="text" 
+                    value={newRelationship} 
+                    onChange={(e) => setNewRelationship(e.target.value)} 
+                    placeholder="เช่น พี่ชาย, เพื่อนสนิท..." 
+                    className="w-full px-3 py-2 bg-white border border-frog-200 rounded-xl text-xs focus:ring-2 focus:ring-frog-500 outline-none mb-2" 
+                  />
+                  <button 
+                    onClick={handleAddFamilyMember} 
+                    disabled={!newRelationship.trim()}
+                    className="w-full py-2 bg-frog-600 text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50"
+                  >
+                    บันทึกความสัมพันธ์
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <NavLayout>
@@ -524,6 +518,7 @@ export default function ProfilePage() {
 
               <div className="p-4 md:p-6 bg-white">
                 <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6 -mt-20 mb-6">
+                  {/* ✅ รูปโปรไฟล์: วงกลม (rounded-full) */}
                   <div 
                     className="w-24 h-24 md:w-36 md:h-36 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0"
                     style={{ borderColor: themeColor, borderWidth: '4px' }}
@@ -683,7 +678,6 @@ export default function ProfilePage() {
                     )}
                   </div>
 
-                  {/* ส่วนแสดงงานอดิเรก (Hobbies) */}
                   {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
                     <div className="flex flex-wrap gap-2 pt-2">
                       {profileUser.hobbies.map((hobby: any, index: number) => (
@@ -729,7 +723,8 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              <RelationshipWidget />
+              {/* ✅ Relationship Widget Mobile */}
+              { (profileUser.relationship_status || familyMembers.length > 0 || friendshipStatus === 'accepted') && relationshipContent }
             </div>
 
             {(friendshipStatus === 'accepted' || isOwnProfile) && blockStatus === 'none' && (
@@ -804,7 +799,8 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              <RelationshipWidget />
+              {/* ✅ Relationship Widget Desktop */}
+              { (profileUser.relationship_status || familyMembers.length > 0 || friendshipStatus === 'accepted') && relationshipContent }
 
               <div className="text-center opacity-40 hover:opacity-100 transition">
                 <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">Ribbi Community</p>
