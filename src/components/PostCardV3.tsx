@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, Post, User } from '@/lib/supabase';
-import { Heart, MessageCircle, Trash2, MapPin, Image as ImageIcon, X, Edit2, Check, Link2, Send, MoreHorizontal } from 'lucide-react';
+import { Heart, MessageCircle, Trash2, Image as ImageIcon, X, Edit2, Send, Loader2, ChevronRight, User as UserIcon } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -24,6 +24,8 @@ interface PostCardProps {
   onDelete?: (postId: string) => void;
   profileOwnerId?: string;
 }
+
+const LIKES_PER_PAGE = 20;
 
 const LinkPreview = ({ url }: { url: string }) => {
   const [preview, setPreview] = useState<any>(null);
@@ -74,8 +76,8 @@ const LinkPreview = ({ url }: { url: string }) => {
 };
 
 export default function PostCardV3({ post, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
+  // Post States
   const [comments, setComments] = useState<Comment[]>([]);
-  const [newComment, setNewComment] = useState('');
   const [showComments, setShowComments] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
@@ -83,31 +85,52 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
   const [isLiked, setIsLiked] = useState(false);
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  
-  // States สำหรับคอมเมนต์
+
+  // Like List States
+  const [showLikeModal, setShowLikeModal] = useState(false);
+  const [likedUsers, setLikedUsers] = useState<User[]>([]);
+  const [isLoadingLikes, setIsLoadingLikes] = useState(false);
+  const [likePage, setLikePage] = useState(0);
+  const [hasMoreLikes, setHasMoreLikes] = useState(true);
+
+  // Comment States
+  const [newComment, setNewComment] = useState('');
   const [commentImageUrl, setCommentImageUrl] = useState('');
   const [showCommentImageInput, setShowCommentImageInput] = useState(false);
 
-  // States สำหรับการตอบกลับ (Reply)
+  // Reply States
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
   const [replyImageUrl, setReplyImageUrl] = useState('');
   const [showReplyImageInput, setShowReplyImageInput] = useState(false);
 
-  // States สำหรับการแก้ไขคอมเมนต์ (Edit Comment)
+  // Edit Comment States
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentContent, setEditCommentContent] = useState('');
   const [editCommentImageUrl, setEditCommentImageUrl] = useState('');
 
-  // States สำหรับการไลก์คอมเมนต์
+  // Comment Interaction States
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
   const canDeletePost = post.author_id === currentUserId || profileOwnerId === currentUserId;
   const canEditPost = post.author_id === currentUserId;
 
+  // Like List Infinite Scroll Observer
+  const likeObserver = useRef<IntersectionObserver | null>(null);
+  const lastLikeRef = useCallback((node: HTMLDivElement | null) => {
+    if (isLoadingLikes) return;
+    if (likeObserver.current) likeObserver.current.disconnect();
+    likeObserver.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMoreLikes) {
+        setLikePage(prev => prev + 1);
+      }
+    });
+    if (node) likeObserver.current.observe(node);
+  }, [isLoadingLikes, hasMoreLikes]);
+
   useEffect(() => {
-    loadLikes();
+    loadLikeCount();
     checkIfLiked();
     loadCommentCount();
     
@@ -118,7 +141,10 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
 
     const channel = supabase
       .channel(`post-updates-${post.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `post_id=eq.${post.id}` }, () => loadLikes())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `post_id=eq.${post.id}` }, () => {
+        loadLikeCount();
+        if (showLikeModal) fetchLikedUsers(0, true);
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `post_id=eq.${post.id}` }, () => {
         loadComments();
         loadCommentCount();
@@ -131,9 +157,68 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     return () => { void supabase.removeChannel(channel); };
   }, [post.id, showComments]);
 
+  useEffect(() => {
+    if (showLikeModal && likePage > 0) {
+      fetchLikedUsers(likePage);
+    }
+  }, [likePage, showLikeModal]);
+
+  const loadLikeCount = async () => {
+    const { count } = await supabase.from('likes').select('*', { count: 'exact', head: true }).eq('post_id', post.id);
+    setLikeCount(count || 0);
+  };
+
   const loadCommentCount = async () => {
     const { count } = await supabase.from('comments').select('*', { count: 'exact', head: true }).eq('post_id', post.id);
     setCommentCount(count || 0);
+  };
+
+  const checkIfLiked = async () => {
+    const { data } = await supabase.from('likes').select('id').eq('post_id', post.id).eq('user_id', currentUserId).maybeSingle();
+    setIsLiked(!!data);
+  };
+
+  const handleLike = async () => {
+    if (isLiked) {
+      setIsLiked(false); setLikeCount(prev => prev - 1);
+      await supabase.from('likes').delete().eq('post_id', post.id).eq('user_id', currentUserId);
+    } else {
+      setIsLiked(true); setLikeCount(prev => prev + 1);
+      await supabase.from('likes').insert({ post_id: post.id, user_id: currentUserId });
+    }
+  };
+
+  const openLikeModal = () => {
+    setLikedUsers([]);
+    setLikePage(0);
+    setHasMoreLikes(true);
+    setShowLikeModal(true);
+    fetchLikedUsers(0, true);
+  };
+
+  const fetchLikedUsers = async (page: number, reset = false) => {
+    if (isLoadingLikes) return;
+    setIsLoadingLikes(true);
+    const from = page * LIKES_PER_PAGE;
+    const to = from + LIKES_PER_PAGE - 1;
+
+    try {
+      const { data } = await supabase
+        .from('likes')
+        .select('users(id, username, display_name, profile_img_url)')
+        .eq('post_id', post.id)
+        .range(from, to);
+
+      if (data) {
+        const users = data.map(d => d.users).filter(Boolean) as User[];
+        setLikedUsers(prev => reset ? users : [...prev, ...users]);
+        setHasMoreLikes(users.length === LIKES_PER_PAGE);
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsLoadingLikes(false);
+    }
   };
 
   const loadComments = async () => {
@@ -176,26 +261,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         setLikedComments(userLiked);
       }
     } catch (error) { console.error(error); }
-  };
-
-  const loadLikes = async () => {
-    const { data } = await supabase.from('likes').select('user_id').eq('post_id', post.id);
-    if (data) setLikeCount(data.length);
-  };
-
-  const checkIfLiked = async () => {
-    const { data } = await supabase.from('likes').select('id').eq('post_id', post.id).eq('user_id', currentUserId).maybeSingle();
-    setIsLiked(!!data);
-  };
-
-  const handleLike = async () => {
-    if (isLiked) {
-      setIsLiked(false); setLikeCount(prev => prev - 1);
-      await supabase.from('likes').delete().eq('post_id', post.id).eq('user_id', currentUserId);
-    } else {
-      setIsLiked(true); setLikeCount(prev => prev + 1);
-      await supabase.from('likes').insert({ post_id: post.id, user_id: currentUserId });
-    }
   };
 
   const handleCommentLike = async (commentId: string) => {
@@ -388,7 +453,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
   };
 
   return (
-    <div className="card-minimal border border-gray-100 shadow-sm">
+    <div className="card-minimal border border-gray-100 shadow-sm relative">
       <div className="flex items-start gap-3 mb-4">
         {post.author && (
           <Link href={`/profile/${post.author.username}`} className="flex-shrink-0">
@@ -426,10 +491,16 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
       )}
 
       <div className="flex items-center gap-6 pt-4 border-t border-gray-50">
-        <button onClick={handleLike} className={`flex items-center gap-2 transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}>
-          <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
-          <span className="text-xs font-black">{likeCount}</span>
-        </button>
+        {/* Like Button & Count (Clickable count) */}
+        <div className="flex items-center gap-1.5 group/like">
+          <button onClick={handleLike} className={`transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}>
+            <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
+          </button>
+          <button onClick={openLikeModal} className="text-xs font-black text-gray-500 hover:underline">
+            {likeCount}
+          </button>
+        </div>
+
         <button onClick={() => setShowComments(!showComments)} className={`flex items-center gap-2 transition-colors ${showComments ? 'text-frog-600' : 'text-gray-400 hover:text-frog-600'}`}>
           <MessageCircle className="w-5 h-5" />
           <span className="text-xs font-black">{commentCount}</span>
@@ -486,8 +557,49 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         </div>
       )}
 
+      {/* --- Modals & Overlays --- */}
+
+      {/* Like List Modal */}
+      {showLikeModal && (
+        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowLikeModal(false)}>
+          <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-black text-gray-900 flex items-center gap-2 uppercase tracking-widest text-xs">
+                <Heart size={16} className="text-red-500 fill-current" /> People who liked
+              </h3>
+              <button onClick={() => setShowLikeModal(false)} className="p-1 hover:bg-gray-100 rounded-full transition"><X size={20} /></button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto no-scrollbar p-2">
+              {likedUsers.length === 0 && !isLoadingLikes ? (
+                <div className="py-10 text-center text-gray-400 italic text-sm">No likes yet.</div>
+              ) : (
+                <div className="space-y-1">
+                  {likedUsers.map((user, idx) => (
+                    <Link key={`${user.id}-${idx}`} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors">
+                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm text-gray-900 truncate">{user.display_name}</p>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{user.username}</p>
+                      </div>
+                      <ChevronRight size={14} className="text-gray-300" />
+                    </Link>
+                  ))}
+                  
+                  {/* Intersection Point for Infinite Scroll */}
+                  <div ref={lastLikeRef} className="h-4 w-full flex justify-center py-6">
+                    {isLoadingLikes && <Loader2 size={20} className="animate-spin text-frog-500" />}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Lightbox */}
       {selectedImage && (
-        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setSelectedImage(null)}>
+        <div className="fixed inset-0 bg-black/95 z-[120] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setSelectedImage(null)}>
           <button className="absolute top-6 right-6 text-white hover:scale-110 transition"><X size={32} /></button>
           <img src={selectedImage} className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" alt="" />
         </div>
