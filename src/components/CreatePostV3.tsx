@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { supabase, User } from '@/lib/supabase';
 import { Image, Smile, MapPin, X, Activity } from 'lucide-react';
 import dynamic from 'next/dynamic';
@@ -34,6 +34,7 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
   const [showMentions, setShowMentions] = useState(false);
   const [mentionResults, setMentionResults] = useState<any[]>([]);
   const [cursorIndex, setCursorIndex] = useState(0);
+  const [mentionSearchQuery, setMentionSearchQuery] = useState<string | null>(null); // ✅ เพิ่ม State สำหรับคำค้นหา
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleAddImage = () => {
@@ -47,21 +48,32 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
     setImageUrls(imageUrls.filter((_, i) => i !== index));
   };
 
-  const checkMention = async (val: string, cursor: number) => {
+  // ✅ 1. ฟังก์ชันนี้ทำหน้าที่แค่ "ตรวจสอบ" ว่ากำลังพิมพ์ @ อยู่ไหม (ไม่ยิง DB) เพื่อให้พิมพ์ลื่นสุดๆ
+  const detectMention = (val: string, cursor: number) => {
     const textBeforeCursor = val.slice(0, cursor);
     const mentionMatch = textBeforeCursor.match(/(?:\s|^)@([a-zA-Z0-9_ก-๙]*)$/);
 
     if (mentionMatch) {
-      const query = mentionMatch[1];
+      setMentionSearchQuery(mentionMatch[1]);
       setShowMentions(true);
+    } else {
+      setMentionSearchQuery(null);
+      setShowMentions(false);
+    }
+  };
 
+  // ✅ 2. ระบบ Debounce: ยิง DB ก็ต่อเมื่อผู้ใช้ "หยุดพิมพ์" ไปแล้ว 0.3 วินาที
+  useEffect(() => {
+    if (mentionSearchQuery === null) return;
+
+    const timer = setTimeout(async () => {
       try {
-        if (query.length > 0) {
+        if (mentionSearchQuery.length > 0) {
           const { data } = await supabase
             .from('users')
             .select('id, username, display_name, profile_img_url')
             .neq('id', currentUser.id)
-            .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
+            .or(`username.ilike.%${mentionSearchQuery}%,display_name.ilike.%${mentionSearchQuery}%`)
             .limit(5);
           setMentionResults(data || []);
         } else {
@@ -75,22 +87,22 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
       } catch (error) {
         console.error('Error fetching mentions:', error);
       }
-    } else {
-      setShowMentions(false);
-    }
-  };
+    }, 300); // หน่วงเวลา 300ms
+
+    return () => clearTimeout(timer);
+  }, [mentionSearchQuery, currentUser.id]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setContent(val);
     setCursorIndex(e.target.selectionStart);
-    checkMention(val, e.target.selectionStart);
+    detectMention(val, e.target.selectionStart); // เช็คตอนพิมพ์
   };
 
   const handleSelectionChange = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
     const target = e.target as HTMLTextAreaElement;
     setCursorIndex(target.selectionStart);
-    checkMention(target.value, target.selectionStart);
+    detectMention(target.value, target.selectionStart); // เช็คตอนคลิกหรือเลื่อนลูกศร
   };
 
   const insertMention = (user: any) => {
@@ -106,6 +118,7 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
     }
     
     setShowMentions(false);
+    setMentionSearchQuery(null);
     if (textareaRef.current) {
       textareaRef.current.focus();
     }
@@ -192,6 +205,7 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
       setShowMoodActivityPicker(false);
       setShowLocationInput(false);
       setShowMentions(false);
+      setMentionSearchQuery(null);
 
       if (onPostCreated) {
         onPostCreated();
