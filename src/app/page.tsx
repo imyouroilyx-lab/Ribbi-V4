@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, User, Post } from '@/lib/supabase';
+import { supabase, type User, type Post } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import NavLayout from '@/components/NavLayout';
 import PostCardV3 from '@/components/PostCardV3';
 import CreatePostV3 from '@/components/CreatePostV3';
 import ConfirmModal from '@/components/ConfirmModal';
 import Link from 'next/link';
-import { Users, Circle, ChevronRight } from 'lucide-react';
+import { Users, Circle, ChevronRight, RefreshCw, Loader2 } from 'lucide-react';
 
 const POSTS_PER_PAGE = 15;
 
@@ -19,6 +19,7 @@ export default function HomePage() {
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isOnlineLoading, setIsOnlineLoading] = useState(false); // ✅ สถานะโหลดคนออนไลน์
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -41,6 +42,7 @@ export default function HomePage() {
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
 
+  // โหลดข้อมูลหลักตอนเข้าหน้าเว็บ
   useEffect(() => {
     loadInitialData();
   }, [refreshTrigger]);
@@ -51,33 +53,30 @@ export default function HomePage() {
     }
   }, [page]);
 
-  // ✅ แก้ไข: ระบบออนไลน์ (ป้องกันการยิง DB รัวๆ เวลารีเฟรชหน้าจอถี่ๆ ช่วยลด Disk IO)
+  // ระบบอัปเดตสถานะออนไลน์ (Throttled)
   useEffect(() => {
     if (!currentUser) return;
     const updateActivity = async () => {
       const lastUpdated = sessionStorage.getItem('last_active_update');
       const now = Date.now();
-      // อัปเดต Database เฉพาะตอนที่ห่างจากการอัปเดตครั้งล่าสุดเกิน 1 นาทีเท่านั้น
-      if (!lastUpdated || now - parseInt(lastUpdated) > 60000) {
+      // อัปเดต DB เฉพาะตอนที่ห่างจากครั้งล่าสุดเกิน 2 นาที (ประหยัด IO ขึ้นอีก)
+      if (!lastUpdated || now - parseInt(lastUpdated) > 120000) {
         await supabase.from('users').update({ last_active: new Date().toISOString() }).eq('id', currentUser.id);
         sessionStorage.setItem('last_active_update', now.toString());
       }
     };
     
     updateActivity();
+    // อัปเดตตัวเองทุก 5 นาทีพอครับ ไม่ต้องบ่อย
     const interval = setInterval(updateActivity, 5 * 60 * 1000); 
     return () => clearInterval(interval);
   }, [currentUser]);
 
-  // รีโหลดคนออนไลน์
+  // ✅ โหลดรายชื่อคนออนไลน์ "แค่ครั้งเดียว" ตอนเข้าหน้าเว็บ และไม่มีการตั้ง interval อีก
   useEffect(() => {
-    if (!currentUser) return;
-    const timer = setTimeout(() => loadOnlineUsers(), 1500);
-    const interval = setInterval(() => loadOnlineUsers(), 60 * 1000); 
-    return () => {
-      clearTimeout(timer);
-      clearInterval(interval);
-    };
+    if (currentUser) {
+      loadOnlineUsers();
+    }
   }, [currentUser]);
 
   const loadInitialData = async () => {
@@ -86,6 +85,7 @@ export default function HomePage() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
 
+      // ดึงข้อมูล User และ Post พร้อมกัน
       const [userDataRes, postsDataRes] = await Promise.all([
         supabase.from('users').select('*').eq('id', authUser.id).single(),
         supabase
@@ -110,8 +110,6 @@ export default function HomePage() {
   const loadMorePosts = async () => {
     if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
-
-    // ❌ ลบตัวหน่วง 3 วินาที (setTimeout 3000) ที่ทำให้เว็บค้างออกไปแล้วครับ!
     
     const start = page * POSTS_PER_PAGE;
     const end = start + POSTS_PER_PAGE - 1;
@@ -136,18 +134,26 @@ export default function HomePage() {
     }
   };
 
+  // ✅ ปรับปรุง: ฟังก์ชันโหลดคนออนไลน์ เพิ่ม Loading State
   const loadOnlineUsers = async () => {
+    if (isOnlineLoading) return;
+    setIsOnlineLoading(true);
     try {
+      // นิยามคำว่า "ออนไลน์" คือเคลื่อนไหวใน 10 นาทีล่าสุด
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from('users')
         .select('id, username, display_name, profile_img_url, last_active') 
         .gte('last_active', tenMinutesAgo)
         .order('last_active', { ascending: false })
-        .limit(15); 
+        .limit(12); // เอามาแค่ 12 คนพอประหยัดที่
       
       setOnlineUsers((data as any) || []);
-    } catch (error) { console.error(error); }
+    } catch (error) { 
+      console.error(error); 
+    } finally {
+      setIsOnlineLoading(false);
+    }
   };
 
   const handlePostCreated = () => {
@@ -168,10 +174,7 @@ export default function HomePage() {
     return (
       <NavLayout>
         <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-16 h-16 mx-auto mb-4 animate-bounce" />
-            <p className="text-gray-600 font-medium">กำลังเตรียมหน้าหลัก...</p>
-          </div>
+          <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-16 h-16 animate-bounce" />
         </div>
       </NavLayout>
     );
@@ -184,26 +187,31 @@ export default function HomePage() {
       <div className="max-w-7xl mx-auto px-2 md:px-4">
         <div className="flex flex-col lg:flex-row gap-6">
           
-          {/* Main Content (Left) */}
           <div className="flex-1 min-w-0 space-y-6">
             
             {/* MOBILE ONLY: Online Users Horizontal Scroll */}
             <div className="lg:hidden">
               <div className="flex items-center justify-between mb-2 px-1">
                 <h3 className="text-sm font-bold flex items-center gap-2">
-                  <Circle className="w-2 h-2 fill-green-500 text-green-500 animate-pulse" />
+                  <Circle className="w-2 h-2 fill-green-500 text-green-500" />
                   ออนไลน์ขณะนี้ ({onlineUsers.length})
                 </h3>
-                <Link href="/users" className="text-xs text-frog-600 font-semibold">ดูสมาชิกทั้งหมด</Link>
+                <button 
+                  onClick={loadOnlineUsers}
+                  disabled={isOnlineLoading}
+                  className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin' : ''} text-gray-400`} />
+                </button>
               </div>
               <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
                 {onlineUsers.map((user) => (
-                  <Link key={user.id} href={`/profile/${user.username}`} className="flex flex-col items-center gap-1 flex-shrink-0 w-16">
+                  <Link key={user.id} href={`/profile/${user.username}`} className="flex flex-col items-center gap-1 flex-shrink-0 w-16 group">
                     <div className="relative">
-                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border-2 border-white shadow-sm" loading="lazy" alt="" />
+                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border-2 border-white shadow-sm group-hover:scale-105 transition-transform" loading="lazy" alt="" />
                       <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
                     </div>
-                    <p className="text-[10px] font-medium truncate w-full text-center">{user.display_name.split(' ')[0]}</p>
+                    <p className="text-[10px] font-bold truncate w-full text-center text-gray-700">{user.display_name.split(' ')[0]}</p>
                   </Link>
                 ))}
               </div>
@@ -214,8 +222,8 @@ export default function HomePage() {
             <div className="space-y-6">
               {posts.length === 0 && !isLoading ? (
                 <div className="card-minimal text-center py-12">
-                  <img src="https://iili.io/qbtgKBt.png" alt="No posts" className="w-24 h-24 mx-auto mb-4 opacity-50" />
-                  <p className="text-gray-500">ยังไม่มีโพสต์ในขณะนี้</p>
+                  <img src="https://iili.io/qbtgKBt.png" alt="No posts" className="w-20 h-20 mx-auto mb-4 opacity-30 grayscale" />
+                  <p className="text-gray-400 font-bold text-sm uppercase tracking-widest">ยังไม่มีโพสต์ในขณะนี้</p>
                 </div>
               ) : (
                 <>
@@ -233,7 +241,7 @@ export default function HomePage() {
                   })}
                   {isLoadingMore && (
                     <div className="text-center py-6">
-                      <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-10 h-10 mx-auto mb-2 animate-bounce" />
+                      <Loader2 className="w-8 h-8 text-frog-500 animate-spin mx-auto" />
                     </div>
                   )}
                 </>
@@ -245,21 +253,28 @@ export default function HomePage() {
           <div className="hidden lg:block w-80 flex-shrink-0">
             <div className="sticky top-4 space-y-6">
               
-              {/* Online Users Widget */}
-              <div className="card-minimal bg-white/90 backdrop-blur-sm border border-gray-100 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-lg flex items-center gap-2">
-                    <Circle className="w-2.5 h-2.5 fill-green-500 text-green-500 animate-pulse" />
-                    ออนไลน์
+              {/* Online Users Widget ✅ ปรับปรุงให้กดรีเฟรชได้เอง */}
+              <div className="card-minimal bg-white/90 border border-gray-100 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
+                  <h3 className="font-black text-xs uppercase tracking-widest flex items-center gap-2">
+                    <Circle className="w-2 h-2 fill-green-500 text-green-500 animate-pulse" />
+                    ออนไลน์ขณะนี้
                   </h3>
-                  <span className="text-xs font-bold bg-green-50 text-green-600 px-2.5 py-0.5 rounded-full border border-green-100">
-                    {onlineUsers.length}
-                  </span>
+                  <button 
+                    onClick={loadOnlineUsers}
+                    disabled={isOnlineLoading}
+                    className="p-1.5 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-gray-200"
+                    title="รีเฟรชรายชื่อ"
+                  >
+                    <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin' : ''} text-frog-600`} />
+                  </button>
                 </div>
 
-                <div className="space-y-1 max-h-[450px] overflow-y-auto custom-scrollbar mb-4">
-                  {onlineUsers.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-6 italic">ไม่มีผู้ใช้ออนไลน์</p>
+                <div className="p-2 space-y-1 max-h-[400px] overflow-y-auto custom-scrollbar">
+                  {isOnlineLoading && onlineUsers.length === 0 ? (
+                    <div className="py-10 flex justify-center"><Loader2 className="animate-spin text-gray-200" /></div>
+                  ) : onlineUsers.length === 0 ? (
+                    <p className="text-[10px] font-bold text-gray-300 text-center py-8 uppercase tracking-tighter italic">ไม่มีผู้ใช้ออนไลน์</p>
                   ) : (
                     onlineUsers.map((user) => (
                       <Link key={user.id} href={`/profile/${user.username}`} className="flex items-center gap-3 p-2 rounded-2xl hover:bg-frog-50 transition-all group">
@@ -268,28 +283,28 @@ export default function HomePage() {
                           <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm truncate text-gray-900">{user.display_name}</p>
-                          <p className="text-[10px] text-gray-400 truncate tracking-tighter">@{user.username}</p>
+                          <p className="font-bold text-sm truncate text-gray-900 leading-none mb-1">{user.display_name}</p>
+                          <p className="text-[10px] text-gray-400 truncate font-medium">@{user.username}</p>
                         </div>
                       </Link>
                     ))
                   )}
                 </div>
 
-                {/* ปุ่มใหม่สำหรับไปหน้าสมาชิกทั้งหมด */}
-                <Link 
-                  href="/users" 
-                  className="flex items-center justify-center gap-2 w-full py-3 bg-slate-900 text-white rounded-2xl text-sm font-bold hover:bg-slate-800 transition-all shadow-md group"
-                >
-                  <Users className="w-4 h-4" />
-                  ดูสมาชิกทั้งหมด
-                  <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </Link>
+                <div className="p-3 bg-gray-50/50 border-t border-gray-100">
+                  <Link 
+                    href="/users" 
+                    className="flex items-center justify-center gap-2 w-full py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all shadow-sm"
+                  >
+                    <Users size={14} />
+                    ดูสมาชิกทั้งหมด
+                    <ChevronRight size={12} />
+                  </Link>
+                </div>
               </div>
 
-              {/* Branding */}
               <div className="text-center">
-                <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Ribbi Community Platform</p>
+                <p className="text-[9px] text-gray-300 uppercase font-black tracking-[0.2em]">Ribbi Community Platform</p>
               </div>
 
             </div>
@@ -303,8 +318,6 @@ export default function HomePage() {
         onConfirm={handleDeletePost}
         title="ต้องการลบโพสต์นี้?"
         message="การกระทำนี้ไม่สามารถย้อนกลับได้ โพสต์ของคุณจะหายไปจากระบบทันที"
-        confirmText="ยืนยันการลบ"
-        cancelText="ยกเลิก"
         variant="danger"
       />
     </NavLayout>
