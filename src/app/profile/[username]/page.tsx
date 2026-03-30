@@ -210,6 +210,7 @@ export default function ProfilePage() {
               {profileUser.relationship_status === 'engaged' && '💍 หมั้นแล้ว'}
               {profileUser.relationship_status === 'married' && '💒 แต่งงานแล้ว'}
               {profileUser.relationship_status === 'complicated' && '❓ ไม่ชัดเจน'}
+              {profileUser.relationship_status === 'divorced' && '💔 หย่าร้าง'}
               {profileUser.relationship_custom_name && <span className="text-frog-600"> กับ {profileUser.relationship_custom_name}</span>}
            </p>
         </div>
@@ -262,10 +263,7 @@ export default function ProfilePage() {
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="flex-1 min-w-0 space-y-6">
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm">
-              <div 
-                className="h-32 md:h-56"
-                style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }}
-              />
+              <div className="h-32 md:h-56" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
               <div className="p-4 md:p-6 bg-white">
                 <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6 -mt-20 mb-6">
                   <div className="w-24 h-24 md:w-36 md:h-36 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0" style={{ borderColor: themeColor, borderWidth: '4px' }}>
@@ -372,9 +370,8 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
-      {/* Modals */}
-      <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} onConfirm={handleDeletePost} title="ลบโพสต์ถาวร?" message="คุณจะไม่สามารถกู้คืนโพสต์นี้กลับมาได้อีกครั้ง" confirmText="ยืนยันการลบ" cancelText="ยกเลิก" variant="danger" />
-      <ConfirmModal isOpen={showFamilyDeleteConfirm} onClose={() => { setShowFamilyDeleteConfirm(false); setFamilyToDelete(null); }} onConfirm={handleRemoveFamilyMember} title="ลบความสัมพันธ์?" message="ข้อมูลความสัมพันธ์ครอบครัวจะถูกลบออกจากโปรไฟล์ของคุณ" confirmText="ลบออก" cancelText="ยกเลิก" variant="danger" />
+      <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} onConfirm={() => handleDeletePost()} title="ลบโพสต์ถาวร?" message="คุณจะไม่สามารถกู้คืนโพสต์นี้กลับมาได้อีกครั้ง" confirmText="ยืนยันการลบ" cancelText="ยกเลิก" variant="danger" />
+      <ConfirmModal isOpen={showFamilyDeleteConfirm} onClose={() => { setShowFamilyDeleteConfirm(false); setFamilyToDelete(null); }} onConfirm={() => handleRemoveFamilyMember()} title="ลบความสัมพันธ์?" message="ข้อมูลความสัมพันธ์ครอบครัวจะถูกลบออกจากโปรไฟล์ของคุณ" confirmText="ลบออก" cancelText="ยกเลิก" variant="danger" />
       <ConfirmModal isOpen={showUnfriendModal} onClose={() => setShowUnfriendModal(false)} onConfirm={handleRemoveFriend} title="เลิกเป็นเพื่อน?" message={`หากเลิกเป็นเพื่อน คุณจะไม่เห็นโพสต์ของ ${profileUser.display_name} ในหน้าแรกอีกต่อไป`} confirmText="ลบเพื่อน" cancelText="ยกเลิก" variant="danger" />
     </NavLayout>
   );
