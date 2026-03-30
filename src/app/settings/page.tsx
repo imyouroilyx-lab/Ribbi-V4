@@ -371,12 +371,16 @@ export default function SettingsPage() {
               <p className="text-[10px] md:text-[11px] text-slate-400 leading-relaxed font-medium">
                 สงวนลิขสิทธิ์เนื้อหาและซอฟต์แวร์ตามกฎหมาย <br className="hidden md:block" />
                 <span className="text-indigo-400/80">ไม่อนุญาตให้คัดลอก ดัดแปลง หรือละเมิดสิทธิ์ในทุกกรณีโดยไม่ได้รับอนุญาต</span>
-                <span className="text-white-400">ก๊อปพ่อมึงตายทั้งหมดจบนะ</span>
               </p>
             </div>
           </div>
-        </div>
-      </div>
+
+                    {/* Hidden Stealth Text for Copyright protection */}
+          <div className="mt-8 text-[#f9fafb] select-none text-[2px] text-center opacity-10 font-mono">
+                ก๊อปพ่อมึงตายทั้งหมด จบนะ
+              </div>
+            </div>
+          </div>
 
       {/* Password Change Modal */}
       {showPasswordModal && (
