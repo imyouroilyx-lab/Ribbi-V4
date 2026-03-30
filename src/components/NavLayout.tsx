@@ -43,7 +43,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     loadUser();
   }, []);
 
-  // ✅ ฟังก์ชันจัดการการคลิกกลับหน้าหลัก (ถ้าอยู่ที่หน้าหลักอยู่แล้วให้รีเฟรช)
   const handleHomeClick = (e: React.MouseEvent) => {
     if (pathname === '/') {
       e.preventDefault();
@@ -71,6 +70,9 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         const user = currentUserRef.current;
         if (!user || notif.receiver_id !== user.id) return;
         
+        // ✅ กรองออก: ถ้าเป็นการส่งคำขอเพื่อน ไม่ต้องเด้งแจ้งเตือน ไม่ต้องมีเสียง
+        if (notif.type === 'friend_request') return;
+
         if (pathnameRef.current !== '/notifications') {
           setUnreadNotifCount(prev => prev + 1);
           playNotificationSound();
@@ -116,13 +118,19 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   };
 
   const loadNotifications = async (userId: string) => {
-    const { count } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('is_read', false);
+    const { count } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('receiver_id', userId)
+      .eq('is_read', false)
+      .neq('type', 'friend_request'); // ✅ ตัดประเภท friend_request ออกจากการนับ Badge รูปกระดิ่ง
+      
     setUnreadNotifCount(count || 0);
   };
 
   const loadFriendRequests = async (userId: string) => {
     const { count } = await supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('status', 'pending');
-    setFriendRequestCount(count || 0);
+    setFriendRequestCount(count || 0); // ✅ อันนี้จะไปโชว์ที่ไอคอน "เพื่อน (Friends)" แบบปกติ
   };
 
   const loadUnreadMessages = async (userId: string) => {
@@ -158,28 +166,33 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             <Home className="w-5 h-5" />
             <span>หน้าหลัก</span>
           </Link>
+          
+          {/* ✅ แถบ "เพื่อน" จะโชว์แจ้งเตือนคนแอดมา (นับจาก pending status ในตาราง friendships) */}
           <Link href="/friends" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/friends') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Users className="w-5 h-5" />
             <span>เพื่อน</span>
             {friendRequestCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm">{friendRequestCount}</span>}
           </Link>
+          
           <Link href="/messages" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/messages') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <MessageCircle className="w-5 h-5" />
             <span>แชท</span>
             {unreadMessageCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm">{unreadMessageCount}</span>}
           </Link>
+
+          {/* ✅ แถบ "การแจ้งเตือน" ปกติ (ไม่รวมแอดเพื่อน) */}
           <Link href="/notifications" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/notifications') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Bell className="w-5 h-5" />
             <span>แจ้งเตือน</span>
             {unreadNotifCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm">{unreadNotifCount}</span>}
           </Link>
+          
           <Link href="/settings" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/settings') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Settings className="w-5 h-5" />
             <span>ตั้งค่า</span>
           </Link>
         </nav>
 
-        {/* ข้อมูลผู้ใช้ด้านล่าง Sidebar (Desktop) */}
         {currentUser && (
           <div className="absolute bottom-4 left-4 right-4 space-y-2">
             <Link 
@@ -229,7 +242,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               </button>
             </div>
 
-            {/* ข้อมูลผู้ใช้ด้านบน (Mobile Menu) */}
             {currentUser && (
               <Link 
                 href={`/profile/${currentUser.username}`} 
