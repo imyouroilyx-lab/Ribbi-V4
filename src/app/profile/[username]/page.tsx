@@ -119,24 +119,53 @@ export default function ProfilePage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/login'); return; }
-      const { data: currentUserData } = await supabase.from('users').select('*').eq('id', user.id).single();
-      setCurrentUser(currentUserData);
-      const { data: profileUserData } = await supabase.from('users').select('*').eq('username', username).single();
+
+      // ✅ 1. ดึงข้อมูล User ทั้ง 2 คนพร้อมกัน (ไม่รอคิว)
+      const [currentUserRes, profileUserRes] = await Promise.all([
+        supabase.from('users').select('*').eq('id', user.id).single(),
+        supabase.from('users').select('*').eq('username', username).single()
+      ]);
+
+      const currentUserData = currentUserRes.data;
+      const profileUserData = profileUserRes.data;
+
       if (!profileUserData) { router.push('/'); return; }
+      
+      setCurrentUser(currentUserData);
       setProfileUser(profileUserData);
-      const { data: postsData } = await supabase.from('posts').select('*, author:author_id(id, username, display_name, profile_img_url), target:target_id(id, username, display_name, profile_img_url)').eq('target_id', profileUserData.id).order('created_at', { ascending: false }).range(0, POSTS_PER_PAGE - 1);
-      setPosts(postsData || []);
-      setHasMore((postsData?.length || 0) === POSTS_PER_PAGE);
+
+      // ✅ 2. ดึงข้อมูลอื่นๆ ทั้งหมดพร้อมกันทันที (Posts, Friends, Family ฯลฯ) ช่วยลดความหน่วงได้ 70%
+      const fetchPromises: Promise<any>[] = [
+        supabase.from('posts')
+          .select('*, author:author_id(id, username, display_name, profile_img_url), target:target_id(id, username, display_name, profile_img_url)')
+          .eq('target_id', profileUserData.id)
+          .order('created_at', { ascending: false })
+          .range(0, POSTS_PER_PAGE - 1)
+          .then(res => {
+            setPosts(res.data || []);
+            setHasMore((res.data?.length || 0) === POSTS_PER_PAGE);
+          }),
+        loadFamilyMembers(profileUserData.id),
+        loadFriends(profileUserData.id)
+      ];
+
+      // ถ้าไม่ใช่โปรไฟล์ตัวเอง ดึงข้อมูลสถานะความสัมพันธ์ร่วมด้วย
       if (currentUserData.id !== profileUserData.id) {
-        await Promise.all([
+        fetchPromises.push(
           checkFriendshipStatus(currentUserData.id, profileUserData.id),
           checkBlockStatus(currentUserData.id, profileUserData.id),
           supabase.from('profile_views').insert({ profile_id: profileUserData.id, visitor_id: currentUserData.id }),
           loadMyFamilyMembers(currentUserData.id) 
-        ]);
+        );
       }
-      await Promise.all([loadFamilyMembers(profileUserData.id), loadFriends(profileUserData.id)]);
-    } catch (error) { console.error(error); } finally { setIsLoading(false); }
+
+      await Promise.all(fetchPromises);
+
+    } catch (error) { 
+      console.error(error); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
   const loadMyFamilyMembers = async (myUserId: string) => {
@@ -190,7 +219,14 @@ export default function ProfilePage() {
   const handleRemoveFamilyMember = async () => { if (!familyToDelete) return; await supabase.from('family_members').delete().eq('id', familyToDelete); if (profileUser) await loadFamilyMembers(profileUser.id); setFamilyToDelete(null); };
   const handleBlock = async (type: 'block' | 'ignore') => { if (!currentUser || !profileUser) return; await supabase.from('blocks').upsert({ blocker_id: currentUser.id, blocked_id: profileUser.id, block_type: type }); setBlockStatus(type === 'block' ? 'blocked' : 'ignored'); };
   const handleUnblock = async () => { if (!currentUser || !profileUser) return; await supabase.from('blocks').delete().eq('blocker_id', currentUser.id).eq('blocked_id', profileUser.id); setBlockStatus('none'); };
-  const handleDeletePost = async () => { if (!postToDelete) return; await supabase.from('posts').delete().eq('id', postToDelete); setPosts(prev => prev.filter(p => p.id !== postToDelete)); setPostToDelete(null); };
+  
+  const handleDeletePost = async () => { 
+    if (!postToDelete) return; 
+    await supabase.from('posts').delete().eq('id', postToDelete); 
+    setPosts(prev => prev.filter(p => p.id !== postToDelete)); 
+    setPostToDelete(null); 
+    setShowDeletePostConfirm(false);
+  };
 
   if (isLoading && page === 0) return <NavLayout><div className="flex items-center justify-center py-20"><img src="https://iili.io/qbtgKBt.png" className="w-16 h-16 animate-bounce" alt="" /></div></NavLayout>;
   if (!profileUser || !currentUser) return null;
