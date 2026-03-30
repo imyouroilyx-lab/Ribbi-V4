@@ -19,11 +19,21 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 const CACHE_KEY = 'ribbi_cache_ultimate';
 
+// ✅ ฟังก์ชันเล่นเสียงแจ้งเตือน
+const playNotificationSound = () => {
+  try {
+    const audio = new Audio('/sounds/ribbi.wav');
+    audio.volume = 0.4;
+    audio.play().catch(err => console.log('Sound blocked:', err));
+  } catch (err) {
+    console.log('Sound unavailable:', err);
+  }
+};
+
 export default function NavLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   
-  // โหลดจาก Cache ทันทีเพื่อให้ UI เรนเดอร์ได้เลย ไม่ต้องรอจอดำ/จอขาว
   const [currentUser, setCurrentUser] = useState<any>(() => {
     if (typeof window !== 'undefined') {
       const cached = sessionStorage.getItem(CACHE_KEY);
@@ -37,18 +47,83 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const [unreadMsg, setUnreadMsg] = useState(0);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
-  const pathnameRef = useRef(pathname);
+  const currentUserRef = useRef(currentUser);
 
   useEffect(() => {
-    pathnameRef.current = pathname;
     if (pathname === '/notifications') setUnreadNotif(0);
   }, [pathname]);
 
   useOnlineStatus(currentUser?.id || null);
 
   useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  // ✅ 1. โหลดข้อมูลครั้งแรก
+  useEffect(() => {
     fetchLatestData();
   }, []);
+
+  // ✅ 2. ระบบ Realtime Subscription (Badge & Sound)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    // สร้าง Channel สำหรับฟังการเปลี่ยนแปลง
+    const channel = supabase
+      .channel('nav-layout-realtime')
+      // ฟังแจ้งเตือนใหม่
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications', 
+        filter: `receiver_id=eq.${currentUser.id}` 
+      }, (payload) => {
+        if (payload.new.type !== 'friend_request') {
+          setUnreadNotif(prev => prev + 1);
+          playNotificationSound();
+        }
+      })
+      // ฟังคำขอเพื่อนใหม่
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'friendships', 
+        filter: `receiver_id=eq.${currentUser.id}` 
+      }, () => {
+        setFriendReq(prev => prev + 1);
+        playNotificationSound();
+      })
+      // ฟังข้อความแชทใหม่ (ผ่าน unread_count ใน chat_participants)
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'chat_participants', 
+        filter: `user_id=eq.${currentUser.id}` 
+      }, () => {
+        // เมื่อมีการอัปเดตแชท ให้ไปดึงยอดรวมใหม่เพื่อให้เลขแม่นยำ
+        refreshUnreadMessages();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser?.id]);
+
+  const refreshUnreadMessages = async () => {
+    if (!currentUser?.id) return;
+    const { data } = await supabase
+      .from('chat_participants')
+      .select('unread_count')
+      .eq('user_id', currentUser.id);
+    
+    if (data) {
+      const total = data.reduce((sum, p) => sum + (p.unread_count || 0), 0);
+      setUnreadMsg(total);
+      // ถ้าตัวเลขเพิ่มขึ้น แสดงว่ามีแชทใหม่เข้า
+      if (total > unreadMsg) playNotificationSound();
+    }
+  };
 
   const fetchLatestData = async () => {
     try {
@@ -58,7 +133,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // พยายามดึงผ่าน RPC ก่อน
       const { data, error } = await supabase.rpc('get_user_app_data', { user_uuid: session.user.id });
 
       let uData = null;
@@ -72,34 +146,17 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         nFriend = data.pending_friends || 0;
         nMsg = data.unread_messages || 0;
       } else {
-        // ✅ Ultimate Fix: รันพร้อมกันด้วย Promise.all แต่เจาะจงเฉพาะข้อมูลที่เบาที่สุด
-        // วิธีนี้จะเร็วมาก และไม่ทำให้ Database พังถ้ามีการทำ Index ที่ถูกต้องแล้ว
+        // Fallback optimized query
         const [
           { data: fallbackUser },
           { count: cNotif },
           { count: cFriend },
           { data: cMsgData }
         ] = await Promise.all([
-          supabase
-            .from('users')
-            .select('id, username, display_name, profile_img_url')
-            .eq('id', session.user.id)
-            .single(),
-          supabase
-            .from('notifications')
-            .select('id', { count: 'exact', head: true })
-            .eq('receiver_id', session.user.id)
-            .eq('is_read', false)
-            .neq('type', 'friend_request'),
-          supabase
-            .from('friendships')
-            .select('id', { count: 'exact', head: true })
-            .eq('receiver_id', session.user.id)
-            .eq('status', 'pending'),
-          supabase
-            .from('chat_participants')
-            .select('unread_count')
-            .eq('user_id', session.user.id)
+          supabase.from('users').select('id, username, display_name, profile_img_url').eq('id', session.user.id).single(),
+          supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('is_read', false).neq('type', 'friend_request'),
+          supabase.from('friendships').select('id', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('status', 'pending'),
+          supabase.from('chat_participants').select('unread_count').eq('user_id', session.user.id)
         ]);
 
         if (fallbackUser) uData = fallbackUser;
@@ -108,13 +165,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         nMsg = cMsgData ? cMsgData.reduce((sum, p) => sum + (p.unread_count || 0), 0) : 0;
       }
 
-      // อัปเดต State ถ้ามีข้อมูล
       if (uData) {
         setCurrentUser(uData);
         setUnreadNotif(nNotif);
         setFriendReq(nFriend);
         setUnreadMsg(nMsg);
-        
         sessionStorage.setItem(CACHE_KEY, JSON.stringify({
           user: uData, notif: nNotif, friend: nFriend, message: nMsg
         }));
@@ -130,11 +185,8 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
-  const isActive = (path: string) => pathname === path;
-  
-  // ✅ ระบบลิงก์โปรไฟล์ที่ถูกต้อง ชี้ไปที่ username เสมอ
   const isProfileActive = currentUser?.username ? pathname.startsWith(`/profile/${currentUser.username}`) : false;
-  const profileLink = currentUser?.username ? `/profile/${currentUser.username}` : '#'; // ใช้ '#' กันเหนียวไว้ก่อนถ้าข้อมูลไม่มา
+  const profileLink = currentUser?.username ? `/profile/${currentUser.username}` : '#';
 
   const navItems = [
     { label: 'หน้าหลัก', icon: Home, href: '/' },
@@ -147,7 +199,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
-      {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex flex-col w-64 fixed inset-y-0 bg-white border-r border-gray-100 z-50 p-4">
         <div className="mb-8 px-2 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 group">
@@ -158,17 +209,12 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
         <nav className="flex-1 space-y-1 overflow-y-auto no-scrollbar">
           {navItems.map((item) => {
-            const active = item.label === 'โปรไฟล์' ? isProfileActive : isActive(item.href);
+            const active = item.label === 'โปรไฟล์' ? isProfileActive : pathname === item.href;
             const Icon = item.icon;
             return (
               <Link 
                 key={item.label} 
                 href={item.href}
-                onClick={(e) => {
-                  if (item.label === 'โปรไฟล์' && !currentUser?.username) {
-                    e.preventDefault(); // ป้องกันการกดถ้า profile ยังโหลดไม่เสร็จ
-                  }
-                }}
                 className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 group ${
                   active ? 'bg-frog-500 text-white font-bold shadow-lg shadow-frog-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 }`}
@@ -187,7 +233,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        {/* Footer Sidebar: User Profile & Logout Button */}
         <div className="mt-auto pt-4 border-t border-gray-100 space-y-2">
           {currentUser && (
             <Link href={`/profile/${currentUser.username}`} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-2xl transition-all border border-transparent hover:border-gray-100 group">
@@ -205,7 +250,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      {/* Header - Mobile */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 z-40 shadow-sm">
         <Link href="/" className="flex items-center gap-2">
           <img src="https://iili.io/qbtgKBt.png" className="w-8 h-8" alt="" />
@@ -222,24 +266,18 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* Content */}
       <main className="flex-1 lg:ml-64 pt-16 lg:pt-0 pb-20 lg:pb-0 min-h-screen">
         <div className="max-w-7xl mx-auto p-4 md:p-6">{children}</div>
       </main>
 
-      {/* Bottom Nav - Mobile */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 h-16 flex items-center justify-around z-40 pb-safe shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
         {navItems.slice(0, 5).map((item) => {
-          const active = item.label === 'โปรไฟล์' ? isProfileActive : isActive(item.href);
+          const active = item.label === 'โปรไฟล์' ? isProfileActive : pathname === item.href;
           const Icon = item.icon;
-          
           return (
             <Link 
               key={item.label} 
               href={item.href} 
-              onClick={(e) => {
-                if (item.label === 'โปรไฟล์' && !currentUser?.username) e.preventDefault();
-              }}
               className={`flex flex-col items-center gap-1 flex-1 relative transition-all ${active ? 'text-frog-600 font-bold scale-105' : 'text-gray-400'}`}
             >
               <div className="relative">
@@ -258,7 +296,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         })}
       </nav>
 
-      {/* Mobile Drawer */}
       {showMobileMenu && (
         <>
           <div className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm animate-in fade-in" onClick={() => setShowMobileMenu(false)} />
@@ -267,10 +304,9 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               <span className="text-xl font-black text-frog-600 tracking-widest uppercase italic">Ribbi Menu</span>
               <button onClick={() => setShowMobileMenu(false)} className="p-2 bg-white rounded-full shadow-sm"><X size={20} className="text-gray-400" /></button>
             </div>
-            
             <div className="flex-1 overflow-y-auto p-4 space-y-1">
               {currentUser && (
-                <Link href={`/profile/${currentUser.username}`} onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 p-5 bg-gray-50 rounded-[2.5rem] mb-6 active:scale-95 transition-all border border-gray-100 shadow-inner">
+                <Link href={`/profile/${currentUser.username}`} onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 p-5 bg-gray-50 rounded-[2.5rem] mb-6 border border-gray-100">
                   <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-16 h-16 rounded-full object-cover shadow-md border-2 border-white" alt="" />
                   <div className="min-w-0 flex-1">
                     <p className="font-black text-gray-900 truncate text-xl leading-tight">{currentUser.display_name}</p>
@@ -278,21 +314,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                   </div>
                 </Link>
               )}
-
               {navItems.map((item) => {
-                const active = item.label === 'โปรไฟล์' ? isProfileActive : isActive(item.href);
+                const active = item.label === 'โปรไฟล์' ? isProfileActive : pathname === item.href;
                 const Icon = item.icon;
                 return (
                   <Link 
                     key={item.label} 
                     href={item.href} 
-                    onClick={(e) => {
-                      if (item.label === 'โปรไฟล์' && !currentUser?.username) {
-                        e.preventDefault();
-                      } else {
-                        setShowMobileMenu(false);
-                      }
-                    }} 
+                    onClick={() => setShowMobileMenu(false)} 
                     className={`flex items-center justify-between p-4 rounded-2xl font-black transition-all ${active ? 'bg-frog-50 text-frog-600' : 'text-gray-600 hover:bg-gray-50'}`}
                   >
                     <div className="flex items-center gap-4"><Icon size={24} className={active ? 'text-frog-600' : 'text-gray-300'} /><span>{item.label}</span></div>
@@ -301,9 +330,8 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                 );
               })}
             </div>
-
             <div className="p-6 border-t border-gray-100 bg-gray-50/50">
-              <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 py-4 bg-white border border-red-100 text-red-500 rounded-2xl font-black text-sm active:scale-95 transition-all shadow-sm">
+              <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 py-4 bg-white border border-red-100 text-red-500 rounded-2xl font-black text-sm transition-all shadow-sm">
                 <LogOut size={20}/> <span>ออกจากระบบ</span>
               </button>
             </div>
