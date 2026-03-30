@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-// ✅ นำเข้าฟังก์ชันแจ้งเตือน
+// นำเข้าฟังก์ชันแจ้งเตือน
 import { notifyFriendAccept } from '@/lib/notifications';
 
 interface Friendship {
@@ -32,7 +32,6 @@ interface Friendship {
 }
 
 const FRIENDS_PER_PAGE = 20;
-const ALPHABETS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 export default function FriendsPage() {
   const router = useRouter();
@@ -44,7 +43,6 @@ export default function FriendsPage() {
   const [totalFriends, setTotalFriends] = useState(0);
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [selectedFriendshipId, setSelectedFriendshipId] = useState<string | null>(null);
@@ -53,9 +51,10 @@ export default function FriendsPage() {
     loadInitialData();
   }, []);
 
+  // ✅ โหลดข้อมูลใหม่เมื่อ เปลี่ยนหน้า, พิมพ์ค้นหา หรือข้อมูล User พร้อม
   useEffect(() => {
     if (currentUser) loadFriendsData();
-  }, [currentPage, searchQuery, selectedLetter, currentUser]);
+  }, [currentPage, searchQuery, currentUser]);
 
   const loadInitialData = async () => {
     setIsLoading(true);
@@ -66,6 +65,7 @@ export default function FriendsPage() {
       const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single();
       setCurrentUser(userData);
 
+      // โหลดคำขอเข้า-ออก
       const [pending, sent] = await Promise.all([
         supabase.from('friendships')
           .select('*, sender:sender_id(id, username, display_name, profile_img_url)')
@@ -94,6 +94,7 @@ export default function FriendsPage() {
     const to = from + FRIENDS_PER_PAGE - 1;
 
     try {
+      // ✅ เรียงลำดับ a-z ผ่าน query และทำ Pagination 20 คน
       let query = supabase
         .from('friendships')
         .select(`
@@ -104,12 +105,9 @@ export default function FriendsPage() {
         .eq('status', 'accepted')
         .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`);
 
+      // ค้นหา
       if (searchQuery) {
         query = query.or(`sender.display_name.ilike.%${searchQuery}%,receiver.display_name.ilike.%${searchQuery}%`);
-      }
-      
-      if (selectedLetter) {
-        query = query.or(`sender.display_name.ilike.${selectedLetter}%,receiver.display_name.ilike.${selectedLetter}%`);
       }
 
       const { data, count } = await query
@@ -118,19 +116,20 @@ export default function FriendsPage() {
 
       setTotalFriends(count || 0);
       
-      // ✅ จุดที่แก้ไข: ดึงข้อมูลเพื่อนและแนบ friendship_id (ไอดีของตาราง friendships) มาด้วยเหมือนหน้าโปรไฟล์
       const friendsList = (data || []).map((f: any) => {
         const friendData = f.sender_id === currentUser.id ? f.receiver : f.sender;
         if (friendData) {
-          return { 
-            ...friendData, 
-            friendshipId: f.id // ใช้ชื่อเหมือนกับในหน้าโปรไฟล์เพื่อความเข้าใจง่าย
-          };
+          return { ...friendData, friendshipId: f.id };
         }
         return null;
       }).filter(u => u !== null);
 
-      setFriends(friendsList);
+      // ✅ จัดการเรียงลำดับ A-Z ในฝั่ง Client อีกรอบเพื่อความชัวร์ของชื่อแสดงผล
+      const sortedFriends = friendsList.sort((a, b) => 
+        a.display_name.localeCompare(b.display_name, 'th')
+      );
+
+      setFriends(sortedFriends);
     } catch (error) {
       console.error(error);
     }
@@ -139,15 +138,9 @@ export default function FriendsPage() {
   const handleAcceptRequest = async (id: string, senderId: string) => {
     if (!currentUser) return;
     try {
-      const { error } = await supabase
-        .from('friendships')
-        .update({ status: 'accepted' })
-        .eq('id', id);
-        
+      const { error } = await supabase.from('friendships').update({ status: 'accepted' }).eq('id', id);
       if (error) throw error;
-      
       await notifyFriendAccept(senderId, currentUser.id);
-      
       loadInitialData();
       loadFriendsData();
     } catch (error) {
@@ -156,26 +149,15 @@ export default function FriendsPage() {
   };
 
   const handleCancelRequest = async (id: string) => {
-    try {
-      await supabase.from('friendships').delete().eq('id', id);
-      loadInitialData();
-    } catch (error) {
-      console.error(error);
-    }
+    await supabase.from('friendships').delete().eq('id', id);
+    loadInitialData();
   };
 
   const handleRemoveFriend = async () => {
     if (!selectedFriendshipId) return;
-    
     try {
-      // ✅ ลบด้วยไอดีของแถวความสัมพันธ์ (UUID ตัวแรกในตารางที่พี่ส่งรูปมาให้ดู)
-      const { error } = await supabase
-        .from('friendships')
-        .delete()
-        .eq('id', selectedFriendshipId);
-      
+      const { error } = await supabase.from('friendships').delete().eq('id', selectedFriendshipId);
       if (error) throw error;
-      
       setShowRemoveConfirm(false);
       setSelectedFriendshipId(null);
       loadFriendsData();
@@ -194,7 +176,7 @@ export default function FriendsPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black text-gray-900 tracking-tight">เพื่อนของฉัน</h1>
-            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">Manage your connections</p>
+            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">Total {totalFriends} Connections</p>
           </div>
           <div className="relative w-full md:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -208,7 +190,7 @@ export default function FriendsPage() {
           </div>
         </div>
 
-        {/* Incoming Requests */}
+        {/* Pending Requests */}
         {pendingRequests.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2 px-1">
@@ -223,20 +205,8 @@ export default function FriendsPage() {
                      <p className="text-[10px] text-gray-400">ส่งคำขอมาถึงคุณ</p>
                    </div>
                    <div className="flex gap-1.5">
-                      <button 
-                        onClick={() => handleAcceptRequest(r.id, r.sender_id)} 
-                        className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-sm"
-                        title="รับเป็นเพื่อน"
-                      >
-                        <Check size={14} />
-                      </button>
-                      <button 
-                        onClick={() => handleCancelRequest(r.id)} 
-                        className="p-2 bg-gray-100 text-gray-400 rounded-xl hover:bg-red-50 hover:text-red-500 transition"
-                        title="ปฏิเสธ"
-                      >
-                        <X size={14} />
-                      </button>
+                      <button onClick={() => handleAcceptRequest(r.id, r.sender_id)} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-sm"><Check size={14} /></button>
+                      <button onClick={() => handleCancelRequest(r.id)} className="p-2 bg-gray-100 text-gray-400 rounded-xl hover:bg-red-50 hover:text-red-500 transition"><X size={14} /></button>
                    </div>
                  </div>
                ))}
@@ -257,25 +227,12 @@ export default function FriendsPage() {
                    <div className="flex-1 min-w-0">
                      <p className="font-bold text-[10px] truncate text-gray-500">{r.receiver?.display_name}</p>
                    </div>
-                   <button 
-                    onClick={() => handleCancelRequest(r.id)} 
-                    className="text-[10px] font-black text-gray-400 hover:text-red-500 uppercase tracking-tighter"
-                   >
-                     ยกเลิก
-                   </button>
+                   <button onClick={() => handleCancelRequest(r.id)} className="text-[10px] font-black text-gray-400 hover:text-red-500 uppercase tracking-tighter">ยกเลิก</button>
                  </div>
                ))}
             </div>
           </div>
         )}
-
-        {/* Alphabet Filter */}
-        <div className="flex gap-1 overflow-x-auto pb-2 no-scrollbar items-center">
-          <button onClick={() => { setSelectedLetter(null); setCurrentPage(1); }} className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-[10px] font-black transition-all ${!selectedLetter ? 'bg-frog-600 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>ทั้งหมด</button>
-          {ALPHABETS.map(l => (
-            <button key={l} onClick={() => { setSelectedLetter(l); setCurrentPage(1); }} className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-[10px] font-black transition-all ${selectedLetter === l ? 'bg-frog-600 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>{l}</button>
-          ))}
-        </div>
 
         {/* Friends List Grid */}
         <div className="space-y-4">
@@ -300,14 +257,7 @@ export default function FriendsPage() {
                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{f.username}</p>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button 
-                      // ✅ แก้ไข: ใช้ f.friendshipId ที่เราดึงมาจากไอดีจริงๆ ของตาราง friendships
-                      onClick={() => { setSelectedFriendshipId(f.friendshipId); setShowRemoveConfirm(true); }} 
-                      className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                      title="ลบเพื่อน"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <button onClick={() => { setSelectedFriendshipId(f.friendshipId); setShowRemoveConfirm(true); }} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="ลบเพื่อน"><Trash2 size={16} /></button>
                   </div>
                 </div>
               ))
@@ -315,7 +265,7 @@ export default function FriendsPage() {
           </div>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination Controls */}
         {totalPages > 1 && (
           <div className="mt-8 flex items-center justify-center gap-2 pb-10">
             <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-2 bg-white border border-gray-100 rounded-xl disabled:opacity-20 shadow-sm hover:bg-gray-50"><ChevronLeft size={18} /></button>
