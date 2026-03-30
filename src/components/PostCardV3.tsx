@@ -41,6 +41,13 @@ interface PostCardProps {
 
 const LIKES_PER_PAGE = 20;
 
+// ✅ ฟังก์ชันดึง Youtube ID
+function getYouTubeVideoId(url: string): string | null {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
 const LinkPreview = ({ url }: { url: string }) => {
   const [preview, setPreview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -66,7 +73,7 @@ const LinkPreview = ({ url }: { url: string }) => {
   if (loading || !preview || (!preview.title && !preview.image)) return null;
 
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="mb-4 block border border-gray-100 rounded-2xl overflow-hidden bg-white hover:border-indigo-200 transition-all group">
+    <a href={url} target="_blank" rel="noopener noreferrer" className="mb-4 block border border-gray-100 rounded-2xl overflow-hidden bg-white hover:border-indigo-200 transition-all group shadow-sm">
       {preview.image && <div className="w-full h-40 overflow-hidden"><img src={preview.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" /></div>}
       <div className="p-3">
          <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">{preview.publisher}</p>
@@ -134,7 +141,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (node) likeObserver.current.observe(node);
   }, [isLoadingLikes, hasMoreLikes]);
 
-  // ✅ Optimization: ใช้ Parallel Fetching และเอา Realtime ต่อโพสต์ออกเพื่อเซฟ Disk IO
   useEffect(() => {
     const loadStats = async () => {
       const [lCount, cCount, isL] = await Promise.all([
@@ -250,6 +256,34 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     });
   }, []);
 
+  // ✅ ฟังก์ชัน Render Embeds
+  const renderEmbeds = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const urls = text.match(urlRegex);
+    if (!urls) return null;
+
+    const embeds = [];
+    // กรองเอาเฉพาะ Youtube ลิงก์แรก
+    for (const url of urls) {
+      const ytId = getYouTubeVideoId(url);
+      if (ytId) {
+        embeds.push(
+          <div key={url} className="mb-4 rounded-2xl overflow-hidden relative pt-[56.25%] w-full shadow-lg border border-gray-100 bg-black">
+            <iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube.com/embed/${ytId}`} allowFullScreen></iframe>
+          </div>
+        );
+        break; // โชว์แค่อันเดียว
+      }
+    }
+
+    // ถ้าไม่มี Youtube ค่อยโชว์ LinkPreview ของลิงก์แรก
+    if (embeds.length === 0) {
+      return <LinkPreview url={urls[0]} />;
+    }
+
+    return embeds;
+  };
+
   const handleComment = async (e?: React.FormEvent) => {
     if (e) e.preventDefault(); if (!newComment.trim() && !commentImageUrl.trim() || isSubmitting) return;
     setIsSubmitting(true);
@@ -267,6 +301,67 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); loadComments(); setCommentCount(prev => prev + 1);
     } finally { setIsSubmitting(false); }
   };
+
+  const renderCommentItem = (c: Comment, isReply = false) => (
+    <div key={c.id} className={`${isReply ? 'ml-10 mt-2' : 'mb-4'} animate-in fade-in`}>
+      <div className="flex gap-2">
+        <Link href={`/profile/${c.author?.username}`} className="flex-shrink-0">
+          <img src={c.author?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" alt="" />
+        </Link>
+        <div className="flex-1 min-w-0">
+          <div className="bg-gray-100 rounded-2xl px-3 py-2 inline-block max-w-full relative group">
+            <p className="font-bold text-[11px] text-gray-900">{c.author?.display_name}</p>
+            <p className="text-sm text-gray-800 break-words">{renderTextWithTags(c.content)}</p>
+            {c.image_url && <img src={c.image_url} className="mt-2 rounded-lg max-h-40 object-cover" alt="" />}
+            
+            {(commentLikes[c.id] || 0) > 0 && (
+              <div className="absolute -bottom-2 -right-1 bg-white shadow-sm border rounded-full px-1.5 py-0.5 flex items-center gap-1">
+                <Heart size={10} className="fill-red-500 text-red-500" />
+                <span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-4 mt-1 ml-2 text-[10px] font-bold text-gray-400">
+            <span>{getRelativeTime(c.created_at)}</span>
+            <button onClick={() => handleCommentLike(c.id)} className={likedComments.has(c.id) ? 'text-red-500' : ''}>ถูกใจ</button>
+            {!c.parent_comment_id && (
+              <button onClick={() => {
+                setReplyTo(c.id);
+                setReplyContent(`@[${c.author?.display_name}](${c.author?.username}) `);
+              }}>ตอบกลับ</button>
+            )}
+          </div>
+
+          {/* ✅ กล่องพิมพ์ตอบกลับ (Reply Input) */}
+          {replyTo === c.id && (
+            <div className="mt-3 space-y-2 animate-in slide-in-from-left-2">
+              <div className="flex gap-2 relative">
+                <input 
+                  type="text" 
+                  value={replyContent} 
+                  onChange={(e) => { setReplyContent(e.target.value); checkMention(e.target.value, e.target.selectionStart || 0, 'reply', c.id); }}
+                  onKeyDown={(e) => e.key === 'Enter' && !mentionConfig.show && handleReply(c.id)}
+                  placeholder={`ตอบกลับ ${c.author?.display_name.split(' ')[0]}...`}
+                  className="input-minimal w-full text-xs py-1.5 px-3 bg-white border border-gray-200 rounded-xl"
+                  autoFocus
+                />
+                {mentionConfig.show && mentionConfig.type === 'reply' && mentionConfig.replyId === c.id && mentionResults.length > 0 && (
+                  <div className="absolute z-20 left-0 bottom-full mb-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-32 overflow-y-auto">
+                    {mentionResults.map(user => (<button key={user.id} type="button" onMouseDown={e => e.preventDefault()} onClick={() => insertMention(user)} className="w-full flex items-center gap-2 p-2 hover:bg-gray-50 text-left transition"><img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-5 h-5 rounded-full" /><p className="text-xs font-bold truncate">{user.display_name}</p></button>))}
+                  </div>
+                )}
+                <button onClick={() => handleReply(c.id)} disabled={!replyContent.trim() || isSubmitting} className="p-1.5 text-frog-600 disabled:opacity-30"><Send size={16} /></button>
+                <button onClick={() => setReplyTo(null)} className="p-1.5 text-gray-400"><X size={16} /></button>
+              </div>
+            </div>
+          )}
+
+          {c.replies?.map(reply => renderCommentItem(reply, true))}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="card-minimal border border-gray-100 shadow-sm relative">
@@ -291,10 +386,11 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         )}
       </div>
 
-      {/* Content */}
+      {/* Content & Embeds */}
       <div className="text-sm text-gray-800 mb-4 whitespace-pre-wrap leading-relaxed">{renderTextWithTags(post.content || '')}</div>
+      {post.content && renderEmbeds(post.content)}
 
-      {/* ✅ Layout รูปภาพ: 1, 2, 3 (2 บน 1 ล่าง), 4 */}
+      {/* Layout รูปภาพ: 3 ภาพสวยขึ้น (2 บน 1 ล่างเต็มกว้าง) */}
       {post.images && post.images.length > 0 && (
         <div className={`grid gap-2 mb-4 ${post.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {post.images.map((img, i) => (
@@ -329,24 +425,13 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               <button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2 bg-frog-500 text-white rounded-xl hover:bg-frog-600 transition-all"><Send size={18} /></button>
             </div>
           </form>
+          
           <div className="space-y-3">
-            {comments.map(c => (
-              <div key={c.id} className="flex gap-3">
-                <img src={c.author?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" alt="" />
-                <div className="flex-1">
-                  <div className="bg-gray-100 rounded-2xl px-3 py-2 inline-block relative group">
-                    <p className="font-bold text-[11px] text-gray-900">{c.author?.display_name}</p>
-                    <p className="text-sm text-gray-800">{renderTextWithTags(c.content)}</p>
-                    {c.image_url && <img src={c.image_url} className="mt-2 rounded-lg max-h-40 object-cover" alt="" />}
-                  </div>
-                  <div className="flex items-center gap-4 mt-1 ml-2 text-[10px] font-bold text-gray-400">
-                    <span>{getRelativeTime(c.created_at)}</span>
-                    <button onClick={() => handleCommentLike(c.id)} className={likedComments.has(c.id) ? 'text-red-500' : ''}>ถูกใจ</button>
-                    {!c.parent_comment_id && <button onClick={() => { setReplyTo(c.id); setReplyContent(`@[${c.author?.display_name}](${c.author?.username}) `); }}>ตอบกลับ</button>}
-                  </div>
-                </div>
-              </div>
-            ))}
+            {comments.length === 0 ? (
+              <p className="text-center text-gray-300 text-[10px] font-bold uppercase py-4">ยังไม่มีความคิดเห็น</p>
+            ) : (
+              comments.map(c => renderCommentItem(c))
+            )}
           </div>
         </div>
       )}
@@ -365,8 +450,8 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       )}
 
       {selectedImage && (
-        <div className="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center p-4" onClick={() => setSelectedImage(null)}>
-          <img src={selectedImage} className="max-w-full max-h-full rounded-lg shadow-2xl" alt="" />
+        <div className="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedImage(null)}>
+          <img src={selectedImage} className="max-w-full max-h-full rounded-lg shadow-2xl object-contain" alt="" />
         </div>
       )}
     </div>
