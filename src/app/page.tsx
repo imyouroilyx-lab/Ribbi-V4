@@ -10,7 +10,7 @@ import ConfirmModal from '@/components/ConfirmModal';
 import Link from 'next/link';
 import { Users, Circle, ChevronRight } from 'lucide-react';
 
-const POSTS_PER_PAGE = 15; // ลดจำนวนต่อหน้าลงเล็กน้อยเพื่อความเร็วในการโหลดครั้งแรก
+const POSTS_PER_PAGE = 15;
 
 export default function HomePage() {
   const router = useRouter();
@@ -41,30 +41,35 @@ export default function HomePage() {
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
 
-  // โหลดข้อมูลเริ่มต้น
   useEffect(() => {
     loadInitialData();
   }, [refreshTrigger]);
 
-  // โหลดโพสต์เพิ่มเมื่อ Scroll
   useEffect(() => {
     if (page > 0) {
       loadMorePosts();
     }
   }, [page]);
 
-  // ระบบออนไลน์
+  // ✅ แก้ไข: ระบบออนไลน์ (ป้องกันการยิง DB รัวๆ เวลารีเฟรชหน้าจอถี่ๆ ช่วยลด Disk IO)
   useEffect(() => {
     if (!currentUser) return;
     const updateActivity = async () => {
-      await supabase.from('users').update({ last_active: new Date().toISOString() }).eq('id', currentUser.id);
+      const lastUpdated = sessionStorage.getItem('last_active_update');
+      const now = Date.now();
+      // อัปเดต Database เฉพาะตอนที่ห่างจากการอัปเดตครั้งล่าสุดเกิน 1 นาทีเท่านั้น
+      if (!lastUpdated || now - parseInt(lastUpdated) > 60000) {
+        await supabase.from('users').update({ last_active: new Date().toISOString() }).eq('id', currentUser.id);
+        sessionStorage.setItem('last_active_update', now.toString());
+      }
     };
+    
     updateActivity();
     const interval = setInterval(updateActivity, 5 * 60 * 1000); 
     return () => clearInterval(interval);
   }, [currentUser]);
 
-  // รีโหลดคนออนไลน์ (หน่วงเวลาโหลดครั้งแรกเพื่อความลื่น)
+  // รีโหลดคนออนไลน์
   useEffect(() => {
     if (!currentUser) return;
     const timer = setTimeout(() => loadOnlineUsers(), 1500);
@@ -81,7 +86,6 @@ export default function HomePage() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
 
-      // 1. ดึงข้อมูล User และ Feed หลักเท่านั้น (Priority สูงสุด)
       const [userDataRes, postsDataRes] = await Promise.all([
         supabase.from('users').select('*').eq('id', authUser.id).single(),
         supabase
@@ -107,9 +111,8 @@ export default function HomePage() {
     if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
 
-    // ✅ เพิ่มการหน่วงเวลา (Delay) 3 วินาที (3000 ms) ตรงนี้
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
+    // ❌ ลบตัวหน่วง 3 วินาที (setTimeout 3000) ที่ทำให้เว็บค้างออกไปแล้วครับ!
+    
     const start = page * POSTS_PER_PAGE;
     const end = start + POSTS_PER_PAGE - 1;
 
@@ -273,7 +276,7 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* ✅ ปุ่มใหม่สำหรับไปหน้าสมาชิกทั้งหมด */}
+                {/* ปุ่มใหม่สำหรับไปหน้าสมาชิกทั้งหมด */}
                 <Link 
                   href="/users" 
                   className="flex items-center justify-center gap-2 w-full py-3 bg-slate-900 text-white rounded-2xl text-sm font-bold hover:bg-slate-800 transition-all shadow-md group"
