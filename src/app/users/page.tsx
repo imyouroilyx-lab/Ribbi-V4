@@ -12,7 +12,9 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
-  UserCheck
+  UserCheck,
+  UserPlus,
+  UserMinus
 } from 'lucide-react';
 
 const USERS_PER_PAGE = 20;
@@ -26,38 +28,36 @@ export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<UserWithFriendship[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionId, setActionId] = useState<string | null>(null); // เก็บ ID ของ user ที่กำลังกดปุ่ม
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
       
-      // 1. ตรวจสอบ Session ผู้ใช้ปัจจุบัน
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) {
         router.push('/login');
         return;
       }
+      setCurrentUserId(authUser.id);
 
-      // 2. สร้าง Query สำหรับดึงรายชื่อผู้ใช้พร้อมนับจำนวนทั้งหมด (Server-side Filter)
       let query = supabase
         .from('users')
         .select('id, username, display_name, profile_img_url, created_at', { count: 'exact' });
 
-      // กรองตามตัวอักษรที่ขึ้นต้น
       if (selectedLetter) {
         query = query.ilike('display_name', `${selectedLetter}%`);
       }
 
-      // กรองตามคำค้นหา (Search)
       if (searchTerm) {
         query = query.or(`display_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%`);
       }
 
-      // 3. ทำ Pagination (ดึงเฉพาะช่วงที่ต้องการ)
       const from = (currentPage - 1) * USERS_PER_PAGE;
       const to = from + USERS_PER_PAGE - 1;
 
@@ -69,7 +69,6 @@ export default function UsersPage() {
       setTotalCount(count || 0);
 
       if (userData && userData.length > 0) {
-        // 4. ดึงข้อมูลสถานะเพื่อนเฉพาะ User IDs ที่แสดงในหน้านี้ (ประหยัด Bandwidth)
         const userIdsInPage = userData.map(u => u.id);
         
         const { data: friendshipData, error: friendError } = await supabase
@@ -80,13 +79,11 @@ export default function UsersPage() {
 
         if (friendError) throw friendError;
 
-        // สร้าง Set ของ ID เพื่อนเพื่อเปรียบเทียบข้อมูล
         const friendIdSet = new Set();
         friendshipData?.forEach(f => {
           friendIdSet.add(f.user_id === authUser.id ? f.friend_id : f.user_id);
         });
 
-        // รวมข้อมูลเข้าด้วยกัน
         const finalUsers = userData.map(u => ({
           ...u,
           isFriend: friendIdSet.has(u.id)
@@ -97,13 +94,12 @@ export default function UsersPage() {
         setUsers([]);
       }
     } catch (err: any) {
-      console.error('Error:', err.message);
+      console.error('Error fetching users:', err.message);
     } finally {
       setLoading(false);
     }
   }, [currentPage, searchTerm, selectedLetter, router]);
 
-  // ใช้ Debounce สำหรับการพิมพ์ค้นหาเพื่อลดการยิง API
   useEffect(() => {
     const handler = setTimeout(() => {
       fetchUsers();
@@ -111,11 +107,53 @@ export default function UsersPage() {
     return () => clearTimeout(handler);
   }, [fetchUsers]);
 
+  // ฟังก์ชันสำหรับสลับสถานะเพื่อน
+  const handleToggleFriend = async (e: React.MouseEvent, targetUser: UserWithFriendship) => {
+    e.stopPropagation(); // กันไม่ให้กดโดน Card แล้วเด้งไปหน้า Profile
+    if (!currentUserId || actionId) return;
+
+    try {
+      setActionId(targetUser.id);
+      
+      if (targetUser.isFriend) {
+        // กรณีเป็นเพื่อนกันอยู่แล้ว -> ลบเพื่อน
+        const { error } = await supabase
+          .from('friendships')
+          .delete()
+          .or(`and(user_id.eq.${currentUserId},friend_id.eq.${targetUser.id}),and(user_id.eq.${targetUser.id},friend_id.eq.${currentUserId})`);
+        
+        if (error) throw error;
+      } else {
+        // กรณีไม่ได้เป็นเพื่อน -> เพิ่มเพื่อน (ในที่นี้ตั้งสถานะเป็น accepted ทันทีตาม logic เดิม)
+        const { error } = await supabase
+          .from('friendships')
+          .insert({
+            user_id: currentUserId,
+            friend_id: targetUser.id,
+            status: 'accepted'
+          });
+        
+        if (error) throw error;
+      }
+
+      // อัปเดต UI Local state ทันที ไม่ต้องรอ fetch ใหม่
+      setUsers(prev => prev.map(u => 
+        u.id === targetUser.id ? { ...u, isFriend: !u.isFriend } : u
+      ));
+
+    } catch (err: any) {
+      console.error('Action error:', err.message);
+    } finally {
+      setActionId(null);
+    }
+  };
+
   const totalPages = Math.ceil(totalCount / USERS_PER_PAGE);
 
   return (
     <NavLayout>
       <div className="min-h-screen bg-[#F8FAFC] pb-20">
+        {/* Header Section */}
         <div className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
           <div className="max-w-5xl mx-auto px-4 py-4 md:py-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -196,6 +234,7 @@ export default function UsersPage() {
                         alt={user.display_name || ''} 
                         className="w-full h-full object-cover"
                         loading="lazy"
+                        onError={(e) => { (e.target as HTMLImageElement).src = 'https://iili.io/qbtgKBt.png' }}
                       />
                     </div>
 
@@ -204,18 +243,43 @@ export default function UsersPage() {
                         <h3 className="font-bold text-sm text-slate-900 truncate">
                           {user.display_name}
                         </h3>
-                        {user.isFriend && (
-                          <span className="flex-shrink-0 flex items-center gap-0.5 bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full text-[9px] font-bold border border-emerald-100">
-                            <UserCheck size={10} />
-                            เพื่อน
-                          </span>
-                        )}
                       </div>
                       <p className="text-[10px] text-slate-500 truncate">@{user.username}</p>
                     </div>
 
-                    <div className="text-slate-300 group-hover:text-indigo-600 transition-colors">
-                      <ChevronRight size={18} />
+                    {/* ปุ่มจัดการเพื่อน (Add/Remove) */}
+                    <div className="flex-shrink-0">
+                      {user.id !== currentUserId ? (
+                        <button
+                          onClick={(e) => handleToggleFriend(e, user)}
+                          disabled={actionId === user.id}
+                          className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black transition-all border shadow-sm min-w-[90px]
+                            ${user.isFriend 
+                              ? 'bg-white border-slate-200 text-slate-500 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600' 
+                              : 'bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-700'
+                            }
+                            ${actionId === user.id ? 'opacity-50 cursor-not-allowed' : ''}
+                          `}
+                        >
+                          {actionId === user.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : user.isFriend ? (
+                            <>
+                              <UserMinus size={14} className="group-hover:animate-pulse" />
+                              ลบเพื่อน
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus size={14} />
+                              เพิ่มเพื่อน
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <span className="px-3 py-1.5 text-[10px] font-bold text-slate-300 italic">
+                          (คุณ)
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
