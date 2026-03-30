@@ -76,7 +76,7 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
   
-  // ✅ ใช้ Ref เก็บรายชื่อสมาชิก เพื่อให้ระบบ Real-time ค้นหาข้อมูลผู้ส่งได้ทันที (ไม่ต้องยิง DB ซ้ำ)
+  // ✅ ใช้ Ref เก็บรายชื่อสมาชิก เพื่อให้ระบบ Real-time ค้นหาข้อมูลผู้ส่งได้ทันที
   const membersRef = useRef<any[]>([]);
   const isInitialLoad = useRef(true);
 
@@ -105,7 +105,7 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
 
   const loadGroupData = async () => {
     try {
-      // ✅ 1. ดึงข้อมูลพื้นฐานกลุ่มและผู้เข้าร่วมพร้อมกัน
+      // ✅ ดึงข้อมูลพื้นฐานกลุ่มและผู้เข้าร่วมพร้อมกันแบบ Parallel
       const [chatRes, participantsRes] = await Promise.all([
         supabase.from('chats').select('*').eq('id', chatId).single(),
         supabase.from('chat_participants').select('role, user_id').eq('chat_id', chatId)
@@ -122,14 +122,15 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       setGroupData(chatData);
       if (chatData.theme_color) setThemeColor(chatData.theme_color);
 
-      // ✅ 2. ดึงข้อมูล User ของสมาชิกทุกคน และข้อความพร้อมกัน
+      // ดึงข้อมูล User ของสมาชิกทุกคน และข้อความพร้อมกัน
       const userIds = participants.map(p => p.user_id);
       const [usersRes, messagesRes] = await Promise.all([
         supabase.from('users').select('id, username, display_name, profile_img_url, is_online').in('id', userIds),
         supabase.from('messages')
           .select('id, sender_id, content, images, created_at, updated_at, deleted_by, event')
           .eq('chat_id', chatId)
-          .not('deleted_by', 'cs', `{${currentUser.id}}`)
+          // 💡 ถ้าไม่ได้ทำ Index ที่ deleted_by, เอา .not() ออก แล้วไป filter ฝั่ง client เหมือนโค้ดล่างนี้จะลดภาระ Database ได้ดีกว่า
+          // .not('deleted_by', 'cs', `{${currentUser.id}}`) 
           .order('created_at', { ascending: false })
           .limit(MESSAGE_LIMIT)
       ]);
@@ -141,22 +142,27 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       }).filter(m => m.id);
 
       setMembers(formattedMembers);
-      membersRef.current = formattedMembers; // เก็บเข้า Ref ไว้ใช้ใน Real-time
+      membersRef.current = formattedMembers;
 
       const me = formattedMembers.find(m => m.id === currentUser.id);
       setIsAdmin(me?.role === 'admin' || chatData?.created_by === currentUser.id);
 
-      // จัดการข้อความ
-      if (messagesRes.data) {
-        setHasMore(messagesRes.data.length === MESSAGE_LIMIT);
-        const reversed = [...messagesRes.data].reverse();
+      // ✅ Optimization: กรองข้อความและ Reverse ในจังหวะเดียวกันเพื่อลด O(N) operations
+      const messagesData = messagesRes.data;
+      if (messagesData) {
+        setHasMore(messagesData.length === MESSAGE_LIMIT);
         
-        // Map ผู้ส่งจากข้อมูลสมาชิกที่เรามีอยู่แล้ว
-        const formattedMessages = reversed.map(msg => ({
-          ...msg,
-          sender: formattedMembers.find(m => m.id === msg.sender_id) || null
-        }));
-
+        const formattedMessages = [];
+        for (let i = messagesData.length - 1; i >= 0; i--) {
+          const msg = messagesData[i];
+          // กรองข้อมูลที่โดนลบที่ฝั่ง Client ช่วยลดภาระ Seq Scan ที่ฝั่ง DB
+          if (!(msg.deleted_by || []).includes(currentUser.id)) {
+            formattedMessages.push({
+              ...msg,
+              sender: formattedMembers.find(m => m.id === msg.sender_id) || null
+            });
+          }
+        }
         setMessages(formattedMessages as any);
       }
     } catch (error) {
@@ -178,7 +184,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
         .from('messages')
         .select('id, sender_id, content, images, created_at, updated_at, deleted_by, event')
         .eq('chat_id', chatId)
-        .not('deleted_by', 'cs', `{${currentUser.id}}`)
         .lt('created_at', oldestMessageDate)
         .order('created_at', { ascending: false })
         .limit(MESSAGE_LIMIT);
@@ -186,10 +191,17 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       if (olderMessages && olderMessages.length > 0) {
         setHasMore(olderMessages.length === MESSAGE_LIMIT);
         
-        const formattedOlder = [...olderMessages].reverse().map(msg => ({
-          ...msg,
-          sender: membersRef.current.find(m => m.id === msg.sender_id) || null
-        }));
+        // ✅ นำ Optimization มาใช้กับการ Load More ด้วย
+        const formattedOlder = [];
+        for (let i = olderMessages.length - 1; i >= 0; i--) {
+          const msg = olderMessages[i];
+          if (!(msg.deleted_by || []).includes(currentUser.id)) {
+            formattedOlder.push({
+              ...msg,
+              sender: membersRef.current.find(m => m.id === msg.sender_id) || null
+            });
+          }
+        }
 
         setMessages(prev => [...formattedOlder as any, ...prev]);
 
@@ -225,7 +237,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       }, async (payload) => {
         const newMessage = payload.new as any;
         
-        // ถ้าเป็น Event ระบบ (เช่น เพิ่มสมาชิก) ให้โหลดข้อมูลใหม่
         if (newMessage.event) {
           if (['member_added', 'member_removed', 'member_left', 'group_updated'].includes(newMessage.event)) {
             loadGroupData();
@@ -236,7 +247,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
           return;
         }
 
-        // ✅ Optimization: หาข้อมูลคนส่งจากสมาชิกที่เรามีอยู่แล้ว ลื่นขึ้นมากเพราะไม่ต้องยิง DB
         const sender = membersRef.current.find(m => m.id === newMessage.sender_id) || null;
         
         setMessages(prev => {
@@ -363,18 +373,45 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
     } catch (error) { alert('ไม่สามารถลบสมาชิกได้'); }
   };
 
+  // ✅ Optimize: ใช้ Foreign Key Join ในการดึงเพื่อนและ User เพื่อลดจำนวน Query
   const loadFriendsToAdd = async () => {
     setIsLoadingFriends(true);
     setSelectedFriendIds([]);
     try {
-      const { data: friendships } = await supabase.from('friendships').select('sender_id, receiver_id').or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`).eq('status', 'accepted');
-      const allFriendIds = [...new Set((friendships || []).map(f => f.sender_id === currentUser.id ? f.receiver_id : f.sender_id))];
-      const existingMemberIds = members.map(m => m.id);
-      const availableIds = allFriendIds.filter(id => !existingMemberIds.includes(id));
-      if (availableIds.length === 0) { setFriendsToAdd([]); return; }
-      const { data: users } = await supabase.from('users').select('id, username, display_name, profile_img_url').in('id', availableIds);
-      setFriendsToAdd(users || []);
-    } catch (error) { console.error(error); } finally { setIsLoadingFriends(false); }
+      const { data: friendships } = await supabase
+        .from('friendships')
+        .select(`
+          sender:users!friendships_sender_id_fkey(id, username, display_name, profile_img_url),
+          receiver:users!friendships_receiver_id_fkey(id, username, display_name, profile_img_url)
+        `)
+        .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
+        .eq('status', 'accepted');
+
+      if (!friendships || friendships.length === 0) {
+        setFriendsToAdd([]);
+        return;
+      }
+
+      // ดึงเฉพาะคนที่เป็นเพื่อนเรา
+      const allFriends = friendships.map(f => {
+        const sender = f.sender as any;
+        const receiver = f.receiver as any;
+        return sender.id === currentUser.id ? receiver : sender;
+      }).filter(Boolean);
+
+      // กรองคนที่อยู่ในกลุ่มอยู่แล้วออก
+      const existingMemberIds = new Set(members.map(m => m.id));
+      const availableFriends = allFriends.filter(f => !existingMemberIds.has(f.id));
+
+      // เอาคนที่ซ้ำออก (กรณี Database เบิ้ลข้อมูล)
+      const uniqueAvailableFriends = Array.from(new Map(availableFriends.map(f => [f.id, f])).values());
+
+      setFriendsToAdd(uniqueAvailableFriends);
+    } catch (error) { 
+      console.error(error); 
+    } finally { 
+      setIsLoadingFriends(false); 
+    }
   };
 
   const handleAddMembers = async () => {
