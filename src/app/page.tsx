@@ -281,9 +281,7 @@ export default function HomePage() {
                 <h3 className="font-bold text-lg mb-4 flex items-center justify-between flex-shrink-0">
                   <span className="flex items-center gap-2">
                     <Users className="w-5 h-5 text-frog-600" />
-                    <a href="https://ribbi-v4.vercel.app/users">
                     สมาชิกทั้งหมด
-                    </a>
                   </span>
                   <span className="text-xs font-bold bg-gray-50 text-gray-500 px-2.5 py-0.5 rounded-full border border-gray-100">
                     {allUsers.length}
