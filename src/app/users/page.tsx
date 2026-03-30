@@ -19,7 +19,6 @@ import {
 const USERS_PER_PAGE = 20;
 const ALPHABETS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-// แก้ไข Type Error โดยการ Omit field ที่มีปัญหาออกก่อนแล้วกำหนดใหม่เป็น optional
 interface UserWithFriendship extends Omit<User, 'updated_at'> {
   isFriend?: boolean;
   updated_at?: string; 
@@ -47,7 +46,7 @@ export default function UsersPage() {
       }
       setCurrentUserId(authUser.id);
 
-      // ดึงข้อมูลพื้นฐาน
+      // 1. ดึงข้อมูล User หลัก
       let query = supabase
         .from('users')
         .select('id, username, display_name, profile_img_url, created_at, updated_at', { count: 'exact' });
@@ -73,18 +72,17 @@ export default function UsersPage() {
       if (userData && userData.length > 0) {
         const userIdsInPage = userData.map(u => u.id);
         
-        // ตรวจสอบความเป็นเพื่อน
-        const { data: friendshipData, error: friendError } = await supabase
+        // 2. ตรวจสอบความเป็นเพื่อน (ใช้ sender_id และ receiver_id ตาม Schema จริง)
+        const { data: friendshipData } = await supabase
           .from('friendships')
-          .select('user_id, friend_id')
+          .select('sender_id, receiver_id')
           .eq('status', 'accepted')
-          .or(`and(user_id.eq.${authUser.id},friend_id.in.(${userIdsInPage.join(',')})),and(friend_id.eq.${authUser.id},user_id.in.(${userIdsInPage.join(',')}))`);
+          .or(`sender_id.in.(${userIdsInPage.join(',')}),receiver_id.in.(${userIdsInPage.join(',')})`);
 
-        if (friendError) throw friendError;
-
-        const friendIdSet = new Set();
+        const friendIdSet = new Set<string>();
         friendshipData?.forEach(f => {
-          friendIdSet.add(f.user_id === authUser.id ? f.friend_id : f.user_id);
+          if (f.sender_id === authUser.id) friendIdSet.add(f.receiver_id);
+          if (f.receiver_id === authUser.id) friendIdSet.add(f.sender_id);
         });
 
         const finalUsers: UserWithFriendship[] = userData.map(u => ({
@@ -119,26 +117,21 @@ export default function UsersPage() {
       
       if (targetUser.isFriend) {
         // ลบเพื่อน
-        const { error } = await supabase
+        await supabase
           .from('friendships')
           .delete()
-          .or(`and(user_id.eq.${currentUserId},friend_id.eq.${targetUser.id}),and(user_id.eq.${targetUser.id},friend_id.eq.${currentUserId})`);
-        
-        if (error) throw error;
+          .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${targetUser.id}),and(sender_id.eq.${targetUser.id},receiver_id.eq.${currentUserId})`);
       } else {
-        // เพิ่มเพื่อน
-        const { error } = await supabase
+        // เพิ่มเพื่อน (ในหน้า User Directory เราให้เป็น accepted ทันทีเพื่อความง่าย หรือเปลี่ยนเป็น pending ตามต้องการ)
+        await supabase
           .from('friendships')
           .insert({
-            user_id: currentUserId,
-            friend_id: targetUser.id,
+            sender_id: currentUserId,
+            receiver_id: targetUser.id,
             status: 'accepted'
           });
-        
-        if (error) throw error;
       }
 
-      // Optimistic UI Update
       setUsers(prev => prev.map(u => 
         u.id === targetUser.id ? { ...u, isFriend: !u.isFriend } : u
       ));
@@ -155,15 +148,17 @@ export default function UsersPage() {
   return (
     <NavLayout>
       <div className="min-h-screen bg-[#F8FAFC] pb-20">
-        <div className="bg-white border-b border-slate-200 sticky top-0 z-10">
+        <div className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
           <div className="max-w-5xl mx-auto px-4 py-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h1 className="text-xl md:text-2xl font-black text-slate-900 flex items-center gap-2">
+                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
                   <Users className="text-indigo-600" size={24} />
                   สมาชิก Ribbi
                 </h1>
-                <p className="text-slate-500 text-xs">ค้นพบเพื่อนใหม่ ({totalCount.toLocaleString()} รายการ)</p>
+                <p className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">
+                  ทั้งหมด {totalCount.toLocaleString()} รายชื่อ
+                </p>
               </div>
 
               <div className="relative w-full md:w-72">
@@ -171,7 +166,7 @@ export default function UsersPage() {
                 <input 
                   type="text"
                   placeholder="ค้นหาชื่อ..."
-                  className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent border focus:border-indigo-500 focus:bg-white rounded-xl focus:outline-none transition-all text-sm font-medium"
+                  className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent rounded-xl focus:border-indigo-500 focus:bg-white focus:outline-none transition-all text-sm font-medium"
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
@@ -181,6 +176,7 @@ export default function UsersPage() {
               </div>
             </div>
 
+            {/* Alphabet Bar - เล็ก กะทัดรัด */}
             <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
               <button 
                 onClick={() => { setSelectedLetter(null); setCurrentPage(1); }}
@@ -215,7 +211,7 @@ export default function UsersPage() {
                     onClick={() => router.push(`/profile/${user.username}`)}
                     className="group bg-white border border-slate-200 rounded-2xl p-3 flex items-center gap-3 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer active:scale-[0.98]"
                   >
-                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0">
+                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-100">
                       <img 
                         src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} 
                         alt="" 
@@ -226,7 +222,7 @@ export default function UsersPage() {
 
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-sm text-slate-900 truncate">{user.display_name}</h3>
-                      <p className="text-[10px] text-slate-500 truncate">@{user.username}</p>
+                      <p className="text-[10px] text-slate-500 truncate font-medium">@{user.username}</p>
                     </div>
 
                     <div className="flex-shrink-0">
@@ -234,9 +230,9 @@ export default function UsersPage() {
                         <button
                           onClick={(e) => handleToggleFriend(e, user)}
                           disabled={actionId === user.id}
-                          className={`min-w-[90px] px-3 py-1.5 rounded-xl text-[10px] font-black transition-all border shadow-sm flex items-center justify-center gap-1.5
+                          className={`min-w-[85px] px-3 py-1.5 rounded-xl text-[10px] font-black transition-all border shadow-sm flex items-center justify-center gap-1.5
                             ${user.isFriend 
-                              ? 'bg-white border-slate-200 text-slate-500 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600' 
+                              ? 'bg-white border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200' 
                               : 'bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-700'
                             }`}
                         >
@@ -249,29 +245,32 @@ export default function UsersPage() {
                           )}
                         </button>
                       ) : (
-                        <span className="text-[10px] text-slate-300 font-bold px-2 italic">คุณ</span>
+                        <span className="text-[9px] text-slate-300 font-black px-2 uppercase tracking-widest italic">You</span>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
 
+              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="mt-10 flex items-center justify-center gap-2">
                   <button 
                     disabled={currentPage === 1 || loading}
                     onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0 }); }}
-                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm"
+                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50 transition-all"
                   >
                     <ChevronLeft size={18} />
                   </button>
-                  <div className="bg-white border border-slate-200 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-600">
-                    หน้า {currentPage} / {totalPages}
+                  
+                  <div className="bg-white border border-slate-200 px-4 py-1.5 rounded-xl text-[10px] font-black text-slate-600 shadow-sm uppercase tracking-tighter">
+                    Page {currentPage} of {totalPages}
                   </div>
+
                   <button 
                     disabled={currentPage === totalPages || loading}
                     onClick={() => { setCurrentPage(p => p + 1); window.scrollTo({ top: 0 }); }}
-                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm"
+                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50 transition-all"
                   >
                     <ChevronRightIcon size={18} />
                   </button>
@@ -279,7 +278,13 @@ export default function UsersPage() {
               )}
             </>
           ) : (
-            <div className="py-20 text-center text-slate-400 text-sm">ไม่พบสมาชิก</div>
+            <div className="py-20 text-center flex flex-col items-center">
+              <Users size={40} className="text-slate-200 mb-2" />
+              <p className="text-slate-400 text-sm font-medium">ไม่พบสมาชิกในขณะนี้</p>
+              {(searchTerm || selectedLetter) && (
+                <button onClick={() => {setSearchTerm(''); setSelectedLetter(null);}} className="mt-2 text-indigo-600 text-xs font-bold hover:underline">ล้างการค้นหา</button>
+              )}
+            </div>
           )}
         </main>
       </div>
