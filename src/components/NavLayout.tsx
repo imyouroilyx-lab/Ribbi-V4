@@ -17,13 +17,13 @@ import {
 } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
-const CACHE_KEY = 'ribbi_cache_ultimate'; // เคลียร์แคชเก่าที่พังทิ้งไป
+const CACHE_KEY = 'ribbi_cache_ultimate';
 
 export default function NavLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   
-  // โหลดจาก Cache ทันทีเพื่อให้ตัวแปร username ไม่ว่าง
+  // โหลดจาก Cache ทันทีเพื่อให้ UI เรนเดอร์ได้เลย ไม่ต้องรอจอดำ/จอขาว
   const [currentUser, setCurrentUser] = useState<any>(() => {
     if (typeof window !== 'undefined') {
       const cached = sessionStorage.getItem(CACHE_KEY);
@@ -58,7 +58,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // 🚨 นี่คือจุดที่ทำให้พังในเวอร์ชันก่อน: ดึงข้อมูลผ่าน RPC
+      // พยายามดึงผ่าน RPC ก่อน
       const { data, error } = await supabase.rpc('get_user_app_data', { user_uuid: session.user.id });
 
       let uData = null;
@@ -72,14 +72,19 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         nFriend = data.pending_friends || 0;
         nMsg = data.unread_messages || 0;
       } else {
-        // ✅ กู้คืนระบบสำรอง (Fallback): ดึงตรงๆ จาก Database เลยถ้า RPC พัง
-        // การันตีว่าตัวแปร username ต้องมา 100% ไม่ใช่ค่าว่าง
-        const { data: fallbackUser } = await supabase.from('users').select('*').eq('id', session.user.id).single();
+        // ✅ แก้ไขความหน่วง: คืนค่าเป็น Sequential Await เพื่อไม่ให้ DB Connection เต็ม
+        // แต่เปลี่ยนจากการใช้ select('*') เป็นการเจาะจงเฉพาะคอลัมน์ที่จำเป็น เพื่อให้ Query เบาที่สุด
+        const { data: fallbackUser } = await supabase
+          .from('users')
+          .select('id, username, display_name, profile_img_url') // ดึงแค่นี้พอ ไม่ต้องเอาขยะมา
+          .eq('id', session.user.id)
+          .single();
+          
         if (fallbackUser) uData = fallbackUser;
         
-        // ดึงยอดแจ้งเตือนสำรองแบบ Manual
-        const { count: cNotif } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('is_read', false).neq('type', 'friend_request');
-        const { count: cFriend } = await supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('status', 'pending');
+        // พวก count ใช้ head: true ถูกต้องแล้ว เพราะมันจะไม่ส่งข้อมูลกลับมา ส่งมาแค่ตัวเลข
+        const { count: cNotif } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('is_read', false).neq('type', 'friend_request');
+        const { count: cFriend } = await supabase.from('friendships').select('id', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('status', 'pending');
         const { data: cMsgData } = await supabase.from('chat_participants').select('unread_count').eq('user_id', session.user.id);
         
         nNotif = cNotif || 0;
@@ -87,6 +92,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         nMsg = cMsgData ? cMsgData.reduce((sum, p) => sum + (p.unread_count || 0), 0) : 0;
       }
 
+      // อัปเดต State ถ้ามีข้อมูล
       if (uData) {
         setCurrentUser(uData);
         setUnreadNotif(nNotif);
@@ -98,7 +104,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         }));
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error fetching layout data:', err);
     }
   };
 
@@ -110,11 +116,9 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   const isActive = (path: string) => pathname === path;
   
-  // ✅ ตรวจสอบ URL อย่างแม่นยำ
+  // ✅ ระบบลิงก์โปรไฟล์ที่ถูกต้อง ชี้ไปที่ username เสมอ
   const isProfileActive = currentUser?.username ? pathname.startsWith(`/profile/${currentUser.username}`) : false;
-
-  // ✅ ลิงก์ตรงไปที่ /profile/[username] ชัวร์ 100%
-  const profileLink = currentUser?.username ? `/profile/${currentUser.username}` : '/';
+  const profileLink = currentUser?.username ? `/profile/${currentUser.username}` : '#'; // ใช้ '#' กันเหนียวไว้ก่อนถ้าข้อมูลไม่มา
 
   const navItems = [
     { label: 'หน้าหลัก', icon: Home, href: '/' },
@@ -144,6 +148,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               <Link 
                 key={item.label} 
                 href={item.href}
+                onClick={(e) => {
+                  if (item.label === 'โปรไฟล์' && !currentUser?.username) {
+                    e.preventDefault(); // ป้องกันการกดถ้า profile ยังโหลดไม่เสร็จ
+                  }
+                }}
                 className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 group ${
                   active ? 'bg-frog-500 text-white font-bold shadow-lg shadow-frog-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 }`}
@@ -209,7 +218,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           const Icon = item.icon;
           
           return (
-            <Link key={item.label} href={item.href} className={`flex flex-col items-center gap-1 flex-1 relative transition-all ${active ? 'text-frog-600 font-bold scale-105' : 'text-gray-400'}`}>
+            <Link 
+              key={item.label} 
+              href={item.href} 
+              onClick={(e) => {
+                if (item.label === 'โปรไฟล์' && !currentUser?.username) e.preventDefault();
+              }}
+              className={`flex flex-col items-center gap-1 flex-1 relative transition-all ${active ? 'text-frog-600 font-bold scale-105' : 'text-gray-400'}`}
+            >
               <div className="relative">
                 {item.label === 'โปรไฟล์' && currentUser ? (
                   <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className={`w-6 h-6 rounded-full object-cover border-2 ${active ? 'border-frog-500' : 'border-transparent'}`} alt="" />
@@ -251,7 +267,18 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                 const active = item.label === 'โปรไฟล์' ? isProfileActive : isActive(item.href);
                 const Icon = item.icon;
                 return (
-                  <Link key={item.label} href={item.href} onClick={() => setShowMobileMenu(false)} className={`flex items-center justify-between p-4 rounded-2xl font-black transition-all ${active ? 'bg-frog-50 text-frog-600' : 'text-gray-600 hover:bg-gray-50'}`}>
+                  <Link 
+                    key={item.label} 
+                    href={item.href} 
+                    onClick={(e) => {
+                      if (item.label === 'โปรไฟล์' && !currentUser?.username) {
+                        e.preventDefault();
+                      } else {
+                        setShowMobileMenu(false);
+                      }
+                    }} 
+                    className={`flex items-center justify-between p-4 rounded-2xl font-black transition-all ${active ? 'bg-frog-50 text-frog-600' : 'text-gray-600 hover:bg-gray-50'}`}
+                  >
                     <div className="flex items-center gap-4"><Icon size={24} className={active ? 'text-frog-600' : 'text-gray-300'} /><span>{item.label}</span></div>
                     {item.count && item.count > 0 ? <span className="bg-red-500 text-white text-xs px-2.5 py-0.5 rounded-full font-black shadow-sm">{item.count > 99 ? '99+' : item.count}</span> : null}
                   </Link>
