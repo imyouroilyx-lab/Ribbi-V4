@@ -86,7 +86,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [post, setPost] = useState(initialPost);
   const [comments, setComments] = useState<Comment[]>([]);
   const [showComments, setShowComments] = useState(false);
-  const [isCommentsLoading, setIsCommentsLoading] = useState(false); // ✅ เพิ่มสถานะโหลดคอมเมนต์
+  const [isCommentsLoading, setIsCommentsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [commentCount, setCommentCount] = useState(0);
@@ -119,6 +119,9 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [mentionConfig, setMentionConfig] = useState<{ show: boolean; query: string; type: 'comment' | 'reply' | null; replyId?: string; cursor: number; }>({ show: false, query: '', type: null, cursor: 0 });
   const [mentionResults, setMentionResults] = useState<any[]>([]);
 
+  // ✅ เพิ่ม ref สำหรับเก็บ timer ของ debounce
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const canDeletePost = post.author_id === currentUserId || profileOwnerId === currentUserId;
   const canEditPost = post.author_id === currentUserId;
 
@@ -130,7 +133,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (node) observer.observe(node);
   }, [isLoadingLikes, hasMoreLikes]);
 
-  // ✅ ปรับปรุง: โหลดข้อมูลสถิติและคอมเมนต์แบบขนาน
   useEffect(() => {
     const loadStats = async () => {
       const [lCount, cCount, isL] = await Promise.all([
@@ -145,7 +147,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     loadStats();
   }, [post.id, currentUserId]);
 
-  // ✅ แยก Effect ของการเปิดคอมเมนต์มาโหลดพร้อมกัน
   useEffect(() => {
     if (showComments) {
       const loadAllComments = async () => {
@@ -212,15 +213,34 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     else await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: currentUserId });
   };
 
-  const checkMention = async (val: string, cursor: number, type: 'comment' | 'reply', replyId?: string) => {
+  // ✅ เพิ่มระบบ Debounce และแก้ไข Query ให้มีประสิทธิภาพ
+  const checkMention = (val: string, cursor: number, type: 'comment' | 'reply', replyId?: string) => {
     const textBeforeCursor = val.slice(0, cursor);
     const mentionMatch = textBeforeCursor.match(/(?:\s|^)@([a-zA-Z0-9_ก-๙]*)$/);
+    
+    // เคลียร์ Timer เก่าเสมอเมื่อมีการพิมพ์ใหม่
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+
     if (mentionMatch) {
       const query = mentionMatch[1];
       setMentionConfig({ show: true, query, type, replyId, cursor });
-      const { data } = await supabase.from('users').select('id, username, display_name, profile_img_url').neq('id', currentUserId).ilike('display_name', `%${query}%`).limit(5);
-      setMentionResults(data || []);
-    } else setMentionConfig(prev => ({ ...prev, show: false }));
+      
+      // ตั้งเวลา 300ms ก่อนยิง Request (Debounce)
+      debounceTimerRef.current = setTimeout(async () => {
+        // ใช้ ilike `${query}%` ค้นหาแค่ตัวที่ขึ้นต้นด้วย แทนที่จะเป็น `%...%` เพื่อใช้ประโยชน์จาก Index
+        const { data } = await supabase
+          .from('users')
+          .select('id, username, display_name, profile_img_url')
+          .neq('id', currentUserId)
+          .ilike('display_name', `${query}%`) // ✅ เปลี่ยนตรงนี้
+          .limit(5);
+        setMentionResults(data || []);
+      }, 300);
+      
+    } else {
+      setMentionConfig(prev => ({ ...prev, show: false }));
+      setMentionResults([]);
+    }
   };
 
   const insertMention = (user: any) => {
@@ -274,6 +294,13 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       setReplyContent(''); setReplyTo(null); await loadComments(); setCommentCount(prev => prev + 1);
     } finally { setIsSubmitting(false); }
   };
+
+  // ✅ ทำความสะอาด Timer เมื่อ Component ถูก Unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, []);
 
   const renderCommentItem = (c: Comment, isReply = false) => (
     <div key={c.id} className={`${isReply ? 'ml-10 mt-2' : 'mb-4'} animate-in fade-in`}>
