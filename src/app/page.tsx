@@ -8,16 +8,15 @@ import PostCardV3 from '@/components/PostCardV3';
 import CreatePostV3 from '@/components/CreatePostV3';
 import ConfirmModal from '@/components/ConfirmModal';
 import Link from 'next/link';
-import { Users, Circle } from 'lucide-react';
+import { Users, Circle, ChevronRight } from 'lucide-react';
 
-const POSTS_PER_PAGE = 20;
+const POSTS_PER_PAGE = 15; // ลดจำนวนต่อหน้าลงเล็กน้อยเพื่อความเร็วในการโหลดครั้งแรก
 
 export default function HomePage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
-  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -42,16 +41,19 @@ export default function HomePage() {
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
 
+  // โหลดข้อมูลเริ่มต้น
   useEffect(() => {
     loadInitialData();
   }, [refreshTrigger]);
 
+  // โหลดโพสต์เพิ่มเมื่อ Scroll
   useEffect(() => {
     if (page > 0) {
       loadMorePosts();
     }
   }, [page]);
 
+  // ระบบออนไลน์
   useEffect(() => {
     if (!currentUser) return;
     const updateActivity = async () => {
@@ -62,10 +64,15 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [currentUser]);
 
+  // รีโหลดคนออนไลน์ (หน่วงเวลาโหลดครั้งแรกเพื่อความลื่น)
   useEffect(() => {
     if (!currentUser) return;
+    const timer = setTimeout(() => loadOnlineUsers(), 1500);
     const interval = setInterval(() => loadOnlineUsers(), 60 * 1000); 
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [currentUser]);
 
   const loadInitialData = async () => {
@@ -74,6 +81,7 @@ export default function HomePage() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
 
+      // 1. ดึงข้อมูล User และ Feed หลักเท่านั้น (Priority สูงสุด)
       const [userDataRes, postsDataRes] = await Promise.all([
         supabase.from('users').select('*').eq('id', authUser.id).single(),
         supabase
@@ -88,9 +96,6 @@ export default function HomePage() {
         setPosts(postsDataRes.data as any);
         setHasMore(postsDataRes.data.length === POSTS_PER_PAGE);
       }
-
-      loadOnlineUsers();
-      loadAllUsers();
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -132,23 +137,9 @@ export default function HomePage() {
         .select('id, username, display_name, profile_img_url, last_active') 
         .gte('last_active', tenMinutesAgo)
         .order('last_active', { ascending: false })
-        .limit(20); 
+        .limit(15); 
       
-      // ✅ เพิ่ม "as any" เพื่อให้ Build ผ่านโดยยังคงประสิทธิภาพเดิมไว้
       setOnlineUsers((data as any) || []);
-    } catch (error) { console.error(error); }
-  };
-
-  const loadAllUsers = async () => {
-    try {
-      const { data } = await supabase
-        .from('users')
-        .select('id, username, display_name, profile_img_url') 
-        .order('display_name', { ascending: true })
-        .limit(50);
-      
-      // ✅ เพิ่ม "as any" เพื่อให้ Build ผ่าน
-      setAllUsers((data as any) || []);
     } catch (error) { console.error(error); }
   };
 
@@ -172,7 +163,7 @@ export default function HomePage() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-16 h-16 mx-auto mb-4 animate-bounce" />
-            <p className="text-gray-600 font-medium">กำลังโหลด Ribbi...</p>
+            <p className="text-gray-600 font-medium">กำลังเตรียมหน้า Feed...</p>
           </div>
         </div>
       </NavLayout>
@@ -186,7 +177,7 @@ export default function HomePage() {
       <div className="max-w-7xl mx-auto px-2 md:px-4">
         <div className="flex flex-col lg:flex-row gap-6">
           
-          {/* Main Content */}
+          {/* Main Content (Left) */}
           <div className="flex-1 min-w-0 space-y-6">
             
             {/* MOBILE ONLY: Online Users Horizontal Scroll */}
@@ -196,13 +187,13 @@ export default function HomePage() {
                   <Circle className="w-2 h-2 fill-green-500 text-green-500 animate-pulse" />
                   ออนไลน์ขณะนี้ ({onlineUsers.length})
                 </h3>
-                <Link href="/users" className="text-xs text-frog-600 font-semibold">ดูทั้งหมด</Link>
+                <Link href="/users" className="text-xs text-frog-600 font-semibold">ดูสมาชิกทั้งหมด</Link>
               </div>
               <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
                 {onlineUsers.map((user) => (
                   <Link key={user.id} href={`/profile/${user.username}`} className="flex flex-col items-center gap-1 flex-shrink-0 w-16">
                     <div className="relative">
-                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border-2 border-white shadow-sm" loading="lazy" />
+                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border-2 border-white shadow-sm" loading="lazy" alt="" />
                       <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
                     </div>
                     <p className="text-[10px] font-medium truncate w-full text-center">{user.display_name.split(' ')[0]}</p>
@@ -243,80 +234,57 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* RIGHT SIDEBAR: Desktop Only */}
+          {/* SIDEBAR (Right) - Desktop Only */}
           <div className="hidden lg:block w-80 flex-shrink-0">
             <div className="sticky top-4 space-y-6">
               
               {/* Online Users Widget */}
-              <div className="card-minimal bg-white/80 backdrop-blur-sm border border-gray-50">
-                <h3 className="font-bold text-lg mb-4 flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <Circle className="w-2.5 h-2.5 fill-green-500 text-green-500" />
+              <div className="card-minimal bg-white/90 backdrop-blur-sm border border-gray-100 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-lg flex items-center gap-2">
+                    <Circle className="w-2.5 h-2.5 fill-green-500 text-green-500 animate-pulse" />
                     ออนไลน์
-                  </span>
+                  </h3>
                   <span className="text-xs font-bold bg-green-50 text-green-600 px-2.5 py-0.5 rounded-full border border-green-100">
                     {onlineUsers.length}
                   </span>
-                </h3>
-                <div className="space-y-1 max-h-[350px] overflow-y-auto pr-1 custom-scrollbar">
-                  {onlineUsers.map((user) => (
-                    <Link key={user.id} href={`/profile/${user.username}`} className="flex items-center gap-3 p-2 rounded-2xl hover:bg-frog-50 transition-all group">
-                      <div className="relative flex-shrink-0">
-                        <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-2xl object-cover shadow-sm group-hover:scale-105 transition-transform" loading="lazy" />
-                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm truncate text-gray-900">{user.display_name}</p>
-                        <p className="text-[10px] text-gray-400 truncate tracking-tighter">@{user.username}</p>
-                      </div>
-                    </Link>
-                  ))}
                 </div>
-              </div>
 
-              {/* All Members Widget */}
-              <div className="card-minimal flex flex-col h-[400px] border border-gray-50 shadow-soft-lg">
-                <h3 className="font-bold text-lg mb-4 flex items-center justify-between flex-shrink-0">
-                  <Link href="/users" className="flex items-center gap-2 hover:text-frog-600 transition-colors cursor-pointer">
-                    <Users className="w-5 h-5 text-frog-600" />
-                    สมาชิกทั้งหมด
-                  </Link>
-                  <span className="text-xs font-bold bg-gray-50 text-gray-500 px-2.5 py-0.5 rounded-full border border-gray-100">
-                    {allUsers.length}
-                  </span>
-                </h3>
-                
-                <div className="flex-1 overflow-y-auto pr-1 space-y-1 custom-scrollbar">
-                  {allUsers.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full opacity-30">
-                       <Users className="w-8 h-8 mb-2" />
-                       <p className="text-xs">กำลังโหลดรายชื่อ...</p>
-                    </div>
+                <div className="space-y-1 max-h-[450px] overflow-y-auto custom-scrollbar mb-4">
+                  {onlineUsers.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6 italic">ไม่มีผู้ใช้ออนไลน์</p>
                   ) : (
-                    allUsers.map((user) => {
-                      const isOnline = onlineUsers.some(u => u.id === user.id);
-                      return (
-                        <Link key={user.id} href={`/profile/${user.username}`} className="flex items-center gap-3 p-2 rounded-2xl hover:bg-gray-50 transition-all border border-transparent hover:border-gray-100 group">
-                          <div className="relative flex-shrink-0">
-                            <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-2xl object-cover grayscale-[0.2] group-hover:grayscale-0 transition-all" loading="lazy" />
-                            {isOnline && (
-                              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full shadow-sm"></div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-bold text-sm truncate text-gray-800">{user.display_name}</p>
-                            <p className="text-[10px] text-gray-400 truncate">@{user.username}</p>
-                          </div>
-                        </Link>
-                      );
-                    })
+                    onlineUsers.map((user) => (
+                      <Link key={user.id} href={`/profile/${user.username}`} className="flex items-center gap-3 p-2 rounded-2xl hover:bg-frog-50 transition-all group">
+                        <div className="relative flex-shrink-0">
+                          <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-2xl object-cover shadow-sm group-hover:scale-105 transition-transform" loading="lazy" alt="" />
+                          <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm truncate text-gray-900">{user.display_name}</p>
+                          <p className="text-[10px] text-gray-400 truncate tracking-tighter">@{user.username}</p>
+                        </div>
+                      </Link>
+                    ))
                   )}
                 </div>
-                
-                <div className="pt-4 mt-2 border-t border-gray-50 text-center flex-shrink-0">
-                  <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Ribbi Application</p>
-                </div>
+
+                {/* ✅ ปุ่มใหม่สำหรับไปหน้าสมาชิกทั้งหมด */}
+                <Link 
+                  href="/users" 
+                  className="flex items-center justify-center gap-2 w-full py-3 bg-slate-900 text-white rounded-2xl text-sm font-bold hover:bg-slate-800 transition-all shadow-md group"
+                >
+                  <Users className="w-4 h-4" />
+                  ดูสมาชิกทั้งหมด
+                  <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </Link>
               </div>
+
+              {/* Branding */}
+              <div className="text-center">
+                <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Ribbi Community Platform</p>
+              </div>
+
             </div>
           </div>
         </div>
