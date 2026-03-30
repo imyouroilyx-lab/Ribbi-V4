@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 // สร้าง Admin Client ด้วย Service Role Key (ข้ามกฎ RLS ทั้งหมด)
+// สำคัญ: ต้องตั้งค่า SUPABASE_SERVICE_ROLE_KEY ใน Environment Variables ของ Vercel/Hosting ด้วย
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -14,7 +15,9 @@ const supabaseAdmin = createClient(
   }
 );
 
-// 1. ฟังก์ชันเปลี่ยนรหัสผ่าน
+/**
+ * 1. ฟังก์ชันเปลี่ยนรหัสผ่าน (Force Reset)
+ */
 export async function forceResetUserPassword(userId: string, newPassword: string) {
   try {
     const { error } = await supabaseAdmin.auth.admin.updateUserById(
@@ -30,14 +33,24 @@ export async function forceResetUserPassword(userId: string, newPassword: string
   }
 }
 
-// 2. ฟังก์ชันแก้ไขโปรไฟล์ (ใช้ Admin สั่งแก้ เพื่อป้องกันปัญหาติดสิทธิ์ RLS)
-export async function updateUserProfile(userId: string, displayName: string, username: string) {
+/**
+ * 2. ฟังก์ชันแก้ไขโปรไฟล์สมาชิก (รวมรูปโปรไฟล์และรูปปก)
+ */
+export async function updateUserProfile(
+  userId: string, 
+  displayName: string, 
+  username: string,
+  profileImgUrl?: string, // เพิ่มพารามิเตอร์สำหรับรูปโปรไฟล์
+  coverImgUrl?: string    // เพิ่มพารามิเตอร์สำหรับรูปปก
+) {
   try {
     const { error } = await supabaseAdmin
       .from('users')
       .update({ 
-        display_name: displayName,
-        username: username 
+        display_name: displayName, 
+        username: username,
+        profile_img_url: profileImgUrl, // บันทึกลงตาราง users
+        cover_img_url: coverImgUrl      // บันทึกลงตาราง users
       })
       .eq('id', userId);
 
@@ -49,7 +62,9 @@ export async function updateUserProfile(userId: string, displayName: string, use
   }
 }
 
-// 3. ฟังก์ชันลบผู้ใช้ (ลบออกจาก Auth แล้วฐานข้อมูลจะลบตามถ้าระบุ Cascade ไว้)
+/**
+ * 3. ฟังก์ชันลบผู้ใช้
+ */
 export async function deleteUserAccount(userId: string) {
   try {
     const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
