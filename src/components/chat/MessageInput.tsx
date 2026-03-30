@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Send, Image as ImageIcon, X } from 'lucide-react';
+import { Send, Image as ImageIcon, X, Loader2 } from 'lucide-react';
 
 interface MessageInputProps {
   chatId: string;
@@ -18,27 +18,50 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
   const [showImageInput, setShowImageInput] = useState(false);
   const [tempImageUrl, setTempImageUrl] = useState('');
   const [isSending, setIsSending] = useState(false);
+  
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingTimeRef = useRef<number>(0); // ✅ จำเวลาที่ส่ง typing ล่าสุด
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleTyping = () => {
-    if (onTyping) {
-      onTyping(true);
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => {
-        if (onTyping) onTyping(false);
-      }, 2000);
+  // ✅ ปรับความสูงช่องพิมพ์อัตโนมัติแบบลื่นไหล
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = '40px'; // Reset height
+      const scrollHeight = textarea.scrollHeight;
+      textarea.style.height = Math.min(scrollHeight, 128) + 'px';
     }
+  }, [content]);
+
+  // ✅ ระบบแจ้งเตือนการพิมพ์แบบประหยัดทรัพยากร (Throttle)
+  const handleTyping = () => {
+    if (!onTyping) return;
+
+    const now = Date.now();
+    // ส่งสถานะ "กำลังพิมพ์" แค่ครั้งเดียวในทุกๆ 3 วินาที (ป้องกันการรันรัวๆ)
+    if (now - lastTypingTimeRef.current > 3000) {
+      onTyping(true);
+      lastTypingTimeRef.current = now;
+    }
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    
+    typingTimeoutRef.current = setTimeout(() => {
+      onTyping(false);
+      lastTypingTimeRef.current = 0; // รีเซ็ตเพื่อให้พิมพ์ครั้งต่อไปส่งสัญญาณใหม่ได้ทันที
+    }, 2500);
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!content.trim() && imageUrls.length === 0) return;
-    if (isSending) return;
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if ((!content.trim() && imageUrls.length === 0) || isSending) return;
 
     setIsSending(true);
+    
+    // หยุด typing ทันทีเมื่อกดส่ง
     if (onTyping) onTyping(false);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    lastTypingTimeRef.current = 0;
 
     try {
       const payload = {
@@ -48,25 +71,11 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
         images: imageUrls.length > 0 ? imageUrls : null,
       };
 
-      console.log('📤 Sending message payload:', payload);
-
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('messages')
-        .insert(payload)
-        .select();
+        .insert(payload);
 
-      if (error) {
-        // ✅ log error ละเอียด
-        console.error('❌ Supabase error:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        throw error;
-      }
-
-      console.log('✅ Message sent:', data);
+      if (error) throw error;
 
       setContent('');
       setImageUrls([]);
@@ -74,12 +83,16 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
       setTempImageUrl('');
       onMessageSent();
 
-      requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-      });
+      // คืนค่าความสูงและ Focus กลับมา
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.style.height = '40px';
+        }
+      }, 0);
     } catch (error: any) {
-      console.error('❌ Error sending message:', error?.message || error);
-      alert(`ไม่สามารถส่งข้อความได้: ${error?.message || 'Unknown error'}`);
+      console.error('Error sending message:', error);
+      alert(`ส่งไม่สำเร็จ: ${error.message}`);
     } finally {
       setIsSending(false);
     }
@@ -87,59 +100,63 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
 
   const handleAddImage = () => {
     if (tempImageUrl.trim()) {
-      setImageUrls([...imageUrls, tempImageUrl.trim()]);
+      setImageUrls(prev => [...prev, tempImageUrl.trim()]);
       setTempImageUrl('');
       setShowImageInput(false);
     }
   };
 
   const handleRemoveImage = (index: number) => {
-    setImageUrls(imageUrls.filter((_, i) => i !== index));
+    setImageUrls(prev => prev.filter((_, i) => i !== index));
   };
 
   return (
-    <div className="p-4 border-t border-gray-200">
+    <div className="p-4 border-t border-gray-100 bg-white">
       {/* Image Previews */}
       {imageUrls.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-3 flex flex-wrap gap-2 animate-in slide-in-from-bottom-2">
           {imageUrls.map((url, index) => (
-            <div key={index} className="relative group">
-              <img src={url} alt={`Preview ${index + 1}`} className="w-20 h-20 object-cover rounded-lg" />
+            <div key={index} className="relative group shadow-sm">
+              <img src={url} alt="" className="w-16 h-16 md:w-20 md:h-20 object-cover rounded-xl border border-gray-100" />
               <button
+                type="button"
                 onClick={() => handleRemoveImage(index)}
-                className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition"
+                className="absolute -top-1.5 -right-1.5 p-1 bg-white border border-gray-100 text-red-500 rounded-full shadow-md hover:bg-red-50 transition"
               >
-                <X className="w-3 h-3" />
+                <X className="w-3 h-3" strokeWidth={3} />
               </button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Image URL Input */}
+      {/* Image URL Input Box */}
       {showImageInput && (
-        <div className="mb-3 flex gap-2">
+        <div className="mb-3 flex gap-2 animate-in fade-in zoom-in-95">
           <input
             type="url"
             value={tempImageUrl}
             onChange={(e) => setTempImageUrl(e.target.value)}
-            placeholder="วาง URL รูปภาพ..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:border-transparent text-sm"
+            placeholder="วาง URL รูปภาพที่นี่..."
+            className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-opacity-50 text-sm outline-none transition-all"
             style={{ '--tw-ring-color': themeColor } as any}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddImage(); } }}
+            autoFocus
           />
-          <button onClick={handleAddImage} className="px-4 py-2 text-white rounded-xl transition text-sm" style={{ backgroundColor: themeColor }}>
-            เพิ่ม
-          </button>
-          <button onClick={() => { setShowImageInput(false); setTempImageUrl(''); }} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition text-sm">
-            ยกเลิก
+          <button onClick={handleAddImage} className="px-4 py-2 text-white rounded-xl font-bold transition text-sm shadow-sm active:scale-95" style={{ backgroundColor: themeColor }}>
+            เพิ่มรูป
           </button>
         </div>
       )}
 
       <form onSubmit={handleSendMessage} className="flex gap-2 items-end">
-        <button type="button" onClick={() => setShowImageInput(!showImageInput)} className="p-2 hover:bg-gray-100 rounded-full flex-shrink-0 transition" title="แนบรูปภาพ">
-          <ImageIcon className="w-5 h-5" style={{ color: showImageInput ? themeColor : '#4b5563' }} />
+        <button 
+          type="button" 
+          onClick={() => setShowImageInput(!showImageInput)} 
+          className={`p-2.5 rounded-xl transition-all ${showImageInput ? 'bg-gray-100' : 'hover:bg-gray-50 text-gray-400'}`}
+          title="แนบรูปภาพ"
+        >
+          <ImageIcon className="w-5 h-5" style={{ color: showImageInput ? themeColor : '' }} />
         </button>
 
         <textarea
@@ -147,11 +164,18 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
           value={content}
           onChange={(e) => { setContent(e.target.value); handleTyping(); }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); }
+            if (e.key === 'Enter' && !e.shiftKey) { 
+              e.preventDefault(); 
+              handleSendMessage(); 
+            }
           }}
-          placeholder="พิมพ์ข้อความ..."
-          className="flex-1 px-4 py-2 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:border-transparent resize-none"
-          style={{ minHeight: '40px', maxHeight: '128px', height: 'auto', '--tw-ring-color': themeColor } as any}
+          placeholder="พิมพ์ข้อความที่นี่..."
+          className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-2xl focus:bg-white focus:ring-2 focus:ring-opacity-20 focus:border-transparent transition-all outline-none resize-none font-medium text-gray-800"
+          style={{ 
+            minHeight: '40px', 
+            maxHeight: '128px', 
+            '--tw-ring-color': themeColor 
+          } as any}
           rows={1}
           disabled={isSending}
         />
@@ -159,14 +183,19 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
         <button
           type="submit"
           disabled={isSending || (!content.trim() && imageUrls.length === 0)}
-          className="p-2 text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 transition hover:opacity-90"
+          className="p-3 text-white rounded-2xl disabled:opacity-30 disabled:scale-100 transition-all hover:scale-105 active:scale-95 shadow-md flex-shrink-0"
           style={{ backgroundColor: themeColor }}
         >
-          <Send className="w-5 h-5" />
+          {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 fill-current" />}
         </button>
       </form>
 
-      <p className="text-xs text-gray-400 mt-2">กด Enter เพื่อส่ง • Shift + Enter เพื่อขึ้นบรรทัดใหม่</p>
+      <div className="flex justify-between items-center mt-2 px-1">
+        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Enter to send • Shift + Enter for new line</p>
+        {content.length > 0 && (
+          <p className="text-[10px] text-gray-300 font-medium">{content.length} characters</p>
+        )}
+      </div>
     </div>
   );
 }
