@@ -98,7 +98,7 @@ export default function FriendsPage() {
           : friendship.sender;
       }).filter((friend): friend is User => friend !== undefined);
 
-      // เรียงลำดับตามชื่อ
+      // เรียงลำดับตามชื่อ A-Z
       friendsList.sort((a, b) => (a.display_name || '').localeCompare(b.display_name || '', 'th'));
       setFriends(friendsList);
 
@@ -250,7 +250,7 @@ export default function FriendsPage() {
                 </div>
               ))}
             </div>
-          </section> section
+          </section>
         )}
 
         {/* 2. คำขอที่ส่งไป */}
@@ -368,6 +368,9 @@ export default function FriendsPage() {
                         </button>
                       );
                     }
+                    if (p === currentPage - 2 || p === currentPage + 2) {
+                      return <span key={i} className="text-gray-300 text-[10px]">...</span>;
+                    }
                     return null;
                   })}
                 </div>
@@ -391,7 +394,7 @@ export default function FriendsPage() {
         title="เลิกเป็นเพื่อน?"
         message="การกระทำนี้จะลบเขาออกจากรายชื่อเพื่อนของคุณ"
         confirmText="ยืนยันการลบ"
-        cancelText="ยกเลิก"
+        cancelText="หยิกเลิก"
         variant="danger"
       />
     </NavLayout>
