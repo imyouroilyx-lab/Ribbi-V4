@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { Edit2, Trash2, Palette, Pencil } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
+// ✅ Regex สำหรับดึง URL
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+
+// ✅ Cache สำหรับเก็บข้อมูล Metadata ของลิงก์ (ป้องกันการโหลดซ้ำเมื่อเลื่อนหน้าจอ)
 const metadataCache: Record<string, any> = {};
 
 // --- TYPES ---
@@ -60,7 +63,6 @@ const renderContentWithLinks = (text: string | null, isOwn: boolean) => {
         </a>
       );
     }
-    // ✅ แก้ปัญหา Missing Key Warning ใน React
     return <React.Fragment key={`text-${index}`}>{part}</React.Fragment>;
   });
 };
@@ -74,18 +76,18 @@ function YouTubeEmbed({ videoId }: { videoId: string }) {
         title="YouTube video player"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
-        className="absolute top-0 left-0 w-full h-full"
+        className="absolute top-0 left-0 w-full h-full border-0"
       ></iframe>
     </div>
   );
 }
 
 function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
-  const [metadata, setMetadata] = useState<any>(metadataCache[url] || null);
-  const [loading, setLoading] = useState(!metadataCache[url]);
-  const [hasError, setHasError] = useState(false);
+  const [metadata, setMetadata] = React.useState<any>(metadataCache[url] || null);
+  const [loading, setLoading] = React.useState(!metadataCache[url]);
+  const [hasError, setHasError] = React.useState(false);
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (metadataCache[url]) return;
 
     let isMounted = true;
@@ -98,10 +100,15 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
           if (json.status === 'success' && json.data.title) {
             metadataCache[url] = json.data;
             setMetadata(json.data);
-          } else { setHasError(true); }
+          } else {
+            setHasError(true);
+          }
         }
-      } catch (err) { if (isMounted) setHasError(true); } 
-      finally { if (isMounted) setLoading(false); }
+      } catch (err) {
+        if (isMounted) setHasError(true);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
     };
     fetchMeta();
     return () => { isMounted = false; };
@@ -136,10 +143,12 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
 }
 
 // --- MAIN COMPONENT ---
+// ✅ ใช้ React.memo เพื่อให้การเลื่อนแชทที่มีข้อความเยอะๆ ลื่นไหล ไม่ Re-render โดยไม่จำเป็น
 const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = '#22c55e', showSenderName }: MessageBubbleProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message?.content || '');
 
+  // ดึงลิงก์จากเนื้อหา (ใช้ useMemo เพื่อไม่ให้คำนวณใหม่ทุกครั้ง)
   const links = useMemo(() => {
     if (!message.content) return [];
     return Array.from(new Set(message.content.match(URL_REGEX) || []));
@@ -147,6 +156,7 @@ const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = 
 
   if (!message) return null;
 
+  // ส่วนแสดง System Events (เปลี่ยนธีม, เปลี่ยนชื่อเล่น)
   if (message.event === 'theme_change' || message.event === 'nickname_change') {
     return (
       <div className="flex items-center justify-center my-2 w-full">
@@ -198,11 +208,11 @@ const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = 
 
         {isOwn && !isEditing && (
           <div className="flex gap-1 items-start pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={() => setIsEditing(true)} className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full transition shadow-sm group">
-              <Edit2 size={12} className="text-gray-500 group-hover:text-indigo-600" />
+            <button onClick={() => setIsEditing(true)} className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full transition shadow-sm">
+              <Edit2 size={12} className="text-gray-500 hover:text-indigo-600" />
             </button>
-            <button onClick={handleDelete} className="p-1.5 bg-red-50 hover:bg-red-100 rounded-full transition shadow-sm group">
-              <Trash2 size={12} className="text-red-400 group-hover:text-red-600" />
+            <button onClick={handleDelete} className="p-1.5 bg-red-50 hover:bg-red-100 rounded-full transition shadow-sm">
+              <Trash2 size={12} className="text-red-400 hover:text-red-600" />
             </button>
           </div>
         )}
@@ -233,7 +243,7 @@ const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = 
                 {message.images && message.images.length > 0 && (
                   <div className="grid gap-2 mb-2">
                     {message.images.map((img, i) => (
-                      <img key={i} src={img} className="rounded-xl max-w-full h-auto max-h-[300px] object-contain cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(img, '_blank')} alt="" />
+                      <img key={`img-${i}`} src={img} className="rounded-xl max-w-full h-auto max-h-[300px] object-contain cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(img, '_blank')} alt="" />
                     ))}
                   </div>
                 )}
@@ -261,5 +271,7 @@ const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = 
     </div>
   );
 });
+
+MessageBubble.displayName = 'MessageBubble';
 
 export default MessageBubble;
