@@ -19,14 +19,21 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 const CACHE_KEY = 'ribbi_cache_ultimate';
 
-// ✅ ฟังก์ชันเล่นเสียงแจ้งเตือน
+// ✅ สร้าง Audio Object ไว้ข้างนอกเพื่อ Pre-load ไฟล์เสียงไว้ใน Memory ทันทีที่โหลดหน้าเว็บ
+// วิธีนี้จะทำให้เวลาสั่ง .play() เสียงจะดังทันที ไม่ต้องรอโหลดไฟล์ใหม่
+let notificationAudio: HTMLAudioElement | null = null;
+if (typeof window !== 'undefined') {
+  notificationAudio = new Audio('/sounds/ribbi.wav');
+  notificationAudio.volume = 0.4;
+  notificationAudio.preload = 'auto';
+}
+
 const playNotificationSound = () => {
-  try {
-    const audio = new Audio('/sounds/ribbi.wav');
-    audio.volume = 0.4;
-    audio.play().catch(err => console.log('Sound blocked:', err));
-  } catch (err) {
-    console.log('Sound unavailable:', err);
+  if (notificationAudio) {
+    notificationAudio.currentTime = 0; // รีเซ็ตไปที่ต้นไฟล์
+    notificationAudio.play().catch(() => {
+      // ป้องกัน Error กรณีบราวเซอร์บล็อก autoplay (ต้องมีการคลิกหน้าจอก่อน 1 ครั้ง)
+    });
   }
 };
 
@@ -47,7 +54,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const [unreadMsg, setUnreadMsg] = useState(0);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
-  const currentUserRef = useRef(currentUser);
+  // ใช้ Ref เพื่อให้ Realtime Listener เข้าถึงค่าล่าสุดได้เสมอโดยไม่ติด Closure
+  const countsRef = useRef({ unreadNotif, friendReq, unreadMsg });
+  useEffect(() => {
+    countsRef.current = { unreadNotif, friendReq, unreadMsg };
+  }, [unreadNotif, friendReq, unreadMsg]);
 
   useEffect(() => {
     if (pathname === '/notifications') setUnreadNotif(0);
@@ -56,22 +67,16 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   useOnlineStatus(currentUser?.id || null);
 
   useEffect(() => {
-    currentUserRef.current = currentUser;
-  }, [currentUser]);
-
-  // ✅ 1. โหลดข้อมูลครั้งแรก
-  useEffect(() => {
     fetchLatestData();
   }, []);
 
-  // ✅ 2. ระบบ Realtime Subscription (Badge & Sound)
+  // ✅ ระบบ Realtime แบบ "Instant Update"
   useEffect(() => {
     if (!currentUser?.id) return;
 
-    // สร้าง Channel สำหรับฟังการเปลี่ยนแปลง
     const channel = supabase
-      .channel('nav-layout-realtime')
-      // ฟังแจ้งเตือนใหม่
+      .channel('nav-layout-realtime-v2')
+      // 1. แจ้งเตือนทั่วไป (ไลค์, แท็ก, โพสต์)
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
@@ -79,29 +84,41 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         filter: `receiver_id=eq.${currentUser.id}` 
       }, (payload) => {
         if (payload.new.type !== 'friend_request') {
-          setUnreadNotif(prev => prev + 1);
-          playNotificationSound();
+          setUnreadNotif(prev => prev + 1); // ✅ บวกเลขทันที
+          playNotificationSound(); // ✅ เสียงดังทันที
         }
       })
-      // ฟังคำขอเพื่อนใหม่
+      // 2. คำขอเป็นเพื่อน
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'friendships', 
         filter: `receiver_id=eq.${currentUser.id}` 
-      }, () => {
-        setFriendReq(prev => prev + 1);
-        playNotificationSound();
+      }, (payload) => {
+        if (payload.new.status === 'pending') {
+          setFriendReq(prev => prev + 1); // ✅ บวกเลขทันที
+          playNotificationSound(); // ✅ เสียงดังทันที
+        }
       })
-      // ฟังข้อความแชทใหม่ (ผ่าน unread_count ใน chat_participants)
+      // 3. ข้อความแชท (ดึงเฉพาะยอดรวมแชทเพื่อความแม่นยำและรวดเร็ว)
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
         table: 'chat_participants', 
         filter: `user_id=eq.${currentUser.id}` 
-      }, () => {
-        // เมื่อมีการอัปเดตแชท ให้ไปดึงยอดรวมใหม่เพื่อให้เลขแม่นยำ
-        refreshUnreadMessages();
+      }, (payload) => {
+        // เช็กว่าเป็นการเพิ่มขึ้นของ unread_count หรือไม่
+        const oldUnread = payload.old?.unread_count || 0;
+        const newUnread = payload.new?.unread_count || 0;
+
+        if (newUnread > oldUnread) {
+          // ถ้ามีข้อความเข้าจริงๆ ค่อยไปดึงผลรวมใหม่ (วิธีนี้แม่นยำที่สุดและทำงานในเสี้ยววินาที)
+          quickRefreshChatCount();
+          playNotificationSound();
+        } else if (newUnread < oldUnread) {
+          // ถ้าเรากดอ่านแชท เลขจะลดลง
+          quickRefreshChatCount();
+        }
       })
       .subscribe();
 
@@ -110,18 +127,15 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     };
   }, [currentUser?.id]);
 
-  const refreshUnreadMessages = async () => {
-    if (!currentUser?.id) return;
+  // ฟังก์ชันดึงเฉพาะยอดแชท (เบามาก)
+  const quickRefreshChatCount = async () => {
     const { data } = await supabase
       .from('chat_participants')
       .select('unread_count')
       .eq('user_id', currentUser.id);
-    
     if (data) {
       const total = data.reduce((sum, p) => sum + (p.unread_count || 0), 0);
       setUnreadMsg(total);
-      // ถ้าตัวเลขเพิ่มขึ้น แสดงว่ามีแชทใหม่เข้า
-      if (total > unreadMsg) playNotificationSound();
     }
   };
 
@@ -146,7 +160,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         nFriend = data.pending_friends || 0;
         nMsg = data.unread_messages || 0;
       } else {
-        // Fallback optimized query
         const [
           { data: fallbackUser },
           { count: cNotif },
@@ -199,6 +212,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
+      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 fixed inset-y-0 bg-white border-r border-gray-100 z-50 p-4">
         <div className="mb-8 px-2 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 group">
@@ -250,6 +264,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
+      {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 z-40 shadow-sm">
         <Link href="/" className="flex items-center gap-2">
           <img src="https://iili.io/qbtgKBt.png" className="w-8 h-8" alt="" />
@@ -266,10 +281,12 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
+      {/* Content Area */}
       <main className="flex-1 lg:ml-64 pt-16 lg:pt-0 pb-20 lg:pb-0 min-h-screen">
         <div className="max-w-7xl mx-auto p-4 md:p-6">{children}</div>
       </main>
 
+      {/* Mobile Bottom Nav */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 h-16 flex items-center justify-around z-40 pb-safe shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
         {navItems.slice(0, 5).map((item) => {
           const active = item.label === 'โปรไฟล์' ? isProfileActive : pathname === item.href;
@@ -296,6 +313,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         })}
       </nav>
 
+      {/* Mobile Drawer */}
       {showMobileMenu && (
         <>
           <div className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm animate-in fade-in" onClick={() => setShowMobileMenu(false)} />
