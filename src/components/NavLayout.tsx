@@ -32,7 +32,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     pathnameRef.current = pathname;
-    // ✅ ถ้าอยู่หน้า Notifications ให้เคลียร์เลขแจ้งเตือนใน UI ทันที
     if (pathname === '/notifications') {
       setUnreadNotifCount(0);
     }
@@ -50,13 +49,12 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     loadUnreadMessages(currentUser.id);
 
     const interval = setInterval(() => {
-      // ✅ ไม่ต้องดึงแจ้งเตือนถ้ากำลังอยู่หน้า Notifications (เดี๋ยวหน้าเพจจัดการเอง)
       if (pathnameRef.current !== '/notifications') {
         loadNotifications(currentUser.id);
       }
       loadFriendRequests(currentUser.id);
       loadUnreadMessages(currentUser.id);
-    }, 45 * 1000); // ปรับเป็น 45 วิ เพื่อลด Load
+    }, 45 * 1000);
 
     // Realtime Notifications
     const notifChannel = supabase
@@ -66,7 +64,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         const user = currentUserRef.current;
         if (!user || notif.receiver_id !== user.id) return;
         
-        // ถ้าไม่อยู่หน้าแจ้งเตือน ให้บวกเลขและดังเสียง
         if (pathnameRef.current !== '/notifications') {
           setUnreadNotifCount(prev => prev + 1);
           playNotificationSound();
@@ -142,6 +139,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Sidebar - Desktop */}
       <aside className="hidden lg:block w-64 fixed left-0 top-0 h-screen bg-white border-r border-gray-200 p-4">
         <div className="mb-8">
           <Link href="/" className="flex items-center gap-2">
@@ -149,43 +147,54 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             <span className="text-2xl font-bold text-frog-600">Ribbi</span>
           </Link>
         </div>
-        <nav className="space-y-2">
-          <Link href="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
+        <nav className="space-y-1">
+          <Link href="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Home className="w-5 h-5" />
             <span>หน้าหลัก</span>
           </Link>
-          <Link href="/friends" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/friends') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
+          <Link href="/friends" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/friends') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Users className="w-5 h-5" />
             <span>เพื่อน</span>
-            {friendRequestCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-xs rounded-full flex items-center justify-center font-bold">{friendRequestCount}</span>}
+            {friendRequestCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-xs rounded-full flex items-center justify-center font-black">{friendRequestCount}</span>}
           </Link>
-          <Link href="/messages" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/messages') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
+          <Link href="/messages" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/messages') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <MessageCircle className="w-5 h-5" />
             <span>แชท</span>
-            {unreadMessageCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-xs rounded-full flex items-center justify-center font-bold">{unreadMessageCount}</span>}
+            {unreadMessageCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-xs rounded-full flex items-center justify-center font-black">{unreadMessageCount}</span>}
           </Link>
-          <Link href="/notifications" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/notifications') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
+          <Link href="/notifications" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/notifications') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Bell className="w-5 h-5" />
             <span>แจ้งเตือน</span>
-            {unreadNotifCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">{unreadNotifCount}</span>}
+            {unreadNotifCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-black">{unreadNotifCount}</span>}
           </Link>
-          {currentUser && (
-            <Link href={`/profile/${currentUser.username}`} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${pathname?.startsWith('/profile/') && !pathname.includes('edit') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
-              <User className="w-5 h-5" />
-              <span>โปรไฟล์</span>
-            </Link>
-          )}
-          <Link href="/settings" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/settings') ? 'bg-frog-100 text-frog-600 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}>
+          <Link href="/settings" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/settings') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Settings className="w-5 h-5" />
             <span>ตั้งค่า</span>
           </Link>
-          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 text-red-600 transition">
-            <LogOut className="w-5 h-5" />
-            <span>ออกจากระบบ</span>
-          </button>
         </nav>
+
+        {/* ✅ ข้อมูลผู้ใช้ด้านล่าง Sidebar (Desktop) */}
+        {currentUser && (
+          <div className="absolute bottom-4 left-4 right-4 space-y-2">
+            <Link 
+              href={`/profile/${currentUser.username}`} 
+              className="flex items-center gap-3 p-3 bg-gray-50 hover:bg-gray-100 transition-all rounded-2xl border border-gray-100 group"
+            >
+              <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm group-hover:scale-105 transition-transform" />
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm truncate text-gray-900">{currentUser.display_name}</p>
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{currentUser.username}</p>
+              </div>
+            </Link>
+            <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 text-red-500 transition-colors text-sm font-bold">
+              <LogOut className="w-5 h-5" />
+              <span>ออกจากระบบ</span>
+            </button>
+          </div>
+        )}
       </aside>
 
+      {/* Header - Mobile */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-40">
         <Link href="/" className="flex items-center gap-2">
           <img src="https://iili.io/qbtgKBt.png" alt="Ribbi" className="w-8 h-8" />
@@ -202,34 +211,57 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
+      {/* Mobile Menu Drawer */}
       {showMobileMenu && (
         <>
-          <div className="lg:hidden fixed inset-0 bg-black/50 z-50" onClick={() => setShowMobileMenu(false)} />
-          <aside className="lg:hidden fixed right-0 top-0 h-screen w-64 bg-white z-50 p-4 shadow-xl">
-            <div className="flex items-center justify-between mb-6">
-              <span className="text-xl font-bold text-frog-600">เมนู</span>
-              <button onClick={() => setShowMobileMenu(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+          <div className="lg:hidden fixed inset-0 bg-black/50 z-50 animate-in fade-in duration-200" onClick={() => setShowMobileMenu(false)} />
+          <aside className="lg:hidden fixed right-0 top-0 h-screen w-72 bg-white z-50 p-6 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between mb-8">
+              <span className="text-2xl font-black text-frog-600 tracking-tight">Menu</span>
+              <button onClick={() => setShowMobileMenu(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <nav className="space-y-2">
-              <Link href="/" onClick={() => setShowMobileMenu(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-gray-100">
-                <Home className="w-5 h-5" />
+
+            {/* ✅ ข้อมูลผู้ใช้ด้านบน (Mobile Menu) */}
+            {currentUser && (
+              <Link 
+                href={`/profile/${currentUser.username}`} 
+                onClick={() => setShowMobileMenu(false)}
+                className="flex items-center gap-4 p-4 bg-gray-50 rounded-[1.5rem] border border-gray-100 mb-6"
+              >
+                <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-white shadow-md" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-gray-900 truncate">{currentUser.display_name}</p>
+                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">View Profile</p>
+                </div>
+              </Link>
+            )}
+
+            <nav className="space-y-1 flex-1">
+              <Link href="/" onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 px-4 py-4 rounded-2xl hover:bg-gray-50 font-bold text-gray-700">
+                <Home className="w-6 h-6 text-gray-400" />
                 <span>หน้าหลัก</span>
               </Link>
-              <Link href="/notifications" onClick={() => setShowMobileMenu(false)} className="flex items-center justify-between px-4 py-3 rounded-xl hover:bg-gray-100">
-                <div className="flex items-center gap-3"><Bell className="w-5 h-5" /><span>แจ้งเตือน</span></div>
-                {unreadNotifCount > 0 && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{unreadNotifCount}</span>}
+              <Link href="/notifications" onClick={() => setShowMobileMenu(false)} className="flex items-center justify-between px-4 py-4 rounded-2xl hover:bg-gray-50 font-bold text-gray-700">
+                <div className="flex items-center gap-4"><Bell className="w-6 h-6 text-gray-400" /><span>แจ้งเตือน</span></div>
+                {unreadNotifCount > 0 && <span className="bg-red-500 text-white text-xs px-2.5 py-1 rounded-full font-black">{unreadNotifCount}</span>}
               </Link>
-              <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 text-red-600">
-                <LogOut className="w-5 h-5" />
-                <span>ออกจากระบบ</span>
-              </button>
+              <Link href="/settings" onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 px-4 py-4 rounded-2xl hover:bg-gray-50 font-bold text-gray-700">
+                <Settings className="w-6 h-6 text-gray-400" />
+                <span>ตั้งค่า</span>
+              </Link>
             </nav>
+
+            <button onClick={() => { setShowMobileMenu(false); handleLogout(); }} className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl hover:bg-red-50 text-red-500 font-black transition-colors">
+              <LogOut className="w-6 h-6" />
+              <span>ออกจากระบบ</span>
+            </button>
           </aside>
         </>
       )}
 
+      {/* Main Content Area */}
       <main className="lg:ml-64 pt-16 lg:pt-0 pb-20 lg:pb-0 min-h-screen">
         <div className="max-w-7xl mx-auto p-4 lg:p-6">
           {children}
