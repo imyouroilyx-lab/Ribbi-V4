@@ -342,8 +342,6 @@ export default function ProfilePage() {
         relationship_label: newRelationship.trim() 
       });
       
-      // ✅ ถ้าเป็นหน้าคนอื่น ไม่ต้องโหลด familyMembers ทับ (เพื่อป้องกัน Glitch) 
-      // แต่ให้แสดง Feedback ว่าบันทึกแล้ว
       if (isOwnProfile) {
         await loadFamilyMembers(currentUser.id);
       } else {
@@ -413,9 +411,7 @@ export default function ProfilePage() {
 
   const themeColor = profileUser.theme_color || '#9de5a8';
 
-  // ✅ ปรับปรุง RelationshipWidget ให้ฉลาดขึ้น
   const RelationshipWidget = () => {
-    // เงื่อนไขในการแสดง Widget: มีข้อมูล หรือ เป็นเพื่อนกัน (เพื่อกดเพิ่ม) หรือ เป็นเจ้าของโปรไฟล์
     const hasData = profileUser.relationship_status || familyMembers.length > 0;
     const canInteract = isOwnProfile || friendshipStatus === 'accepted';
 
@@ -464,7 +460,6 @@ export default function ProfilePage() {
           <p className="text-[10px] text-gray-400 italic px-1">ยังไม่มีรายชื่อคนใกล้ชิด</p>
         )}
 
-        {/* ปุ่มเพิ่มความสัมพันธ์มาหน้าโปรไฟล์เรา */}
         {!isOwnProfile && friendshipStatus === 'accepted' && (
           <div className="mt-4">
             {!showAddFamily ? (
@@ -687,6 +682,25 @@ export default function ProfilePage() {
                       </div>
                     )}
                   </div>
+
+                  {/* ✅ ส่วนแสดงงานอดิเรก (Hobbies) กลับมาแล้วครับ */}
+                  {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      {profileUser.hobbies.map((hobby: any, index: number) => (
+                        <span 
+                          key={index}
+                          className="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:scale-105"
+                          style={{ 
+                            backgroundColor: `${themeColor}10`,
+                            color: themeColor,
+                            borderColor: `${themeColor}30`,
+                          }}
+                        >
+                          {hobby.emoji} {hobby.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -715,7 +729,6 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* ✅ Relationship Widget - Mobile (Always renders if friend/owner) */}
               <RelationshipWidget />
             </div>
 
@@ -778,7 +791,7 @@ export default function ProfilePage() {
                     {friends.map((friend) => (
                       <Link key={friend.id} href={`/profile/${friend.username}`} className="flex items-center gap-3 p-2 rounded-2xl hover:bg-gray-50 transition group">
                         <div className="relative">
-                          <img src={friend.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-2xl object-cover border border-gray-50 group-hover:scale-105 transition shadow-sm" alt="" />
+                          <img src={friend.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-2xl object-cover border border-gray-100 group-hover:scale-105 transition shadow-sm" alt="" />
                           {friend.is_online && <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -791,7 +804,6 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* ✅ Relationship Widget - Desktop (Always renders if friend/owner) */}
               <RelationshipWidget />
 
               <div className="text-center opacity-40 hover:opacity-100 transition">
