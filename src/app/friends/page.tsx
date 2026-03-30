@@ -186,7 +186,7 @@ export default function FriendsPage() {
 
   const totalPages = Math.ceil(totalFriends / FRIENDS_PER_PAGE);
 
-  if (isLoading) return <NavLayout><div className="flex justify-center py-20 animate-pulse text-gray-400 font-bold uppercase tracking-widest text-xs">Loading Friends...</div></NavLayout>;
+  if (isLoading) return <NavLayout><div className="flex justify-center py-20 animate-pulse text-gray-400 font-bold uppercase tracking-widest text-xs">กำลังโหลดรายชื่อเพื่อน...</div></NavLayout>;
 
   return (
     <NavLayout>
