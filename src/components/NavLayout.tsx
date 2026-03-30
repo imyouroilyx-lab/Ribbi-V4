@@ -19,8 +19,7 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 const CACHE_KEY = 'ribbi_cache_ultimate';
 
-// ✅ สร้าง Audio Object ไว้ข้างนอกเพื่อ Pre-load ไฟล์เสียงไว้ใน Memory ทันทีที่โหลดหน้าเว็บ
-// วิธีนี้จะทำให้เวลาสั่ง .play() เสียงจะดังทันที ไม่ต้องรอโหลดไฟล์ใหม่
+// ✅ Singleton Audio
 let notificationAudio: HTMLAudioElement | null = null;
 if (typeof window !== 'undefined') {
   notificationAudio = new Audio('/sounds/ribbi.wav');
@@ -30,10 +29,8 @@ if (typeof window !== 'undefined') {
 
 const playNotificationSound = () => {
   if (notificationAudio) {
-    notificationAudio.currentTime = 0; // รีเซ็ตไปที่ต้นไฟล์
-    notificationAudio.play().catch(() => {
-      // ป้องกัน Error กรณีบราวเซอร์บล็อก autoplay (ต้องมีการคลิกหน้าจอก่อน 1 ครั้ง)
-    });
+    notificationAudio.currentTime = 0;
+    notificationAudio.play().catch(() => {});
   }
 };
 
@@ -54,14 +51,20 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const [unreadMsg, setUnreadMsg] = useState(0);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
-  // ใช้ Ref เพื่อให้ Realtime Listener เข้าถึงค่าล่าสุดได้เสมอโดยไม่ติด Closure
-  const countsRef = useRef({ unreadNotif, friendReq, unreadMsg });
-  useEffect(() => {
-    countsRef.current = { unreadNotif, friendReq, unreadMsg };
-  }, [unreadNotif, friendReq, unreadMsg]);
+  // ✅ ใช้ Ref เก็บ pathname ล่าสุดเพื่อให้ Listener ของ Realtime เรียกดูได้ทันทีโดยไม่เกิด Delay
+  const pathnameRef = useRef(pathname);
 
+  // ✅ ระบบ Auto Clear Badge เมื่อเข้าสู่หน้านั้นๆ
   useEffect(() => {
-    if (pathname === '/notifications') setUnreadNotif(0);
+    pathnameRef.current = pathname;
+
+    if (pathname === '/notifications') {
+      setUnreadNotif(0);
+    } else if (pathname === '/friends') {
+      setFriendReq(0);
+    } else if (pathname === '/messages') {
+      setUnreadMsg(0);
+    }
   }, [pathname]);
 
   useOnlineStatus(currentUser?.id || null);
@@ -70,13 +73,13 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     fetchLatestData();
   }, []);
 
-  // ✅ ระบบ Realtime แบบ "Instant Update"
+  // ✅ ระบบ Realtime พร้อม Logic เสียงอัจฉริยะ
   useEffect(() => {
     if (!currentUser?.id) return;
 
     const channel = supabase
-      .channel('nav-layout-realtime-v2')
-      // 1. แจ้งเตือนทั่วไป (ไลค์, แท็ก, โพสต์)
+      .channel('nav-layout-realtime-v3')
+      // 1. แจ้งเตือนทั่วไป
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
@@ -84,8 +87,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         filter: `receiver_id=eq.${currentUser.id}` 
       }, (payload) => {
         if (payload.new.type !== 'friend_request') {
-          setUnreadNotif(prev => prev + 1); // ✅ บวกเลขทันที
-          playNotificationSound(); // ✅ เสียงดังทันที
+          // ถ้าไม่ได้อยู่หน้าแจ้งเตือน ให้บวกเลขและเล่นเสียง
+          if (pathnameRef.current !== '/notifications') {
+            setUnreadNotif(prev => prev + 1);
+            playNotificationSound();
+          }
         }
       })
       // 2. คำขอเป็นเพื่อน
@@ -96,27 +102,32 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         filter: `receiver_id=eq.${currentUser.id}` 
       }, (payload) => {
         if (payload.new.status === 'pending') {
-          setFriendReq(prev => prev + 1); // ✅ บวกเลขทันที
-          playNotificationSound(); // ✅ เสียงดังทันที
+          // ถ้าไม่ได้อยู่หน้าเพื่อน ให้บวกเลขและเล่นเสียง
+          if (pathnameRef.current !== '/friends') {
+            setFriendReq(prev => prev + 1);
+            playNotificationSound();
+          }
         }
       })
-      // 3. ข้อความแชท (ดึงเฉพาะยอดรวมแชทเพื่อความแม่นยำและรวดเร็ว)
+      // 3. ข้อความแชท
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
         table: 'chat_participants', 
         filter: `user_id=eq.${currentUser.id}` 
       }, (payload) => {
-        // เช็กว่าเป็นการเพิ่มขึ้นของ unread_count หรือไม่
         const oldUnread = payload.old?.unread_count || 0;
         const newUnread = payload.new?.unread_count || 0;
 
         if (newUnread > oldUnread) {
-          // ถ้ามีข้อความเข้าจริงๆ ค่อยไปดึงผลรวมใหม่ (วิธีนี้แม่นยำที่สุดและทำงานในเสี้ยววินาที)
+          // อัปเดตยอดรวมแชทเสมอเพื่อให้เลขเป๊ะ
           quickRefreshChatCount();
-          playNotificationSound();
+          
+          // ✅ เล่นเสียงก็ต่อเมื่อไม่ได้อยู่หน้าข้อความ
+          if (pathnameRef.current !== '/messages') {
+            playNotificationSound();
+          }
         } else if (newUnread < oldUnread) {
-          // ถ้าเรากดอ่านแชท เลขจะลดลง
           quickRefreshChatCount();
         }
       })
@@ -127,7 +138,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     };
   }, [currentUser?.id]);
 
-  // ฟังก์ชันดึงเฉพาะยอดแชท (เบามาก)
   const quickRefreshChatCount = async () => {
     const { data } = await supabase
       .from('chat_participants')
@@ -135,7 +145,8 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       .eq('user_id', currentUser.id);
     if (data) {
       const total = data.reduce((sum, p) => sum + (p.unread_count || 0), 0);
-      setUnreadMsg(total);
+      // ถ้าอยู่หน้าแชทอยู่แล้ว ให้กดเป็น 0 ทันที
+      setUnreadMsg(pathnameRef.current === '/messages' ? 0 : total);
     }
   };
 
@@ -180,9 +191,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
       if (uData) {
         setCurrentUser(uData);
-        setUnreadNotif(nNotif);
-        setFriendReq(nFriend);
-        setUnreadMsg(nMsg);
+        // เช็กอีกรอบว่าตอนนี้อยู่หน้านั้นๆ ไหม ถ้าอยู่ไม่ต้องขึ้นเลข
+        setUnreadNotif(pathname === '/notifications' ? 0 : nNotif);
+        setFriendReq(pathname === '/friends' ? 0 : nFriend);
+        setUnreadMsg(pathname === '/messages' ? 0 : nMsg);
+        
         sessionStorage.setItem(CACHE_KEY, JSON.stringify({
           user: uData, notif: nNotif, friend: nFriend, message: nMsg
         }));
