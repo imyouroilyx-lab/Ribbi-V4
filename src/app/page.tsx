@@ -8,7 +8,7 @@ import PostCardV3 from '@/components/PostCardV3';
 import CreatePostV3 from '@/components/CreatePostV3';
 import ConfirmModal from '@/components/ConfirmModal';
 import Link from 'next/link';
-import { Users, Circle, ChevronRight, RefreshCw, Loader2 } from 'lucide-react';
+import { Users, Circle, ChevronRight, RefreshCw, Loader2, ArrowRight } from 'lucide-react'; // ✅ เพิ่ม ArrowRight
 
 const POSTS_PER_PAGE = 15;
 
@@ -19,7 +19,7 @@ export default function HomePage() {
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isOnlineLoading, setIsOnlineLoading] = useState(false); // ✅ สถานะโหลดคนออนไลน์
+  const [isOnlineLoading, setIsOnlineLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -42,7 +42,6 @@ export default function HomePage() {
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
 
-  // โหลดข้อมูลหลักตอนเข้าหน้าเว็บ
   useEffect(() => {
     loadInitialData();
   }, [refreshTrigger]);
@@ -53,13 +52,11 @@ export default function HomePage() {
     }
   }, [page]);
 
-  // ระบบอัปเดตสถานะออนไลน์ (Throttled)
   useEffect(() => {
     if (!currentUser) return;
     const updateActivity = async () => {
       const lastUpdated = sessionStorage.getItem('last_active_update');
       const now = Date.now();
-      // อัปเดต DB เฉพาะตอนที่ห่างจากครั้งล่าสุดเกิน 2 นาที (ประหยัด IO ขึ้นอีก)
       if (!lastUpdated || now - parseInt(lastUpdated) > 120000) {
         await supabase.from('users').update({ last_active: new Date().toISOString() }).eq('id', currentUser.id);
         sessionStorage.setItem('last_active_update', now.toString());
@@ -67,12 +64,10 @@ export default function HomePage() {
     };
     
     updateActivity();
-    // อัปเดตตัวเองทุก 5 นาทีพอครับ ไม่ต้องบ่อย
     const interval = setInterval(updateActivity, 5 * 60 * 1000); 
     return () => clearInterval(interval);
   }, [currentUser]);
 
-  // ✅ โหลดรายชื่อคนออนไลน์ "แค่ครั้งเดียว" ตอนเข้าหน้าเว็บ และไม่มีการตั้ง interval อีก
   useEffect(() => {
     if (currentUser) {
       loadOnlineUsers();
@@ -85,7 +80,6 @@ export default function HomePage() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
 
-      // ดึงข้อมูล User และ Post พร้อมกัน
       const [userDataRes, postsDataRes] = await Promise.all([
         supabase.from('users').select('*').eq('id', authUser.id).single(),
         supabase
@@ -110,10 +104,8 @@ export default function HomePage() {
   const loadMorePosts = async () => {
     if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
-    
     const start = page * POSTS_PER_PAGE;
     const end = start + POSTS_PER_PAGE - 1;
-
     try {
       const { data: newPosts } = await supabase
         .from('posts')
@@ -134,20 +126,17 @@ export default function HomePage() {
     }
   };
 
-  // ✅ ปรับปรุง: ฟังก์ชันโหลดคนออนไลน์ เพิ่ม Loading State
   const loadOnlineUsers = async () => {
     if (isOnlineLoading) return;
     setIsOnlineLoading(true);
     try {
-      // นิยามคำว่า "ออนไลน์" คือเคลื่อนไหวใน 10 นาทีล่าสุด
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from('users')
         .select('id, username, display_name, profile_img_url, last_active') 
         .gte('last_active', tenMinutesAgo)
         .order('last_active', { ascending: false })
-        .limit(12); // เอามาแค่ 12 คนพอประหยัดที่
-      
+        .limit(12);
       setOnlineUsers((data as any) || []);
     } catch (error) { 
       console.error(error); 
@@ -196,14 +185,25 @@ export default function HomePage() {
                   <Circle className="w-2 h-2 fill-green-500 text-green-500" />
                   ออนไลน์ขณะนี้ ({onlineUsers.length})
                 </h3>
-                <button 
-                  onClick={loadOnlineUsers}
-                  disabled={isOnlineLoading}
-                  className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-                >
-                  <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin' : ''} text-gray-400`} />
-                </button>
+                
+                {/* ✅ เพิ่มปุ่มสมาชิกทั้งหมดสำหรับ Mobile */}
+                <div className="flex items-center gap-1">
+                  <Link 
+                    href="/users" 
+                    className="text-[10px] font-black uppercase text-frog-600 px-2 py-1 bg-frog-50 rounded-lg flex items-center gap-1"
+                  >
+                    สมาชิก <ChevronRight size={12} />
+                  </Link>
+                  <button 
+                    onClick={loadOnlineUsers}
+                    disabled={isOnlineLoading}
+                    className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+                  >
+                    <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin' : ''} text-gray-400`} />
+                  </button>
+                </div>
               </div>
+
               <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
                 {onlineUsers.map((user) => (
                   <Link key={user.id} href={`/profile/${user.username}`} className="flex flex-col items-center gap-1 flex-shrink-0 w-16 group">
@@ -214,6 +214,16 @@ export default function HomePage() {
                     <p className="text-[10px] font-bold truncate w-full text-center text-gray-700">{user.display_name.split(' ')[0]}</p>
                   </Link>
                 ))}
+                
+                {/* ✅ เพิ่มการ์ด "ดูทั้งหมด" ท้ายสุดของรายชื่อคนออนไลน์ใน Mobile */}
+                {onlineUsers.length > 0 && (
+                  <Link href="/users" className="flex flex-col items-center gap-1 flex-shrink-0 w-16 group">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center border-2 border-dashed border-slate-300 group-hover:bg-frog-500 group-hover:border-frog-500 transition-all">
+                      <ArrowRight size={20} className="text-slate-400 group-hover:text-white" />
+                    </div>
+                    <p className="text-[10px] font-black text-slate-400 group-hover:text-frog-600 text-center uppercase tracking-tighter">ทั้งหมด</p>
+                  </Link>
+                )}
               </div>
             </div>
 
@@ -253,7 +263,6 @@ export default function HomePage() {
           <div className="hidden lg:block w-80 flex-shrink-0">
             <div className="sticky top-4 space-y-6">
               
-              {/* Online Users Widget ✅ ปรับปรุงให้กดรีเฟรชได้เอง */}
               <div className="card-minimal bg-white/90 border border-gray-100 shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
                   <h3 className="font-black text-xs uppercase tracking-widest flex items-center gap-2">
