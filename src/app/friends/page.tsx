@@ -37,7 +37,7 @@ const ALPHABETS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 export default function FriendsPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [friends, setFriends] = useState<any[]>([]); // ✅ ใช้ any[] เพื่อรองรับการยัด friendship_id เข้าไป
+  const [friends, setFriends] = useState<any[]>([]); 
   const [pendingRequests, setPendingRequests] = useState<Friendship[]>([]);
   const [sentRequests, setSentRequests] = useState<Friendship[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -118,11 +118,14 @@ export default function FriendsPage() {
 
       setTotalFriends(count || 0);
       
-      // ✅ แก้ไข: แนบ friendship_id เข้าไปใน Object ของเพื่อนด้วย เพื่อเอาไว้ใช้ตอนกดลบ
+      // ✅ จุดที่แก้ไข: ดึงข้อมูลเพื่อนและแนบ friendship_id (ไอดีของตาราง friendships) มาด้วยเหมือนหน้าโปรไฟล์
       const friendsList = (data || []).map((f: any) => {
         const friendData = f.sender_id === currentUser.id ? f.receiver : f.sender;
         if (friendData) {
-          return { ...friendData, friendship_id: f.id };
+          return { 
+            ...friendData, 
+            friendshipId: f.id // ใช้ชื่อเหมือนกับในหน้าโปรไฟล์เพื่อความเข้าใจง่าย
+          };
         }
         return null;
       }).filter(u => u !== null);
@@ -153,16 +156,24 @@ export default function FriendsPage() {
   };
 
   const handleCancelRequest = async (id: string) => {
-    await supabase.from('friendships').delete().eq('id', id);
-    loadInitialData();
+    try {
+      await supabase.from('friendships').delete().eq('id', id);
+      loadInitialData();
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const handleRemoveFriend = async () => {
     if (!selectedFriendshipId) return;
     
     try {
-      // ✅ ลบด้วย Friendship ID จริงๆ แล้ว
-      const { error } = await supabase.from('friendships').delete().eq('id', selectedFriendshipId);
+      // ✅ ลบด้วยไอดีของแถวความสัมพันธ์ (UUID ตัวแรกในตารางที่พี่ส่งรูปมาให้ดู)
+      const { error } = await supabase
+        .from('friendships')
+        .delete()
+        .eq('id', selectedFriendshipId);
+      
       if (error) throw error;
       
       setShowRemoveConfirm(false);
@@ -197,6 +208,7 @@ export default function FriendsPage() {
           </div>
         </div>
 
+        {/* Incoming Requests */}
         {pendingRequests.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2 px-1">
@@ -232,6 +244,7 @@ export default function FriendsPage() {
           </div>
         )}
 
+        {/* Sent Requests */}
         {sentRequests.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 px-1">
@@ -256,6 +269,7 @@ export default function FriendsPage() {
           </div>
         )}
 
+        {/* Alphabet Filter */}
         <div className="flex gap-1 overflow-x-auto pb-2 no-scrollbar items-center">
           <button onClick={() => { setSelectedLetter(null); setCurrentPage(1); }} className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-[10px] font-black transition-all ${!selectedLetter ? 'bg-frog-600 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>ทั้งหมด</button>
           {ALPHABETS.map(l => (
@@ -263,6 +277,7 @@ export default function FriendsPage() {
           ))}
         </div>
 
+        {/* Friends List Grid */}
         <div className="space-y-4">
           <h2 className="text-xs font-black text-gray-900 uppercase tracking-widest px-1 flex items-center gap-2">
             <Users size={14} /> รายชื่อเพื่อน ({totalFriends})
@@ -286,8 +301,8 @@ export default function FriendsPage() {
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
-                      // ✅ แก้ไข: ใช้ f.friendship_id ในการอ้างอิงแทนที่จะใช้ f.id (ซึ่งเป็น User ID)
-                      onClick={() => { setSelectedFriendshipId(f.friendship_id); setShowRemoveConfirm(true); }} 
+                      // ✅ แก้ไข: ใช้ f.friendshipId ที่เราดึงมาจากไอดีจริงๆ ของตาราง friendships
+                      onClick={() => { setSelectedFriendshipId(f.friendshipId); setShowRemoveConfirm(true); }} 
                       className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                       title="ลบเพื่อน"
                     >
@@ -300,6 +315,7 @@ export default function FriendsPage() {
           </div>
         </div>
 
+        {/* Pagination */}
         {totalPages > 1 && (
           <div className="mt-8 flex items-center justify-center gap-2 pb-10">
             <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-2 bg-white border border-gray-100 rounded-xl disabled:opacity-20 shadow-sm hover:bg-gray-50"><ChevronLeft size={18} /></button>
