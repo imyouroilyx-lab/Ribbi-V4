@@ -93,7 +93,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
   const [likePage, setLikePage] = useState(0);
   const [hasMoreLikes, setHasMoreLikes] = useState(true);
 
-  // Comment & Reply inputs
+  // Inputs
   const [newComment, setNewComment] = useState('');
   const [commentImageUrl, setCommentImageUrl] = useState('');
   const [showCommentImageInput, setShowCommentImageInput] = useState(false);
@@ -102,12 +102,12 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
   const [replyImageUrl, setReplyImageUrl] = useState('');
   const [showReplyImageInput, setShowReplyImageInput] = useState(false);
 
-  // Edit Comment
+  // Edit
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentContent, setEditCommentContent] = useState('');
   const [editCommentImageUrl, setEditCommentImageUrl] = useState('');
 
-  // Likes for comments
+  // Interactions
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
@@ -200,7 +200,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     const to = from + LIKES_PER_PAGE - 1;
 
     try {
-      // ✅ ใช้ข้อมูลจริง: ดึงข้อมูลโปรไฟล์ผู้ใช้แบบเต็ม
+      // ✅ แก้ไข Type Error: ใช้ any casting และดึงข้อมูลจริงทั้งหมด
       const { data } = await supabase
         .from('likes')
         .select(`
@@ -217,9 +217,10 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         .range(from, to);
 
       if (data) {
-        const users = data.map((d: any) => d.users).filter(Boolean) as User[];
-        setLikedUsers(prev => reset ? users : [...prev, ...users]);
-        setHasMoreLikes(users.length === LIKES_PER_PAGE);
+        // Map ข้อมูลออกมาให้เป็น User object โดยตรง และใช้ unknown casting เพื่อความปลอดภัยตอน Build
+        const extractedUsers = (data as any[]).map(d => d.users).filter(Boolean) as unknown as User[];
+        setLikedUsers(prev => reset ? extractedUsers : [...prev, ...extractedUsers]);
+        setHasMoreLikes(extractedUsers.length === LIKES_PER_PAGE);
       }
     } catch (error) {
       console.error(error);
@@ -352,7 +353,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
       const mdMatch = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
       if (mdMatch) return <Link key={i} href={`/profile/${mdMatch[2]}`} className="text-frog-600 font-semibold hover:underline">{mdMatch[1]}</Link>;
       
-      // ✅ Hashtag: คลิกได้ มีเส้นใต้ตอน Hover และ Pointer cursor
       if (part.startsWith('#')) return (
         <span 
           key={i} 
