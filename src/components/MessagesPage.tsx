@@ -49,14 +49,12 @@ export default function MessagesPage() {
   const selectedChatIdRef = useRef<string | null>(null);
   const isWindowFocusedRef = useRef(true);
   const currentUserRef = useRef<any>(null);
-  // ✅ เพิ่ม chatsRef เพื่อใช้เช็คความสัมพันธ์ว่าข้อความที่เด้งมา เป็นของแชทที่เราอยู่จริงหรือไม่
   const chatsRef = useRef<Chat[]>([]);
 
   useOnlineStatus(currentUser?.id || null);
 
   useEffect(() => { selectedChatIdRef.current = selectedChatId; }, [selectedChatId]);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
-  // ✅ อัปเดตรายชื่อแชทล่าสุดลง Ref เสมอ
   useEffect(() => { chatsRef.current = chats; }, [chats]);
 
   useEffect(() => {
@@ -113,12 +111,9 @@ export default function MessagesPage() {
         if (newMessage?.event) return;
         
         if (payload.eventType === 'INSERT' && newMessage && user) {
-          // 🛑 ตรวจสอบความปลอดภัย: เช็คว่า newMessage.chat_id อยู่ในรายชื่อแชทของเราหรือไม่
           const isMyChat = chatsRef.current.some(c => c.id === newMessage.chat_id);
           
-          // ถ้าไม่ใช่แชทของเรา หรือเป็นคนส่งเอง ให้หยุดทำงานทันที (ไม่เล่นเสียง)
           if (!isMyChat || newMessage.sender_id === user.id) {
-            // โหลดแชทใหม่ในกรณีที่ถูกเพิ่มเข้ากลุ่มใหม่ แต่ยังไม่มีใน list
             loadChats();
             return;
           }
@@ -126,7 +121,6 @@ export default function MessagesPage() {
           const chatId = selectedChatIdRef.current;
           const focused = isWindowFocusedRef.current;
           
-          // เล่นเสียงเฉพาะเมื่อเป็นแชทของเรา และไม่ได้เปิดแชทนั้นอยู่ หรือหน้าจอไม่ได้ focus
           if (newMessage.chat_id !== chatId || !focused) {
             playNotificationSound();
           }
@@ -276,7 +270,8 @@ export default function MessagesPage() {
   if (!currentUser) return null;
 
   return (
-    <div className="h-[calc(100vh-64px)] flex overflow-hidden bg-white">
+    // ✅ แก้ไขตรงนี้: ปรับความสูงให้รองรับมือถือ (100dvh) และลบส่วน Navbar ออกไป (120px คือ Navbar บน + ล่างโดยประมาณ)
+    <div className="h-[calc(100dvh-120px)] md:h-[calc(100vh-64px)] w-full flex overflow-hidden bg-white">
       <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r border-gray-200 h-full flex-col`}>
         <ChatList
           chats={chats}
