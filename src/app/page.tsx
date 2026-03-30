@@ -106,6 +106,10 @@ export default function HomePage() {
   const loadMorePosts = async () => {
     if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
+
+    // ✅ เพิ่มการหน่วงเวลา (Delay) 3 วินาที (3000 ms) ตรงนี้
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
     const start = page * POSTS_PER_PAGE;
     const end = start + POSTS_PER_PAGE - 1;
 
