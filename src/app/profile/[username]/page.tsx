@@ -10,7 +10,7 @@ import ConfirmModal from '@/components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Palette, Users, Music, ExternalLink,
-  MessageCircle, Ban, EyeOff, Trash2, X, Plus, Clock
+  MessageCircle, Ban, EyeOff, Trash2, X, Plus, Clock, ChevronRight
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '@/lib/utils';
@@ -104,7 +104,6 @@ export default function ProfilePage() {
   const [showAddFamily, setShowAddFamily] = useState(false);
   const [newRelationship, setNewRelationship] = useState('');
   const [blockStatus, setBlockStatus] = useState<'none' | 'blocked' | 'ignored'>('none');
-  const [showUnfriendConfirm, setShowUnfriendConfirm] = useState(false);
   const [friends, setFriends] = useState<User[]>([]);
   
   const [showDeletePostConfirm, setShowDeletePostConfirm] = useState(false);
@@ -112,6 +111,7 @@ export default function ProfilePage() {
   const [showFamilyDeleteConfirm, setShowFamilyDeleteConfirm] = useState(false);
   const [familyToDelete, setFamilyToDelete] = useState<string | null>(null);
   const [showUnfriendModal, setShowUnfriendModal] = useState(false);
+  const [showUnfriendConfirm, setShowUnfriendConfirm] = useState(false);
 
   // Infinite Scroll Observer
   const observer = useRef<IntersectionObserver | null>(null);
@@ -190,10 +190,9 @@ export default function ProfilePage() {
       if (!profileUserData) { router.push('/'); return; }
       setProfileUser(profileUserData);
 
-      // Load first page of posts
       const { data: postsData } = await supabase
         .from('posts')
-        .select('*, author:author_id(*), target:target_id(*)')
+        .select('*, author:author_id(id, username, display_name, profile_img_url), target:target_id(id, username, display_name, profile_img_url)')
         .eq('target_id', profileUserData.id)
         .order('created_at', { ascending: false })
         .range(0, POSTS_PER_PAGE - 1);
@@ -231,7 +230,7 @@ export default function ProfilePage() {
     try {
       const { data: newPosts } = await supabase
         .from('posts')
-        .select('*, author:author_id(*), target:target_id(*)')
+        .select('*, author:author_id(id, username, display_name, profile_img_url), target:target_id(id, username, display_name, profile_img_url)')
         .eq('target_id', profileUser.id)
         .order('created_at', { ascending: false })
         .range(start, end);
@@ -260,11 +259,11 @@ export default function ProfilePage() {
     try {
       const { data } = await supabase
         .from('friendships')
-        .select('*, sender:sender_id(*), receiver:receiver_id(*)')
+        .select('*, sender:sender_id(id, username, display_name, profile_img_url), receiver:receiver_id(id, username, display_name, profile_img_url)')
         .eq('status', 'accepted')
         .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(4); // ✅ ดึงแค่ 4 คนล่าสุด
 
       const friendsList = (data || []).map((friendship: Friendship) => {
         return friendship.sender_id === userId ? friendship.receiver : friendship.sender;
@@ -318,6 +317,7 @@ export default function ProfilePage() {
     try {
       await supabase.from('friendships').update({ status: 'accepted' }).eq('id', friendshipId);
       setFriendshipStatus('accepted');
+      loadFriends(profileUser.id);
     } catch (error) { console.error(error); }
   };
 
@@ -327,7 +327,9 @@ export default function ProfilePage() {
       await supabase.from('friendships').delete().eq('id', friendshipId);
       setFriendshipStatus('none');
       setFriendshipId(null);
+      setShowUnfriendModal(false);
       setShowUnfriendConfirm(false);
+      loadFriends(profileUser.id);
     } catch (error) { console.error(error); }
   };
 
@@ -402,9 +404,9 @@ export default function ProfilePage() {
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="flex-1 min-w-0 space-y-6">
             {/* Profile Header */}
-            <div className="card-minimal overflow-hidden p-0">
+            <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm">
               <div 
-                className="h-32 md:h-48"
+                className="h-32 md:h-56"
                 style={profileUser.cover_img_url ? { 
                   backgroundImage: `url(${profileUser.cover_img_url})`,
                   backgroundSize: 'cover',
@@ -414,11 +416,11 @@ export default function ProfilePage() {
                 }}
               />
 
-              <div className="p-4 md:p-6">
+              <div className="p-4 md:p-6 bg-white">
                 <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6 -mt-20 mb-6">
                   <div 
-                    className="w-24 h-24 md:w-32 md:h-32 rounded-3xl p-2 shadow-lg"
-                    style={{ backgroundColor: 'white', borderColor: themeColor, borderWidth: '4px' }}
+                    className="w-24 h-24 md:w-36 md:h-36 rounded-3xl p-1.5 shadow-xl bg-white flex-shrink-0"
+                    style={{ borderColor: themeColor, borderWidth: '4px' }}
                   >
                     <img 
                       src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
@@ -427,78 +429,78 @@ export default function ProfilePage() {
                     />
                   </div>
 
-                  <div className="flex-1 md:mt-16 flex flex-wrap justify-start md:justify-end gap-2">
+                  <div className="flex-1 md:mt-20 flex flex-wrap justify-start md:justify-end gap-2">
                     {isOwnProfile ? (
-                      <Link href="/profile/edit" className="btn-secondary inline-flex items-center gap-2">
+                      <Link href="/profile/edit" className="btn-secondary inline-flex items-center gap-2 font-bold px-5">
                         <Edit className="w-4 h-4" />
-                        <span className="hidden sm:inline">แก้ไขโปรไฟล์</span>
-                        <span className="sm:hidden">แก้ไข</span>
+                        <span>แก้ไขโปรไฟล์</span>
                       </Link>
                     ) : (
                       <>
-                        <button onClick={handleSendMessage} className="btn-secondary flex items-center gap-2">
+                        <button onClick={handleSendMessage} className="btn-secondary flex items-center gap-2 font-bold px-5">
                           <MessageCircle className="w-4 h-4" />
-                          <span className="hidden sm:inline">ส่งข้อความ</span>
+                          <span>ข้อความ</span>
                         </button>
 
                         {friendshipStatus === 'none' && (
-                          <button onClick={handleAddFriend} className="btn-primary flex items-center gap-2">
+                          <button onClick={handleAddFriend} className="btn-primary flex items-center gap-2 font-bold px-5">
                             <UserPlus className="w-4 h-4" />
-                            <span className="hidden sm:inline">เพิ่มเพื่อน</span>
+                            <span>เพิ่มเพื่อน</span>
                           </button>
                         )}
                         {friendshipStatus === 'sent' && (
-                          <button className="btn-secondary text-sm" disabled>ส่งคำขอแล้ว</button>
+                          <button className="btn-secondary text-sm font-bold" disabled>ส่งคำขอแล้ว</button>
                         )}
                         {friendshipStatus === 'pending' && (
-                          <button onClick={handleAcceptFriend} className="btn-primary flex items-center gap-2">
+                          <button onClick={handleAcceptFriend} className="btn-primary flex items-center gap-2 font-bold px-5">
                             <UserCheck className="w-4 h-4" />
-                            <span className="hidden sm:inline">ยอมรับ</span>
+                            <span>ตอบรับ</span>
                           </button>
                         )}
                         {friendshipStatus === 'accepted' && (
                           <div className="relative">
                             <button 
                               onClick={() => setShowUnfriendConfirm(!showUnfriendConfirm)}
-                              className="btn-secondary flex items-center gap-2"
+                              className="btn-secondary flex items-center gap-2 font-bold px-5"
                             >
                               <UserCheck className="w-4 h-4" />
-                              <span className="hidden sm:inline">เป็นเพื่อนแล้ว</span>
+                              <span>เพื่อน</span>
                             </button>
                             {showUnfriendConfirm && (
-                              <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-200 p-4 z-10">
+                              <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 z-20">
                                 <div className="flex items-center justify-between mb-3">
-                                  <p className="font-medium text-gray-900 text-sm">ยืนยันการลบเพื่อน?</p>
+                                  <p className="font-bold text-gray-900 text-sm">เลิกเป็นเพื่อน?</p>
                                   <button onClick={() => setShowUnfriendConfirm(false)}>
                                     <X className="w-4 h-4 text-gray-400" />
                                   </button>
                                 </div>
-                                <p className="text-sm text-gray-600 mb-3">
+                                <p className="text-xs text-gray-500 mb-4 leading-relaxed">
                                   คุณต้องการลบ {profileUser.display_name} ออกจากรายชื่อเพื่อนหรือไม่?
                                 </p>
                                 <div className="flex gap-2">
-                                  <button onClick={() => setShowUnfriendModal(true)} className="flex-1 px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm">ลบเพื่อน</button>
-                                  <button onClick={() => setShowUnfriendConfirm(false)} className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm">ยกเลิก</button>
+                                  <button onClick={() => setShowUnfriendModal(true)} className="flex-1 px-3 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition text-xs font-bold shadow-sm">ลบเพื่อน</button>
+                                  <button onClick={() => setShowUnfriendConfirm(false)} className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition text-xs font-bold">ยกเลิก</button>
                                 </div>
                               </div>
                             )}
                           </div>
                         )}
+                        
                         <div className="relative group">
-                          <button className="btn-secondary px-3">•••</button>
-                          <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                          <button className="btn-secondary px-3 font-bold">•••</button>
+                          <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20 overflow-hidden">
                             {blockStatus === 'none' && (
                               <>
-                                <button onClick={() => handleBlock('ignore')} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 rounded-t-xl">
-                                  <EyeOff className="w-4 h-4" /> ซ่อนโพสต์
+                                <button onClick={() => handleBlock('ignore')} className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center gap-2 font-medium">
+                                  <EyeOff className="w-4 h-4 text-gray-400" /> ซ่อนโพสต์
                                 </button>
-                                <button onClick={() => handleBlock('block')} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 text-red-600 rounded-b-xl">
-                                  <Ban className="w-4 h-4" /> บล็อกผู้ใช้
+                                <button onClick={() => handleBlock('block')} className="w-full px-4 py-3 text-left text-sm hover:bg-red-50 flex items-center gap-2 text-red-600 font-bold border-t border-gray-50">
+                                  <Ban className="w-4 h-4" /> บล็อก
                                 </button>
                               </>
                             )}
                             {blockStatus !== 'none' && (
-                              <button onClick={handleUnblock} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 rounded-xl">
+                              <button onClick={handleUnblock} className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center gap-2 font-bold">
                                 <UserCheck className="w-4 h-4" /> ปลดบล็อก
                               </button>
                             )}
@@ -509,190 +511,111 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-bold mb-1">{profileUser.display_name}</h1>
-                  <p className="text-gray-500 mb-4">@{profileUser.username}</p>
+                <div className="space-y-4">
+                  <div>
+                    <h1 className="text-2xl md:text-3xl font-black text-gray-900">{profileUser.display_name}</h1>
+                    <p className="text-gray-400 text-sm font-medium">@{profileUser.username}</p>
+                  </div>
 
-                  {profileUser.bio && <p className="text-gray-700 mb-4">{profileUser.bio}</p>}
+                  {profileUser.bio && <p className="text-gray-700 leading-relaxed">{profileUser.bio}</p>}
 
                   {profileUser.music_url && profileUser.music_name && (
                     <a 
                       href={profileUser.music_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mb-4 inline-flex items-center gap-3 px-4 py-3 rounded-2xl transition-all hover:scale-[1.02] w-full md:w-auto"
+                      className="inline-flex items-center gap-3 px-5 py-3 rounded-2xl transition-all hover:translate-y-[-2px] hover:shadow-md w-full md:w-auto border border-transparent shadow-sm"
                       style={{
-                        background: `linear-gradient(135deg, ${themeColor}15, ${themeColor}25)`,
-                        borderColor: `${themeColor}40`,
-                        borderWidth: '1px'
+                        background: `linear-gradient(135deg, ${themeColor}10, ${themeColor}20)`,
+                        borderColor: `${themeColor}30`,
                       }}
                     >
                       <div 
-                        className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                        style={{ backgroundColor: `${themeColor}30` }}
+                        className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-inner"
+                        style={{ backgroundColor: `${themeColor}40` }}
                       >
                         <Music className="w-5 h-5" style={{ color: themeColor }} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm text-gray-900 truncate">{profileUser.music_name}</p>
-                        <p className="text-xs text-gray-500">เพลงประจำโปรไฟล์</p>
+                        <p className="font-bold text-sm text-gray-900 truncate">{profileUser.music_name}</p>
+                        <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest opacity-70">Profile Music</p>
                       </div>
-                      <ExternalLink className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      <ExternalLink className="w-4 h-4 text-gray-300 flex-shrink-0" />
                     </a>
                   )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-6 text-sm text-gray-500 font-medium">
                     {profileUser.birthday && (
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <Calendar className="w-4 h-4 flex-shrink-0" />
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
                         <span>{formatBirthday(profileUser.birthday)}</span>
                       </div>
                     )}
-                    
-                    {/* วันที่สมัคร (ดึงจาก created_at) */}
                     {profileUser.created_at && (
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <Clock className="w-4 h-4 flex-shrink-0" />
-                        <span>สมัครเมื่อ: {formatJoinDate(profileUser.created_at)}</span>
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <span>สมาชิกตั้งแต่: {formatJoinDate(profileUser.created_at)}</span>
                       </div>
                     )}
-
                     {profileUser.occupation && (
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <Briefcase className="w-4 h-4 flex-shrink-0" />
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="w-4 h-4 text-gray-400 flex-shrink-0" />
                         <span className="truncate">{profileUser.occupation}</span>
                       </div>
                     )}
                     {profileUser.address && (
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <MapPin className="w-4 h-4 flex-shrink-0" />
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
                         <span className="truncate">{profileUser.address}</span>
                       </div>
                     )}
                     {profileUser.workplace && (
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <HomeIcon className="w-4 h-4 flex-shrink-0" />
+                      <div className="flex items-center gap-2">
+                        <HomeIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
                         <span className="truncate">{profileUser.workplace}</span>
                       </div>
                     )}
                   </div>
 
                   {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
-                    <div className="mb-4">
-                      <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-                        <Heart className="w-4 h-4" />
-                        <span className="font-medium">งานอดิเรก:</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {profileUser.hobbies.map((hobby: any, index: number) => (
-                          <span 
-                            key={index}
-                            className="px-3 py-1 rounded-full text-sm"
-                            style={{ 
-                              backgroundColor: `${themeColor}20`,
-                              color: themeColor,
-                              borderColor: `${themeColor}40`,
-                              borderWidth: '1px'
-                            }}
-                          >
-                            {hobby.emoji} {hobby.name}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {profileUser.relationship_status && (
-                    <div className="mb-4">
-                      <div className="flex items-center gap-2 text-sm text-gray-600 flex-wrap">
-                        <Users className="w-4 h-4 flex-shrink-0" />
-                        <span className="font-medium">สถานะ:</span>
-                        <span>
-                          {profileUser.relationship_status === 'single' && '👤 โสด'}
-                          {profileUser.relationship_status === 'in_relationship' && '❤️ เป็นแฟน'}
-                          {profileUser.relationship_status === 'engaged' && '💍 หมั้น'}
-                          {profileUser.relationship_status === 'married' && '💒 แต่งงาน'}
-                          {profileUser.relationship_status === 'complicated' && '❓ ไม่ชัดเจน'}
-                          {profileUser.relationship_custom_name && ` กับ ${profileUser.relationship_custom_name}`}
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      {profileUser.hobbies.map((hobby: any, index: number) => (
+                        <span 
+                          key={index}
+                          className="px-3 py-1.5 rounded-xl text-xs font-bold border"
+                          style={{ 
+                            backgroundColor: `${themeColor}10`,
+                            color: themeColor,
+                            borderColor: `${themeColor}30`,
+                          }}
+                        >
+                          {hobby.emoji} {hobby.name}
                         </span>
-                      </div>
+                      ))}
                     </div>
                   )}
-
-                  {familyMembers.length > 0 && (
-                    <div className="mb-4">
-                      <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-                        <Users className="w-4 h-4" />
-                        <span className="font-medium">ครอบครัวและเพื่อนสนิท:</span>
-                      </div>
-                      <div className="space-y-2">
-                        {familyMembers.map((fm) => (
-                          <div key={fm.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
-                            <img src={fm.member.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt={fm.member.display_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <Link href={`/profile/${fm.member.username}`} className="font-medium text-sm hover:underline truncate block">
-                                {fm.member.display_name}
-                              </Link>
-                              <p className="text-xs text-gray-500 truncate">{fm.relationship_label}</p>
-                            </div>
-                            {isOwnProfile && (
-                              <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="text-red-500 hover:text-red-700 flex-shrink-0">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {!isOwnProfile && friendshipStatus === 'accepted' && (
-                    <div className="mb-4">
-                      {!showAddFamily ? (
-                        <button onClick={() => setShowAddFamily(true)} className="text-sm text-frog-600 hover:text-frog-700 flex items-center gap-2">
-                          <Plus className="w-4 h-4" /> เพิ่มเป็นสมาชิกครอบครัว/เพื่อนสนิท
-                        </button>
-                      ) : (
-                        <div className="p-3 bg-gray-50 rounded-xl">
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="text-sm font-medium">เพิ่มเป็นสมาชิกครอบครัว</p>
-                            <button onClick={() => setShowAddFamily(false)}><X className="w-4 h-4 text-gray-400" /></button>
-                          </div>
-                          <input type="text" value={newRelationship} onChange={(e) => setNewRelationship(e.target.value)} placeholder="ความสัมพันธ์ เช่น พี่ชาย, เพื่อนสนิท" className="input-minimal mb-2 w-full" />
-                          <button onClick={handleAddFamilyMember} className="btn-primary w-full text-sm">บันทึก</button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="mb-4">
-                    <div className="flex items-center gap-2 text-sm text-gray-600 flex-wrap">
-                      <Palette className="w-4 h-4" />
-                      <span className="font-medium">สีธีม:</span>
-                      <div className="w-6 h-6 rounded-lg border-2 border-white shadow-sm flex-shrink-0" style={{ backgroundColor: themeColor }} />
-                      <span className="text-xs text-gray-400">{themeColor}</span>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Friends List - Mobile */}
+            {/* Friends Widget - Mobile */}
             <div className="lg:hidden">
-              <div className="card-minimal">
+              <div className="card-minimal bg-white shadow-sm border border-gray-100">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-lg">เพื่อน</h3>
-                  <Link href={`/profile/${profileUser.username}/friends`} className="text-sm text-frog-600 hover:text-frog-700">ดูทั้งหมด</Link>
+                  <h3 className="font-black text-gray-900">เพื่อน</h3>
+                  <Link href={`/profile/${profileUser.username}/friends`} className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1">
+                    ดูทั้งหมด <ChevronRight size={14} />
+                  </Link>
                 </div>
-                {friends.length === 0 ? <p className="text-sm text-gray-500 text-center py-4">ยังไม่มีเพื่อน</p> : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    {friends.slice(0, 8).map((friend) => (
-                      <Link key={friend.id} href={`/profile/${friend.username}`} className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-gray-50 transition">
-                        <img src={friend.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-16 h-16 rounded-full object-cover" />
-                        <div className="text-center w-full">
-                          <p className="font-medium text-sm truncate">{friend.display_name}</p>
-                          <p className="text-xs text-gray-500 truncate">@{friend.username}</p>
+                {friends.length === 0 ? <p className="text-xs text-gray-400 text-center py-4 italic">ยังไม่มีเพื่อน</p> : (
+                  <div className="grid grid-cols-4 gap-3">
+                    {friends.map((friend) => (
+                      <Link key={friend.id} href={`/profile/${friend.username}`} className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                        <div className="relative">
+                          <img src={friend.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-2xl object-cover border border-gray-100" alt="" />
+                          {friend.is_online && <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
                         </div>
+                        <p className="text-[10px] font-bold truncate w-full text-center text-gray-700">{friend.display_name.split(' ')[0]}</p>
                       </Link>
                     ))}
                   </div>
@@ -701,78 +624,166 @@ export default function ProfilePage() {
             </div>
 
             {/* Create Post */}
-            {currentUser && (friendshipStatus === 'accepted' || isOwnProfile) && blockStatus === 'none' && (
+            {(friendshipStatus === 'accepted' || isOwnProfile) && blockStatus === 'none' && (
               <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={handlePostCreated} />
             )}
 
-            {/* Posts with Infinite Scroll */}
+            {/* Posts Feed */}
             <div className="space-y-6">
-              <h2 className="text-2xl font-bold">โพสต์</h2>
+              <h2 className="text-xl font-black text-gray-900 px-1">โพสต์ของ {profileUser.display_name}</h2>
               {posts.length === 0 && !isLoading ? (
-                <div className="card-minimal text-center py-12">
-                  <img src="https://iili.io/qbtgKBt.png" alt="No posts" className="w-24 h-24 mx-auto mb-4 opacity-50" />
-                  <p className="text-gray-500">ยังไม่มีโพสต์</p>
+                <div className="card-minimal text-center py-16 bg-gray-50 border border-dashed border-gray-200">
+                  <img src="https://iili.io/qbtgKBt.png" alt="No posts" className="w-20 h-20 mx-auto mb-4 opacity-30 grayscale" />
+                  <p className="text-gray-400 font-medium">ยังไม่มีโพสต์ให้แสดง</p>
                 </div>
               ) : (
                 <>
                   {posts.map((post, index) => {
-                    if (posts.length === index + 1) {
-                      return (
-                        <div ref={lastPostElementRef} key={post.id}>
-                          <PostCardV3 post={post} currentUserId={currentUser.id} profileOwnerId={profileUser.id} onDelete={(id) => { setPostToDelete(id); setShowDeletePostConfirm(true); }} />
-                        </div>
-                      );
-                    }
-                    return <PostCardV3 key={post.id} post={post} currentUserId={currentUser.id} profileOwnerId={profileUser.id} onDelete={(id) => { setPostToDelete(id); setShowDeletePostConfirm(true); }} />;
+                    const isLast = posts.length === index + 1;
+                    return (
+                      <div ref={isLast ? lastPostElementRef : null} key={post.id}>
+                        <PostCardV3 
+                          post={post} 
+                          currentUserId={currentUser.id} 
+                          profileOwnerId={profileUser.id} 
+                          onDelete={(id) => { setPostToDelete(id); setShowDeletePostConfirm(true); }} 
+                        />
+                      </div>
+                    );
                   })}
                   
                   {isLoadingMore && (
-                    <div className="text-center py-4">
-                      <img src="https://iili.io/qbtgKBt.png" className="w-10 h-10 mx-auto mb-2 animate-bounce" />
-                      <p className="text-xs text-gray-500">กำลังโหลดเพิ่ม...</p>
+                    <div className="text-center py-6 animate-pulse">
+                      <img src="https://iili.io/qbtgKBt.png" className="w-10 h-10 mx-auto mb-2 animate-bounce" alt="" />
+                      <p className="text-[10px] text-gray-400 font-black uppercase tracking-tighter">Loading more...</p>
                     </div>
                   )}
 
-                  {!hasMore && posts.length > 0 && <p className="text-center text-sm text-gray-400 py-8">— สิ้นสุดหน้ากระดาษ —</p>}
+                  {!hasMore && posts.length > 0 && (
+                    <div className="py-12 text-center">
+                      <div className="h-px bg-gray-100 w-full mb-4"></div>
+                      <p className="text-gray-400 text-xs italic">สิ้นสุดโพสต์แล้ว</p>
+                    </div>
+                  )}
                 </>
               )}
             </div>
           </div>
 
-          {/* Right Sidebar - Friends (Desktop) */}
+          {/* Sidebar - Desktop Only */}
           <div className="hidden lg:block w-80 flex-shrink-0">
-            <div className="sticky top-4">
-              <div className="card-minimal">
+            <div className="sticky top-4 space-y-6">
+              
+              {/* Friends Widget */}
+              <div className="card-minimal bg-white shadow-sm border border-gray-100">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-lg">เพื่อน</h3>
-                  <Link href={`/profile/${profileUser.username}/friends`} className="text-sm text-frog-600 hover:text-frog-700">ดูทั้งหมด</Link>
+                  <h3 className="font-black text-gray-900">เพื่อน</h3>
+                  <Link href={`/profile/${profileUser.username}/friends`} className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1">
+                    ดูทั้งหมด <ChevronRight size={14} />
+                  </Link>
                 </div>
-                {friends.length === 0 ? <p className="text-sm text-gray-500 text-center py-4">ยังไม่มีเพื่อน</p> : (
-                  <div className="space-y-3">
+                {friends.length === 0 ? <p className="text-xs text-gray-400 text-center py-6 italic">ยังไม่มีเพื่อน</p> : (
+                  <div className="space-y-1">
                     {friends.map((friend) => (
-                      <Link key={friend.id} href={`/profile/${friend.username}`} className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition">
-                        <img src={friend.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover" />
+                      <Link key={friend.id} href={`/profile/${friend.username}`} className="flex items-center gap-3 p-2 rounded-2xl hover:bg-gray-50 transition group">
+                        <div className="relative">
+                          <img src={friend.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-2xl object-cover border border-gray-50 group-hover:scale-105 transition shadow-sm" alt="" />
+                          {friend.is_online && <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
+                        </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{friend.display_name}</p>
-                          <p className="text-xs text-gray-500 truncate">@{friend.username}</p>
+                          <p className="font-bold text-sm text-gray-900 truncate">{friend.display_name}</p>
+                          <p className="text-[10px] text-gray-400 truncate">@{friend.username}</p>
                         </div>
                       </Link>
                     ))}
                   </div>
                 )}
               </div>
+
+              {/* Family & Relationship Widget */}
+              {(profileUser.relationship_status || familyMembers.length > 0) && (
+                <div className="card-minimal bg-white shadow-sm border border-gray-100">
+                  <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
+                    <Heart className="w-4 h-4 text-red-500" />
+                    ความสัมพันธ์
+                  </h3>
+                  
+                  {profileUser.relationship_status && (
+                    <div className="mb-4 p-3 bg-red-50/50 rounded-2xl border border-red-50">
+                       <p className="text-xs font-black text-red-600 uppercase tracking-widest mb-1 opacity-70">สถานะหัวใจ</p>
+                       <p className="text-sm font-bold text-gray-900">
+                          {profileUser.relationship_status === 'single' && '👤 โสด'}
+                          {profileUser.relationship_status === 'in_relationship' && '❤️ มีแฟนแล้ว'}
+                          {profileUser.relationship_status === 'engaged' && '💍 หมั้นแล้ว'}
+                          {profileUser.relationship_status === 'married' && '💒 แต่งงานแล้ว'}
+                          {profileUser.relationship_status === 'complicated' && '❓ ไม่ชัดเจน'}
+                          {profileUser.relationship_custom_name && <span className="text-frog-600"> กับ {profileUser.relationship_custom_name}</span>}
+                       </p>
+                    </div>
+                  )}
+
+                  {familyMembers.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">ครอบครัวและคนใกล้ชิด</p>
+                      {familyMembers.map((fm) => (
+                        <div key={fm.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-2xl group transition hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100">
+                          <img src={fm.member.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-9 h-9 rounded-xl object-cover shadow-sm" alt="" />
+                          <div className="flex-1 min-w-0">
+                            <Link href={`/profile/${fm.member.username}`} className="font-bold text-xs hover:text-frog-600 truncate block">{fm.member.display_name}</Link>
+                            <p className="text-[10px] text-gray-400 font-medium">{fm.relationship_label}</p>
+                          </div>
+                          {isOwnProfile && (
+                            <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="p-1.5 text-gray-300 hover:text-red-500 transition opacity-0 group-hover:opacity-100">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!isOwnProfile && friendshipStatus === 'accepted' && (
+                    <button onClick={() => setShowAddFamily(true)} className="mt-4 w-full py-2.5 text-[10px] font-black uppercase text-frog-600 hover:bg-frog-50 rounded-xl transition border border-dashed border-frog-200">
+                      + เพิ่มคนสนิท
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Add Family Modal In-place (for desktop) */}
+              {!isOwnProfile && showAddFamily && (
+                <div className="card-minimal bg-frog-50 border-frog-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-bold text-frog-700">ระบุความสัมพันธ์</p>
+                    <button onClick={() => setShowAddFamily(false)}><X className="w-4 h-4 text-frog-400" /></button>
+                  </div>
+                  <input 
+                    type="text" 
+                    value={newRelationship} 
+                    onChange={(e) => setNewRelationship(e.target.value)} 
+                    placeholder="เช่น พี่ชาย, เพื่อนสนิท..." 
+                    className="w-full px-3 py-2 bg-white border border-frog-200 rounded-xl text-xs focus:ring-2 focus:ring-frog-500 outline-none mb-2" 
+                  />
+                  <button onClick={handleAddFamilyMember} className="w-full py-2 bg-frog-600 text-white rounded-xl text-xs font-bold shadow-sm">บันทึกข้อมูล</button>
+                </div>
+              )}
+
+              <div className="text-center opacity-40 hover:opacity-100 transition">
+                <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">Ribbi Community</p>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* Modals */}
       <ConfirmModal
         isOpen={showDeletePostConfirm}
         onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }}
         onConfirm={handleDeletePost}
-        title="ต้องการลบโพสต์นี้?"
-        message="คุณจะไม่สามารถกู้คืนโพสต์นี้ได้อีก"
-        confirmText="ลบโพสต์"
+        title="ลบโพสต์ถาวร?"
+        message="คุณจะไม่สามารถกู้คืนโพสต์นี้กลับมาได้อีกครั้ง"
+        confirmText="ยืนยันการลบ"
         cancelText="ยกเลิก"
         variant="danger"
       />
@@ -781,9 +792,9 @@ export default function ProfilePage() {
         isOpen={showFamilyDeleteConfirm}
         onClose={() => { setShowFamilyDeleteConfirm(false); setFamilyToDelete(null); }}
         onConfirm={handleRemoveFamilyMember}
-        title="ต้องการลบสมาชิกครอบครัว?"
-        message="การลบจะถูกบันทึกทันที"
-        confirmText="ลบ"
+        title="ลบความสัมพันธ์?"
+        message="ข้อมูลความสัมพันธ์ครอบครัวจะถูกลบออกจากโปรไฟล์ของคุณ"
+        confirmText="ลบออก"
         cancelText="ยกเลิก"
         variant="danger"
       />
@@ -791,9 +802,9 @@ export default function ProfilePage() {
       <ConfirmModal
         isOpen={showUnfriendModal}
         onClose={() => setShowUnfriendModal(false)}
-        onConfirm={() => handleRemoveFriend()}
-        title="ต้องการลบเพื่อน?"
-        message={`คุณจะไม่เห็นโพสต์ของ ${profileUser.display_name} อีกต่อไป และต้องส่งคำขอใหม่ถ้าต้องการเป็นเพื่อนอีกครั้ง`}
+        onConfirm={handleRemoveFriend}
+        title="เลิกเป็นเพื่อน?"
+        message={`หากเลิกเป็นเพื่อน คุณจะไม่เห็นโพสต์ของ ${profileUser.display_name} ในหน้าแรกอีกต่อไป`}
         confirmText="ลบเพื่อน"
         cancelText="ยกเลิก"
         variant="danger"
