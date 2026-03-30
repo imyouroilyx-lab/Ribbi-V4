@@ -115,7 +115,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
 
       await loadNicknames();
 
-      // Load initial messages
       const { data: messagesData } = await supabase
         .from('messages')
         .select('id, sender_id, content, images, created_at, updated_at, deleted_by, event')
@@ -178,7 +177,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
 
         setMessages(prev => [...formattedOlder as any, ...prev]);
 
-        // Restore scroll position
         setTimeout(() => {
           if (scrollContainer) {
             scrollContainer.scrollTop = scrollContainer.scrollHeight - previousHeight;
@@ -238,7 +236,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
           return;
         }
         
-        // ดึงข้อมูลผู้ส่งมาประกอบเสมอ
         const { data: sender } = await supabase
           .from('users')
           .select('id, username, display_name, profile_img_url')
@@ -258,7 +255,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
         filter: `chat_id=eq.${chatId}`,
       }, async (payload) => {
         const updatedMessage = payload.new as any;
-        // ถ้าข้อความถูกลบโดยเรา ให้เอาออกจาก state
         if (updatedMessage.deleted_by?.includes(currentUser.id)) {
           setMessages(prev => prev.filter(msg => msg.id !== updatedMessage.id));
           return;
@@ -397,7 +393,8 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
 
   if (isLoading || isGroup === null) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-white rounded-2xl shadow-sm border border-gray-200 h-[calc(100dvh-5rem)] lg:h-[calc(100vh-3rem)]">
+      // ✅ แก้ไขตรงนี้: ใช้ h-full แทนความสูงตายตัว
+      <div className="flex flex-1 items-center justify-center bg-white md:rounded-2xl md:shadow-sm md:border md:border-gray-200 h-full w-full">
         <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-16 h-16 animate-bounce" />
       </div>
     );
@@ -416,7 +413,8 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
 
   if (!otherUser) {
     return (
-      <div className="flex flex-1 items-center justify-center text-gray-400 bg-white rounded-2xl shadow-sm border border-gray-200 h-[calc(100dvh-5rem)] lg:h-[calc(100vh-3rem)]">
+      // ✅ แก้ไขตรงนี้: ใช้ h-full แทนความสูงตายตัว
+      <div className="flex flex-1 items-center justify-center text-gray-400 bg-white md:rounded-2xl md:shadow-sm md:border md:border-gray-200 h-full w-full">
         <p>ไม่พบแชทนี้</p>
       </div>
     );
@@ -425,7 +423,8 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
   const displayOtherName = nicknames[otherUser.id] || otherUser.display_name;
 
   return (
-    <div className="flex flex-1 flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden h-[calc(100dvh-5rem)] lg:h-[calc(100vh-3rem)] min-h-0">
+    // ✅ แก้ไขตรงนี้: ใช้ h-full flex-1 ลบความสูงขอบเขตตายตัวออก เพื่อให้ยืด 100% เสมอ
+    <div className="flex flex-col flex-1 bg-white md:rounded-2xl md:shadow-sm md:border md:border-gray-200 overflow-hidden h-full min-h-0 w-full">
       
       {/* Header */}
       <div className="flex-shrink-0 p-4 border-b flex items-center gap-3 transition-colors duration-300 bg-white z-10"
@@ -484,6 +483,8 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
                     style={{ backgroundColor: themeColor }} onClick={() => colorInputRef.current?.click()} />
                   <div className="flex-1">
                     <p className="text-xs text-gray-500 mb-1">เลือกสีเอง</p>
+                    
+                    {/* ✅ เพิ่มปุ่มกดยืนยัน ตรงนี้ */}
                     <div className="flex items-center gap-2">
                       <input ref={colorInputRef} type="color" value={themeColor}
                         onChange={(e) => setThemeColor(e.target.value)}
@@ -495,6 +496,7 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
                         ยืนยัน
                       </button>
                     </div>
+
                   </div>
                 </div>
               </div>
