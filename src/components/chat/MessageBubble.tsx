@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Edit2, Trash2, Palette, Pencil, Globe, Play } from 'lucide-react';
+import { Edit2, Trash2, Palette, Pencil, Globe, Play, Check, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 // --- TYPES ---
@@ -33,14 +33,14 @@ interface MessageBubbleProps {
 
 // --- UTILITIES ---
 
-// ฟังก์ชันสำหรับดึง Youtube Video ID จาก URL
+// ดึง Youtube Video ID
 function getYouTubeVideoId(url: string): string | null {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
-// ฟังก์ชันสำหรับแปลงข้อความที่มี URL ให้เป็น Link ที่กดได้
+// แปลงข้อความที่มี URL ให้กดได้
 const renderContentWithLinks = (text: string | null, isOwn: boolean) => {
   if (!text) return null;
   const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -54,8 +54,8 @@ const renderContentWithLinks = (text: string | null, isOwn: boolean) => {
           href={part}
           target="_blank"
           rel="noopener noreferrer"
-          className={`hover:underline break-all ${isOwn ? 'text-blue-100' : 'text-blue-600'}`}
-          onClick={(e) => e.stopPropagation()} // ป้องกันการ bubble event ถ้าจำเป็น
+          className={`underline break-all font-bold ${isOwn ? 'text-white hover:text-indigo-100' : 'text-indigo-600 hover:text-indigo-800'}`}
+          onClick={(e) => e.stopPropagation()}
         >
           {part}
         </a>
@@ -65,13 +65,11 @@ const renderContentWithLinks = (text: string | null, isOwn: boolean) => {
   });
 };
 
-
 // --- SUB-COMPONENTS ---
 
-// คอมโพเนนต์สำหรับแสดง YouTube Embed
 function YouTubeEmbed({ videoId }: { videoId: string }) {
   return (
-    <div className="mt-3 w-full max-w-sm overflow-hidden rounded-xl border bg-black shadow-sm aspect-video relative group">
+    <div className="mt-3 w-full max-w-md overflow-hidden rounded-2xl border-2 border-black/10 bg-black shadow-lg aspect-video relative">
       <iframe
         src={`https://www.youtube.com/embed/${videoId}`}
         title="YouTube video player"
@@ -83,7 +81,6 @@ function YouTubeEmbed({ videoId }: { videoId: string }) {
   );
 }
 
-// คอมโพเนนต์ดึงข้อมูล Preview (สำหรับลิงก์ทั่วไปที่ไม่ใช่ YouTube)
 function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
   const [metadata, setMetadata] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -96,21 +93,14 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
         setLoading(true);
         const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
         const json = await res.json();
-        
         if (isMounted) {
           if (json.status === 'success' && json.data.title) {
             setMetadata(json.data);
-          } else {
-            setHasError(true);
-          }
+          } else { setHasError(true); }
         }
-      } catch (err) {
-        if (isMounted) setHasError(true);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
+      } catch (err) { if (isMounted) setHasError(true); } 
+      finally { if (isMounted) setLoading(false); }
     };
-
     fetchMeta();
     return () => { isMounted = false; };
   }, [url]);
@@ -122,50 +112,20 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
       isOwn ? 'bg-black/20 border-white/10' : 'bg-white border-gray-200 shadow-sm'
     }`}>
       {loading ? (
-        // Loading Shimmer
         <div className="p-3 flex items-center gap-3 animate-pulse">
           <div className={`w-12 h-12 rounded-lg ${isOwn ? 'bg-white/20' : 'bg-gray-200'}`}></div>
           <div className="flex-1 space-y-2">
             <div className={`h-2 rounded w-3/4 ${isOwn ? 'bg-white/20' : 'bg-gray-200'}`}></div>
-            <div className={`h-2 rounded w-1/2 ${isOwn ? 'bg-white/20' : 'bg-gray-200'}`}></div>
           </div>
         </div>
       ) : metadata && (
         <a href={url} target="_blank" rel="noopener noreferrer" className="group block">
           {metadata.image?.url && (
-            <div className="relative h-36 w-full overflow-hidden bg-gray-100">
-              <img 
-                src={metadata.image.url} 
-                alt="preview" 
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-              />
-              {/* ถ้ามีวิดีโอ (ที่ไม่ใช่ YT) ให้โชว์ไอคอน play */}
-              {metadata.video && (
-                 <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                   <div className="p-2 bg-white/20 backdrop-blur-md rounded-full">
-                    <Play size={20} className="text-white fill-white" />
-                   </div>
-                 </div>
-              )}
-            </div>
+            <img src={metadata.image.url} alt="preview" className="w-full h-36 object-cover border-b border-inherit" />
           )}
           <div className="p-3">
-            <div className={`flex items-center gap-1.5 mb-1 ${isOwn ? 'opacity-80' : 'opacity-60'}`}>
-              {metadata.logo?.url ? (
-                <img src={metadata.logo.url} className="w-3 h-3 rounded-sm" alt="logo" />
-              ) : <Globe size={12} />}
-              <span className="text-[10px] font-bold uppercase truncate">
-                {metadata.publisher || new URL(url).hostname}
-              </span>
-            </div>
-            <h4 className={`text-sm font-bold line-clamp-2 leading-tight ${isOwn ? 'text-white' : 'text-gray-900'}`}>
-              {metadata.title}
-            </h4>
-            {metadata.description && (
-              <p className={`text-xs mt-1 line-clamp-2 leading-relaxed ${isOwn ? 'text-white/70' : 'text-gray-500'}`}>
-                {metadata.description}
-              </p>
-            )}
+            <h4 className={`text-sm font-bold line-clamp-2 ${isOwn ? 'text-white' : 'text-gray-900'}`}>{metadata.title}</h4>
+            <p className={`text-[11px] mt-1 line-clamp-2 ${isOwn ? 'text-white/70' : 'text-gray-500'}`}>{metadata.description}</p>
           </div>
         </a>
       )}
@@ -178,17 +138,15 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message?.content || '');
 
-  // ดึงลิงก์จากข้อความ (รองรับหลายลิงก์ และไม่เอาลิงก์ซ้ำ)
   const links = useMemo(() => {
     if (!message.content) return [];
     const urlRegex = /(https?:\/\/[^\s]+)/g;
-    const foundLinks = message.content.match(urlRegex) || [];
-    return Array.from(new Set(foundLinks));
+    return Array.from(new Set(message.content.match(urlRegex) || []));
   }, [message.content]);
 
   if (!message) return null;
 
-  // ✅ System events
+  // System Events
   if (message.event === 'theme_change' || message.event === 'nickname_change') {
     return (
       <div className="flex items-center justify-center my-2 w-full">
@@ -208,7 +166,8 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
 
   const handleDelete = async () => {
     if (!confirm('ต้องการลบข้อความนี้?')) return;
-    await supabase.from('messages').delete().eq('id', message.id);
+    const { error } = await supabase.from('messages').delete().eq('id', message.id);
+    if (error) alert('ไม่สามารถลบข้อความได้');
   };
 
   const handleEdit = async () => {
@@ -216,46 +175,45 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
     setIsEditing(false);
     const now = new Date().toISOString();
     const { error } = await supabase.from('messages').update({ content: editContent.trim(), updated_at: now }).eq('id', message.id);
-    if (!error) {
+    if (error) {
+      alert('ไม่สามารถแก้ไขได้');
+      setEditContent(message.content || '');
+    } else {
       message.content = editContent.trim();
       message.updated_at = now;
     }
   };
 
   return (
-    <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} mb-3 group/bubble relative`}>
-      {/* ชื่อผู้ส่ง (กลุ่ม) */}
+    <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} mb-3`}>
       {!isOwn && showSenderName && (
         <span className="text-[10px] font-black text-gray-400 mb-1 ml-11 uppercase tracking-tighter">
           {message.sender.display_name}
         </span>
       )}
 
-      <div className={`flex gap-2 max-w-[90%] md:max-w-[85%] ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
-        {/* Avatar (คนอื่น) */}
+      <div className={`flex gap-2 w-full ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+        {/* Avatar คนอื่น */}
         {!isOwn && (
           <a href={`/profile/${message.sender.username}`} className="flex-shrink-0 self-end mb-1">
-            <img src={message.sender.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover shadow-sm border border-gray-100" alt={message.sender.display_name} />
+            <img src={message.sender.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover shadow-sm border border-gray-100" />
           </a>
         )}
 
-        {/* Message Content Area */}
-        <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
-          
-          {/* Action Buttons (Desktop Hover) */}
-          {isOwn && !isEditing && (
-            <div className={`absolute top-0 ${isOwn ? '-left-12' : '-right-12'} opacity-0 group-hover/bubble:opacity-100 transition-opacity flex flex-col gap-1`}>
-              <button onClick={() => setIsEditing(true)} className="p-1.5 bg-white shadow-sm border border-gray-100 rounded-full text-gray-400 hover:text-indigo-600 transition-colors" title="แก้ไข">
-                <Edit2 size={12} />
-              </button>
-              <button onClick={handleDelete} className="p-1.5 bg-white shadow-sm border border-gray-100 rounded-full text-gray-400 hover:text-red-500 transition-colors" title="ลบ">
-                <Trash2 size={12} />
-              </button>
-            </div>
-          )}
+        {/* ปุ่มลบ/แก้ไข (จะแสดงข้างๆ Bubble สำหรับข้อความตัวเอง) */}
+        {isOwn && !isEditing && (
+          <div className="flex gap-1 items-start pt-1">
+            <button onClick={() => setIsEditing(true)} className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full transition shadow-sm group">
+              <Edit2 size={12} className="text-gray-500 group-hover:text-indigo-600" />
+            </button>
+            <button onClick={handleDelete} className="p-1.5 bg-red-50 hover:bg-red-100 rounded-full transition shadow-sm group">
+              <Trash2 size={12} className="text-red-400 group-hover:text-red-600" />
+            </button>
+          </div>
+        )}
 
+        <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[75%]`}>
           {isEditing ? (
-            // Edit Mode
             <div className="bg-white rounded-2xl p-3 shadow-xl border-2 min-w-[260px]" style={{ borderColor: themeColor }}>
               <textarea 
                 value={editContent} 
@@ -264,58 +222,47 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
                 rows={3} autoFocus
               />
               <div className="flex justify-end gap-2 mt-2">
-                <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-xs font-bold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">ยกเลิก</button>
-                <button onClick={handleEdit} className="px-3 py-1.5 text-xs font-bold text-white rounded-lg transition-opacity hover:opacity-90" style={{ backgroundColor: themeColor }}>บันทึก</button>
+                <button onClick={() => { setIsEditing(false); setEditContent(message.content || ''); }} className="px-3 py-1.5 text-xs font-bold text-gray-400">ยกเลิก</button>
+                <button onClick={handleEdit} className="px-3 py-1.5 text-xs font-bold text-white rounded-lg" style={{ backgroundColor: themeColor }}>บันทึก</button>
               </div>
             </div>
           ) : (
-            // Display Mode
-            <div className="relative">
+            <>
               <div
-                className={`px-4 py-2.5 shadow-sm transition-all ${isOwn ? 'text-white font-medium' : 'text-gray-900 font-medium'}`}
+                className={`px-4 py-2.5 shadow-sm transition-all ${isOwn ? 'text-white' : 'text-gray-900'}`}
                 style={{
                   backgroundColor: isOwn ? themeColor : '#f1f5f9',
                   borderRadius: isOwn ? '1.25rem 1.25rem 0.25rem 1.25rem' : '1.25rem 1.25rem 1.25rem 0.25rem',
                 }}
               >
-                {/* Images Attachment */}
+                {/* Image Attachments */}
                 {message.images && message.images.length > 0 && (
                   <div className="grid gap-2 mb-2">
                     {message.images.map((img, i) => (
-                      <img key={i} src={img} alt="attachment" className="rounded-xl max-w-full h-auto max-h-[300px] object-contain cursor-pointer hover:opacity-95 transition-opacity" onClick={() => window.open(img, '_blank')} />
+                      <img key={i} src={img} className="rounded-xl max-w-full h-auto max-h-[300px] object-contain cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(img, '_blank')} />
                     ))}
                   </div>
                 )}
                 
-                {/* Text Content (with clickable links) */}
+                {/* Clickable Content */}
                 {message.content && (
-                  <p className="text-sm md:text-[15px] whitespace-pre-wrap break-words leading-relaxed">
+                  <p className="text-sm md:text-base whitespace-pre-wrap break-words leading-relaxed font-medium">
                     {renderContentWithLinks(message.content, isOwn)}
                   </p>
                 )}
 
-                {/* Link Embeds */}
-                {links.length > 0 && (
-                  <div className="flex flex-col gap-2 mt-2">
-                    {links.map((link, i) => {
-                      const youtubeId = getYouTubeVideoId(link);
-                      if (youtubeId) {
-                        // ถ้าเป็น YouTube ให้แสดง iframe
-                        return <YouTubeEmbed key={i} videoId={youtubeId} />;
-                      }
-                      // ถ้าไม่ใช่ ให้แสดง LinkPreview ธรรมดา
-                      return <LinkPreview key={i} url={link} isOwn={isOwn} />;
-                    })}
-                  </div>
-                )}
+                {/* Embeds */}
+                {links.map((link, i) => {
+                  const ytId = getYouTubeVideoId(link);
+                  return ytId ? <YouTubeEmbed key={i} videoId={ytId} /> : <LinkPreview key={i} url={link} isOwn={isOwn} />;
+                })}
               </div>
 
-              {/* Time & Edit Status */}
               <div className={`flex items-center gap-2 mt-1 px-1 ${isOwn ? 'justify-end' : ''}`}>
                 <span className="text-[9px] font-bold text-gray-400">{formatTime(message.created_at)}</span>
                 {message.updated_at && <span className="text-[9px] text-gray-300 italic font-medium">แก้ไขแล้ว</span>}
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
