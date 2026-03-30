@@ -2,7 +2,7 @@
 
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Search, Plus, X, Users, Check, Loader2 } from 'lucide-react'; // ✅ เพิ่ม Loader2 ตรงนี้
+import { Search, Plus, X, Users, Check, Loader2 } from 'lucide-react'; 
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Chat } from '@/components/MessagesPage';
@@ -59,9 +59,14 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
     if (cachedFriends && cachedFriends.length > 0) return;
     setIsLoadingFriends(true);
     try {
+      // ✅ Optimize: ดึงข้อมูลเพื่อนมาในทีเดียวโดยใช้ .or() และ Join ตาราง users
+      // ระวังเรื่องชื่อ Foreign Key อาจจะต้องเปลี่ยนถ้าใน Database ตั้งชื่อไว้ต่างออกไป
       const { data: friendships } = await supabase
         .from('friendships')
-        .select('sender_id, receiver_id')
+        .select(`
+          sender:users!friendships_sender_id_fkey(id, username, display_name, profile_img_url),
+          receiver:users!friendships_receiver_id_fkey(id, username, display_name, profile_img_url)
+        `)
         .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
         .eq('status', 'accepted');
 
@@ -70,16 +75,18 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
         return;
       }
 
-      const allIds = [...new Set(friendships.map(f => 
-        f.sender_id === currentUserId ? f.receiver_id : f.sender_id
-      ))];
+      // ดึงเฉพาะข้อมูลของคนที่เป็นเพื่อน (ไม่ใช่เรา) ออกมา
+      const friendsList = friendships.map(f => {
+        // ใน typescript อาจจะต้อง cast type นิดหน่อยถ้า supabase generate type มาไม่ตรง
+        const sender = f.sender as any;
+        const receiver = f.receiver as any;
+        return sender.id === currentUserId ? receiver : sender;
+      }).filter(Boolean); // กันเหนียวเผื่อมีค่า null
 
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, username, display_name, profile_img_url')
-        .in('id', allIds);
+      // กรองคนที่ซ้ำออก (เผื่อกรณี Database มีข้อมูลเพี้ยน)
+      const uniqueFriends = Array.from(new Map(friendsList.map(item => [item.id, item])).values());
 
-      setCachedFriends(users || []);
+      setCachedFriends(uniqueFriends);
     } catch (error) {
       console.error(error);
     } finally {
@@ -89,8 +96,9 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
 
   const dmFriendList = useMemo(() => {
     if (!cachedFriends) return [];
-    const existingIds = chats.filter(c => !c.is_group).map(c => c.other_user?.id).filter(Boolean);
-    return cachedFriends.filter(f => !existingIds.includes(f.id));
+    // ใช้ Set แทน Array.includes() จะทำงานไวกว่าเมื่อข้อมูลเริ่มเยอะ (O(1) vs O(N))
+    const existingIds = new Set(chats.filter(c => !c.is_group).map(c => c.other_user?.id).filter(Boolean));
+    return cachedFriends.filter(f => !existingIds.has(f.id));
   }, [cachedFriends, chats]);
 
   const openModal = (mode: 'dm' | 'group') => {
