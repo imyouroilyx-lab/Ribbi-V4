@@ -11,12 +11,10 @@ import {
   Search, 
   Check, 
   X, 
-  Clock, 
   Users, 
   ChevronLeft, 
   ChevronRight,
-  Send,
-  UserCheck
+  Send
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -42,7 +40,6 @@ export default function FriendsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [totalFriends, setTotalFriends] = useState(0);
   
-  // State สำหรับค้นหาและ Pagination
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -66,7 +63,6 @@ export default function FriendsPage() {
       const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single();
       setCurrentUser(userData);
 
-      // โหลดคำขอเป็นเพื่อน (เข้า และ ออก)
       const [pending, sent] = await Promise.all([
         supabase.from('friendships')
           .select('*, sender:sender_id(id, username, display_name, profile_img_url)')
@@ -129,15 +125,21 @@ export default function FriendsPage() {
     }
   };
 
-  const handleAcceptRequest = async (id: string, senderId: string) => {
-    await supabase.from('friendships').update({ status: 'accepted' }).eq('id', id);
-    await supabase.from('notifications').insert({ 
-      receiver_id: senderId, 
-      sender_id: currentUser?.id, 
-      type: 'friend_accept' 
-    });
-    loadInitialData();
-    loadFriendsData();
+  const handleAcceptRequest = async (id: string) => {
+    // ✅ แก้ไข: ลบบรรทัดการ insert notification ออก เพราะจะซ้ำซ้อนกับระบบ Database Trigger
+    try {
+      const { error } = await supabase
+        .from('friendships')
+        .update({ status: 'accepted' })
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      loadInitialData();
+      loadFriendsData();
+    } catch (error) {
+      console.error('Error accepting friend:', error);
+    }
   };
 
   const handleCancelRequest = async (id: string) => {
@@ -176,7 +178,6 @@ export default function FriendsPage() {
           </div>
         </div>
 
-        {/* ✅ Section: คำขอเป็นเพื่อนที่รอการตอบรับ (Incoming) */}
         {pendingRequests.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2 px-1">
@@ -192,7 +193,7 @@ export default function FriendsPage() {
                    </div>
                    <div className="flex gap-1.5">
                       <button 
-                        onClick={() => handleAcceptRequest(r.id, r.sender_id)} 
+                        onClick={() => handleAcceptRequest(r.id)} 
                         className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-sm"
                         title="รับเป็นเพื่อน"
                       >
@@ -212,7 +213,6 @@ export default function FriendsPage() {
           </div>
         )}
 
-        {/* ✅ Section: คำขอที่คุณส่งไป (Outgoing) */}
         {sentRequests.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 px-1">
@@ -237,7 +237,6 @@ export default function FriendsPage() {
           </div>
         )}
 
-        {/* Alphabet Filter */}
         <div className="flex gap-1 overflow-x-auto pb-2 no-scrollbar items-center">
           <button onClick={() => { setSelectedLetter(null); setCurrentPage(1); }} className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-[10px] font-black transition-all ${!selectedLetter ? 'bg-frog-600 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>ทั้งหมด</button>
           {ALPHABETS.map(l => (
@@ -245,7 +244,6 @@ export default function FriendsPage() {
           ))}
         </div>
 
-        {/* Friends List Grid */}
         <div className="space-y-4">
           <h2 className="text-xs font-black text-gray-900 uppercase tracking-widest px-1 flex items-center gap-2">
             <Users size={14} /> รายชื่อเพื่อน ({totalFriends})
@@ -282,7 +280,6 @@ export default function FriendsPage() {
           </div>
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="mt-8 flex items-center justify-center gap-2 pb-10">
             <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-2 bg-white border border-gray-100 rounded-xl disabled:opacity-20 shadow-sm hover:bg-gray-50"><ChevronLeft size={18} /></button>
