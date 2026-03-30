@@ -99,7 +99,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [isLiked, setIsLiked] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // States สำหรับแก้ไขโพสต์
+  // Edit Mode States
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [editContent, setEditContent] = useState(post.content || '');
   const [editMood, setEditMood] = useState(post.mood || '');
@@ -213,7 +213,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           mood: editMood.trim() || null,
           activity: editActivity.trim() || null,
           location: editLocation.trim() || null
-          // ✅ ลบ updated_at ออกแล้ว เพราะคอลัมน์ไม่มีใน DB ของพี่
         })
         .eq('id', post.id)
         .select()
@@ -352,7 +351,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               <div className="space-y-2"><textarea value={editCommentContent} onChange={(e) => setEditCommentContent(e.target.value)} className="input-minimal w-full text-sm" rows={2} /><input type="text" value={editCommentImageUrl} onChange={(e) => setEditCommentImageUrl(e.target.value)} placeholder="URL รูป..." className="input-minimal w-full text-[10px]" /><div className="flex gap-2"><button onClick={() => handleUpdateComment(c.id)} className="btn-primary py-1 px-3 text-xs">บันทึก</button><button onClick={() => setEditingCommentId(null)} className="btn-secondary py-1 px-3 text-xs">ยกเลิก</button></div></div>
             ) : (
               <div className="bg-gray-100 rounded-2xl px-3 py-2 relative group border border-transparent hover:border-gray-200 transition-colors">
-                <div className="flex justify-between items-start gap-2"><p className="font-bold text-xs text-gray-900">{c.author?.display_name}</p>{canManageComment && (<div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">{c.author_id === currentUserId && (<button onClick={() => { setEditingCommentId(c.id); setEditCommentContent(c.content); setEditCommentImageUrl(c.image_url || ''); }} className="text-gray-400 hover:text-bg-slate-900"><Edit2 size={12} /></button>)}<button onClick={() => handleDeleteComment(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={12} /></button></div>)}</div>
+                <div className="flex justify-between items-start gap-2"><p className="font-bold text-xs text-gray-900">{c.author?.display_name}</p>{canManageComment && (<div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">{c.author_id === currentUserId && (<button onClick={() => { setEditingCommentId(c.id); setEditCommentContent(c.content); setEditCommentImageUrl(c.image_url || ''); }} className="text-gray-400 hover:text-frog-600"><Edit2 size={12} /></button>)}<button onClick={() => handleDeleteComment(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={12} /></button></div>)}</div>
                 <p className="text-sm text-gray-800 leading-relaxed">{renderTextWithTags(c.content)}</p>
                 {c.image_url && <img src={c.image_url} className="mt-2 rounded-xl max-h-60 object-cover cursor-pointer shadow-sm" onClick={() => setSelectedImage(c.image_url!)} alt="" />}
                 {(commentLikes[c.id] || 0) > 0 && <div className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1"><Heart size={10} className="fill-red-500 text-red-500" /><span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span></div>}
@@ -406,7 +405,15 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={handleUpdatePost} disabled={!editContent.trim() || isUpdatingPost} className="flex-1 bg-frog-600 text-white font-black py-2.5 rounded-xl shadow-lg hover:bg-frog-700 transition active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 text-xs uppercase">{isUpdatingPost ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}บันทึกการแก้ไข</button>
+            {/* ✅ เปลี่ยนเป็นสี Slate-900 (ดำเข้ม) เพื่อความชัดเจน */}
+            <button 
+              onClick={handleUpdatePost} 
+              disabled={!editContent.trim() || isUpdatingPost} 
+              className="flex-1 bg-slate-900 text-white font-black py-2.5 rounded-xl shadow-lg hover:bg-black transition active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 text-xs uppercase"
+            >
+              {isUpdatingPost ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} className="text-green-400" />}
+              ยืนยันการบันทึก
+            </button>
             <button onClick={() => setIsEditingPost(false)} className="px-4 py-2.5 bg-gray-100 text-gray-500 font-black rounded-xl hover:bg-gray-200 transition text-xs uppercase">ยกเลิก</button>
           </div>
         </div>
