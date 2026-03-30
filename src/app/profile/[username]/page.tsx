@@ -10,7 +10,7 @@ import ConfirmModal from '@/components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Palette, Users, Music, ExternalLink,
-  MessageCircle, Ban, EyeOff, Trash2, X, Plus, Clock, ChevronRight
+  MessageCircle, Ban, EyeOff, Trash2, X, Plus, Clock, ChevronRight, CheckCircle2
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '@/lib/utils';
@@ -103,6 +103,7 @@ export default function ProfilePage() {
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [showAddFamily, setShowAddFamily] = useState(false);
   const [newRelationship, setNewRelationship] = useState('');
+  const [isSaved, setIsSaved] = useState(false);
   const [blockStatus, setBlockStatus] = useState<'none' | 'blocked' | 'ignored'>('none');
   const [friends, setFriends] = useState<User[]>([]);
   
@@ -335,10 +336,25 @@ export default function ProfilePage() {
   const handleAddFamilyMember = async () => {
     if (!currentUser || !profileUser || !newRelationship.trim()) return;
     try {
-      await supabase.from('family_members').insert({ user_id: currentUser.id, member_user_id: profileUser.id, relationship_label: newRelationship.trim() });
-      await loadFamilyMembers(currentUser.id);
+      await supabase.from('family_members').insert({ 
+        user_id: currentUser.id, 
+        member_user_id: profileUser.id, 
+        relationship_label: newRelationship.trim() 
+      });
+      
+      // ✅ ถ้าเป็นหน้าคนอื่น ไม่ต้องโหลด familyMembers ทับ (เพื่อป้องกัน Glitch) 
+      // แต่ให้แสดง Feedback ว่าบันทึกแล้ว
+      if (isOwnProfile) {
+        await loadFamilyMembers(currentUser.id);
+      } else {
+        setIsSaved(true);
+        setTimeout(() => {
+          setIsSaved(false);
+          setShowAddFamily(false);
+        }, 2000);
+      }
+      
       setNewRelationship('');
-      setShowAddFamily(false);
     } catch (error) { console.error(error); }
   };
 
@@ -346,7 +362,7 @@ export default function ProfilePage() {
     if (!familyToDelete) return;
     try {
       await supabase.from('family_members').delete().eq('id', familyToDelete);
-      if (currentUser) await loadFamilyMembers(currentUser.id);
+      if (profileUser) await loadFamilyMembers(profileUser.id);
       setFamilyToDelete(null);
     } catch (error) { console.error(error); }
   };
@@ -386,7 +402,7 @@ export default function ProfilePage() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-16 h-16 mx-auto mb-4 animate-bounce" />
-            <p className="text-gray-600">กำลังโหลด...</p>
+            <p className="text-gray-600 font-bold uppercase tracking-widest text-xs">Loading profile...</p>
           </div>
         </div>
       </NavLayout>
@@ -397,73 +413,101 @@ export default function ProfilePage() {
 
   const themeColor = profileUser.theme_color || '#9de5a8';
 
-  // ✅ สกัดส่วนความสัมพันธ์ออกมาเป็น Component ย่อยเพื่อให้เรียกใช้ได้ทั้ง Mobile และ Desktop
-  const RelationshipWidget = () => (
-    <div className="card-minimal bg-white shadow-sm border border-gray-100">
-      <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
-        <Heart className="w-4 h-4 text-red-500" />
-        ความสัมพันธ์
-      </h3>
-      
-      {profileUser.relationship_status && (
-        <div className="mb-4 p-3 bg-red-50/50 rounded-2xl border border-red-50">
-           <p className="text-xs font-black text-red-600 uppercase tracking-widest mb-1 opacity-70">สถานะหัวใจ</p>
-           <p className="text-sm font-bold text-gray-900">
-              {profileUser.relationship_status === 'single' && '👤 โสด'}
-              {profileUser.relationship_status === 'in_relationship' && '❤️ มีแฟนแล้ว'}
-              {profileUser.relationship_status === 'engaged' && '💍 หมั้นแล้ว'}
-              {profileUser.relationship_status === 'married' && '💒 แต่งงานแล้ว'}
-              {profileUser.relationship_status === 'complicated' && '❓ ไม่ชัดเจน'}
-              {profileUser.relationship_custom_name && <span className="text-frog-600"> กับ {profileUser.relationship_custom_name}</span>}
-           </p>
-        </div>
-      )}
+  // ✅ ปรับปรุง RelationshipWidget ให้ฉลาดขึ้น
+  const RelationshipWidget = () => {
+    // เงื่อนไขในการแสดง Widget: มีข้อมูล หรือ เป็นเพื่อนกัน (เพื่อกดเพิ่ม) หรือ เป็นเจ้าของโปรไฟล์
+    const hasData = profileUser.relationship_status || familyMembers.length > 0;
+    const canInteract = isOwnProfile || friendshipStatus === 'accepted';
 
-      {familyMembers.length > 0 && (
-        <div className="space-y-3">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">ครอบครัวและคนใกล้ชิด</p>
-          {familyMembers.map((fm) => (
-            <div key={fm.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-2xl group transition hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100">
-              <img src={fm.member.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-9 h-9 rounded-xl object-cover shadow-sm" alt="" />
-              <div className="flex-1 min-w-0">
-                <Link href={`/profile/${fm.member.username}`} className="font-bold text-xs hover:text-frog-600 truncate block">{fm.member.display_name}</Link>
-                <p className="text-[10px] text-gray-400 font-medium">{fm.relationship_label}</p>
-              </div>
-              {isOwnProfile && (
-                <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="p-1.5 text-gray-300 hover:text-red-500 transition opacity-0 lg:group-hover:opacity-100">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+    if (!hasData && !canInteract) return null;
 
-      {!isOwnProfile && friendshipStatus === 'accepted' && (
-        <button onClick={() => setShowAddFamily(true)} className="mt-4 w-full py-2.5 text-[10px] font-black uppercase text-frog-600 hover:bg-frog-50 rounded-xl transition border border-dashed border-frog-200">
-          + เพิ่มคนสนิท
-        </button>
-      )}
-
-      {/* Form เพิ่มคนสนิท (In-place) */}
-      {!isOwnProfile && showAddFamily && (
-        <div className="mt-3 p-3 bg-frog-50 rounded-2xl border border-frog-100 animate-in fade-in slide-in-from-top-1">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-bold text-frog-700">ระบุความสัมพันธ์</p>
-            <button onClick={() => setShowAddFamily(false)}><X className="w-4 h-4 text-frog-400" /></button>
+    return (
+      <div className="card-minimal bg-white shadow-sm border border-gray-100">
+        <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
+          <Heart className="w-4 h-4 text-red-500" />
+          ความสัมพันธ์
+        </h3>
+        
+        {profileUser.relationship_status && (
+          <div className="mb-4 p-3 bg-red-50/50 rounded-2xl border border-red-50">
+             <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1 opacity-70">สถานะหัวใจ</p>
+             <p className="text-sm font-bold text-gray-900">
+                {profileUser.relationship_status === 'single' && '👤 โสด'}
+                {profileUser.relationship_status === 'in_relationship' && '❤️ มีแฟนแล้ว'}
+                {profileUser.relationship_status === 'engaged' && '💍 หมั้นแล้ว'}
+                {profileUser.relationship_status === 'married' && '💒 แต่งงานแล้ว'}
+                {profileUser.relationship_status === 'complicated' && '❓ ไม่ชัดเจน'}
+                {profileUser.relationship_custom_name && <span className="text-frog-600"> กับ {profileUser.relationship_custom_name}</span>}
+             </p>
           </div>
-          <input 
-            type="text" 
-            value={newRelationship} 
-            onChange={(e) => setNewRelationship(e.target.value)} 
-            placeholder="เช่น พี่ชาย, เพื่อนสนิท..." 
-            className="w-full px-3 py-2 bg-white border border-frog-200 rounded-xl text-xs focus:ring-2 focus:ring-frog-500 outline-none mb-2" 
-          />
-          <button onClick={handleAddFamilyMember} className="w-full py-2 bg-frog-600 text-white rounded-xl text-xs font-bold shadow-sm">บันทึก</button>
-        </div>
-      )}
-    </div>
-  );
+        )}
+
+        {familyMembers.length > 0 ? (
+          <div className="space-y-3">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">ครอบครัวและคนใกล้ชิด</p>
+            {familyMembers.map((fm) => (
+              <div key={fm.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-2xl group transition hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100">
+                <img src={fm.member.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-9 h-9 rounded-xl object-cover shadow-sm" alt="" />
+                <div className="flex-1 min-w-0">
+                  <Link href={`/profile/${fm.member.username}`} className="font-bold text-xs hover:text-frog-600 truncate block">{fm.member.display_name}</Link>
+                  <p className="text-[10px] text-gray-400 font-medium">{fm.relationship_label}</p>
+                </div>
+                {isOwnProfile && (
+                  <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="p-1.5 text-gray-300 hover:text-red-500 transition opacity-0 lg:group-hover:opacity-100">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : hasData && (
+          <p className="text-[10px] text-gray-400 italic px-1">ยังไม่มีรายชื่อคนใกล้ชิด</p>
+        )}
+
+        {/* ปุ่มเพิ่มความสัมพันธ์มาหน้าโปรไฟล์เรา */}
+        {!isOwnProfile && friendshipStatus === 'accepted' && (
+          <div className="mt-4">
+            {!showAddFamily ? (
+              <button onClick={() => setShowAddFamily(true)} className="w-full py-2.5 text-[10px] font-black uppercase text-frog-600 hover:bg-frog-50 rounded-xl transition border border-dashed border-frog-200 flex items-center justify-center gap-2">
+                <Plus size={14} /> เพิ่มไปยังโปรไฟล์ของฉัน
+              </button>
+            ) : (
+              <div className="p-3 bg-frog-50 rounded-2xl border border-frog-100 animate-in fade-in slide-in-from-top-1">
+                {isSaved ? (
+                  <div className="flex flex-col items-center py-2 text-frog-600 animate-in zoom-in">
+                    <CheckCircle2 size={32} className="mb-2" />
+                    <p className="text-xs font-black">บันทึกเรียบร้อย!</p>
+                    <p className="text-[10px] opacity-70">ดูได้ที่หน้าโปรไฟล์ของคุณ</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-bold text-frog-700">เพิ่ม {profileUser.display_name} เป็น...</p>
+                      <button onClick={() => setShowAddFamily(false)}><X className="w-4 h-4 text-frog-400" /></button>
+                    </div>
+                    <input 
+                      type="text" 
+                      value={newRelationship} 
+                      onChange={(e) => setNewRelationship(e.target.value)} 
+                      placeholder="เช่น พี่ชาย, เพื่อนสนิท..." 
+                      className="w-full px-3 py-2 bg-white border border-frog-200 rounded-xl text-xs focus:ring-2 focus:ring-frog-500 outline-none mb-2" 
+                    />
+                    <button 
+                      onClick={handleAddFamilyMember} 
+                      disabled={!newRelationship.trim()}
+                      className="w-full py-2 bg-frog-600 text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50"
+                    >
+                      บันทึกความสัมพันธ์
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <NavLayout>
@@ -643,31 +687,12 @@ export default function ProfilePage() {
                       </div>
                     )}
                   </div>
-
-                  {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-2">
-                      {profileUser.hobbies.map((hobby: any, index: number) => (
-                        <span 
-                          key={index}
-                          className="px-3 py-1.5 rounded-xl text-xs font-bold border"
-                          style={{ 
-                            backgroundColor: `${themeColor}10`,
-                            color: themeColor,
-                            borderColor: `${themeColor}30`,
-                          }}
-                        >
-                          {hobby.emoji} {hobby.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
 
             {/* Widgets - Mobile Only */}
             <div className="lg:hidden space-y-4">
-              {/* Friends Widget */}
               <div className="card-minimal bg-white shadow-sm border border-gray-100">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-black text-gray-900">เพื่อน</h3>
@@ -690,18 +715,14 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* ✅ Relationship Widget - Mobile */}
-              {(profileUser.relationship_status || familyMembers.length > 0) && (
-                <RelationshipWidget />
-              )}
+              {/* ✅ Relationship Widget - Mobile (Always renders if friend/owner) */}
+              <RelationshipWidget />
             </div>
 
-            {/* Create Post */}
             {(friendshipStatus === 'accepted' || isOwnProfile) && blockStatus === 'none' && (
               <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={handlePostCreated} />
             )}
 
-            {/* Posts Feed */}
             <div className="space-y-6">
               <h2 className="text-xl font-black text-gray-900 px-1">โพสต์ของ {profileUser.display_name}</h2>
               {posts.length === 0 && !isLoading ? (
@@ -743,11 +764,8 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Sidebar - Desktop Only */}
           <div className="hidden lg:block w-80 flex-shrink-0">
             <div className="sticky top-4 space-y-6">
-              
-              {/* Friends Widget */}
               <div className="card-minimal bg-white shadow-sm border border-gray-100">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-black text-gray-900">เพื่อน</h3>
@@ -773,10 +791,8 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* ✅ Relationship Widget - Desktop */}
-              {(profileUser.relationship_status || familyMembers.length > 0) && (
-                <RelationshipWidget />
-              )}
+              {/* ✅ Relationship Widget - Desktop (Always renders if friend/owner) */}
+              <RelationshipWidget />
 
               <div className="text-center opacity-40 hover:opacity-100 transition">
                 <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">Ribbi Community</p>
@@ -786,7 +802,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Modals */}
       <ConfirmModal
         isOpen={showDeletePostConfirm}
         onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }}
