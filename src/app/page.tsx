@@ -268,7 +268,7 @@ export default function HomePage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-sm truncate text-gray-900">{user.display_name}</p>
-                          <p className="text-[10px] text-gray-400 truncate uppercase tracking-tighter">@{user.username}</p>
+                          <p className="text-[10px] text-gray-400 truncate tracking-tighter">@{user.username?.toLowerCase()}</p>
                         </div>
                       </Link>
                     ))
@@ -307,7 +307,7 @@ export default function HomePage() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-bold text-sm truncate text-gray-800">{user.display_name}</p>
-                            <p className="text-[10px] text-gray-400 truncate font-mono">ID: {user.username}</p>
+                            <p className="text-[10px] text-gray-400 truncate">@{user.username}</p>
                           </div>
                         </Link>
                       );
@@ -316,7 +316,7 @@ export default function HomePage() {
                 </div>
                 
                 <div className="pt-4 mt-2 border-t border-gray-50 text-center flex-shrink-0">
-                  <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Ribbi Community</p>
+                  <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Ribbi Application</p>
                 </div>
               </div>
             </div>
