@@ -126,17 +126,23 @@ export default function UsersPage() {
     return () => clearTimeout(handler);
   }, [fetchUsers]);
 
-  // ฟังก์ชันจัดการเพิ่มเพื่อน (ส่งคำขอจริง)
+  // ✅ แก้ไขฟังก์ชันจัดการเพิ่มเพื่อน: ดึง ID ที่เพิ่งสร้างมาใช้งานต่อทันที
   const handleAddFriend = async (targetId: string) => {
     if (!currentUserId || actionId) return;
     setActionId(targetId);
     try {
-      // 1. ส่งคำขอลงตาราง friendships เป็น pending
-      await supabase.from('friendships').insert({
-        sender_id: currentUserId,
-        receiver_id: targetId,
-        status: 'pending'
-      });
+      // 1. ส่งคำขอลงตาราง friendships เป็น pending และดึงข้อมูลที่เพิ่งสร้างกลับมา (เพื่อเอา ID)
+      const { data: newFriendship, error } = await supabase
+        .from('friendships')
+        .insert({
+          sender_id: currentUserId,
+          receiver_id: targetId,
+          status: 'pending'
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
 
       // 2. ส่ง Notification
       await supabase.from('notifications').insert({
@@ -145,9 +151,9 @@ export default function UsersPage() {
         type: 'friend_request'
       });
 
-      // Update UI ทันที
+      // Update UI ทันที พร้อมกับเซ็ต friendshipId ที่ได้มาจากฐานข้อมูล
       setUsers(prev => prev.map(u => 
-        u.id === targetId ? { ...u, friendshipStatus: 'sent' } : u
+        u.id === targetId ? { ...u, friendshipStatus: 'sent', friendshipId: newFriendship.id } : u
       ));
     } catch (error) {
       console.error(error);
@@ -161,8 +167,10 @@ export default function UsersPage() {
     if (!currentUserId || !targetUser.friendshipId || actionId) return;
     setActionId(targetUser.id);
     try {
-      await supabase.from('friendships').delete().eq('id', targetUser.friendshipId);
+      const { error } = await supabase.from('friendships').delete().eq('id', targetUser.friendshipId);
       
+      if (error) throw error;
+
       setUsers(prev => prev.map(u => 
         u.id === targetUser.id ? { ...u, friendshipStatus: 'none', friendshipId: undefined } : u
       ));
@@ -274,7 +282,7 @@ export default function UsersPage() {
                               disabled={actionId === user.id}
                               className="px-3 py-1.5 bg-slate-100 text-slate-400 rounded-xl text-[10px] font-black hover:text-red-500 hover:bg-red-50 transition flex items-center gap-1.5"
                             >
-                              <Clock size={14} />
+                              {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <Clock size={14} />}
                               ยกเลิกคำขอ
                             </button>
                           )}
@@ -285,7 +293,7 @@ export default function UsersPage() {
                               disabled={actionId === user.id}
                               className="px-3 py-1.5 bg-white border border-slate-200 text-slate-400 rounded-xl text-[10px] font-black hover:text-red-500 hover:border-red-200 transition flex items-center gap-1.5 shadow-sm"
                             >
-                              <UserCheck size={14} className="text-green-500" />
+                              {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <UserCheck size={14} className="text-green-500" />}
                               เพื่อน
                             </button>
                           )}
