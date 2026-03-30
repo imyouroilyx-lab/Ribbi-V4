@@ -510,14 +510,16 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
 
   if (isLoading || !groupData) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-white rounded-2xl shadow-sm border border-gray-200 h-[calc(100dvh-5rem)] lg:h-[calc(100vh-3rem)]">
+      // ✅ แก้ไขตรงนี้: ใช้ h-full ตามพื้นที่แม่แทน
+      <div className="flex flex-1 items-center justify-center bg-white md:rounded-2xl md:shadow-sm md:border md:border-gray-200 h-full w-full">
         <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-16 h-16 animate-bounce" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden h-[calc(100dvh-5rem)] lg:h-[calc(100vh-3rem)] min-h-0">
+    // ✅ แก้ไขตรงนี้: ใช้ h-full flex-1 ให้ขยายเต็มหน้าจอ และลบขอบตอนอยู่ในมือถือ
+    <div className="flex flex-col flex-1 bg-white md:rounded-2xl md:shadow-sm md:border md:border-gray-200 overflow-hidden h-full min-h-0 w-full">
       {/* Header */}
       <div className="p-4 border-b flex items-center gap-3 transition-colors duration-300"
         style={{ borderColor: `${themeColor}40` }}>
@@ -575,6 +577,8 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
                     style={{ backgroundColor: themeColor }} onClick={() => colorInputRef.current?.click()} />
                   <div className="flex-1">
                     <p className="text-xs text-gray-500 mb-1">เลือกสีเอง</p>
+                    
+                    {/* ✅ เพิ่มปุ่มกดยืนยัน ตรงนี้ */}
                     <div className="flex items-center gap-2">
                       <input ref={colorInputRef} type="color" value={themeColor}
                         onChange={(e) => setThemeColor(e.target.value)}
@@ -586,9 +590,9 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
                         ยืนยัน
                       </button>
                     </div>
+
                   </div>
                 </div>
-                {isSavingColor && <p className="text-xs text-gray-400 text-center mt-2">กำลังบันทึก...</p>}
               </div>
             </>
           )}
