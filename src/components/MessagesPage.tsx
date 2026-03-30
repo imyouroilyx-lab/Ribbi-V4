@@ -145,7 +145,6 @@ export default function MessagesPage() {
     if (!user) return;
 
     try {
-      // 1. ดึงข้อมูลแชททั้งหมดที่เข้าร่วม
       const { data: participantsData, error } = await supabase
         .from('chat_participants')
         .select(`
@@ -166,33 +165,48 @@ export default function MessagesPage() {
       const chatIds = participantsData.map(p => p.chat_id);
       const lastMessageIds = participantsData.map(p => (p.chats as any)?.last_message_id).filter(Boolean) as string[];
 
-      // ✅ 2. ยิง Database พร้อมกัน 3 ตัวในคราวเดียว เพื่อลดความหน่วง (Parallel Fetching)
       const [lastMessagesRes, allParticipantsRes, nicknamesRes] = await Promise.all([
         lastMessageIds.length > 0 ? supabase.from('messages').select('id, deleted_by, event').in('id', lastMessageIds) : Promise.resolve({ data: [] }),
         chatIds.length > 0 ? supabase.from('chat_participants').select('chat_id, user_id').in('chat_id', chatIds) : Promise.resolve({ data: [] }),
         chatIds.length > 0 ? supabase.from('chat_nicknames').select('chat_id, target_user_id, nickname').in('chat_id', chatIds) : Promise.resolve({ data: [] })
       ]);
 
-      const lastMessagesData = lastMessagesRes.data;
-      const allParticipants = allParticipantsRes.data;
-      const nicknamesData = nicknamesRes.data;
+      const lastMessagesData = lastMessagesRes.data || [];
+      const allParticipants = allParticipantsRes.data || [];
+      const nicknamesData = nicknamesRes.data || [];
 
-      // Map ข้อมูลเพื่อความรวดเร็วในการตรวจสอบ
+      // Map ข้อมูลข้อความเพื่อความรวดเร็วในการตรวจสอบ
       const deletedByMap: Record<string, string[]> = {};
       const eventMap: Record<string, string | null> = {};
-      lastMessagesData?.forEach(msg => {
+      lastMessagesData.forEach(msg => {
         deletedByMap[msg.id] = msg.deleted_by || [];
         eventMap[msg.id] = msg.event || null;
       });
 
-      // ✅ 3. ดึงข้อมูล User ในขั้นตอนสุดท้าย (หลังจากรู้ว่าใครอยู่แชทไหนบ้าง)
       const allUserIds = [...new Set(
-        (allParticipants || []).map(p => p.user_id).filter(id => id !== user.id)
+        allParticipants.map(p => p.user_id).filter(id => id !== user.id)
       )];
 
       const { data: usersData } = allUserIds.length > 0
         ? await supabase.from('users').select('id, username, display_name, profile_img_url, is_online').in('id', allUserIds)
         : { data: [] };
+
+      // ✅ 1. สร้าง Lookup Map เพื่อแก้ปัญหา N+1 ใน Loop ฝั่ง Client (O(1) Access)
+      const userMap = new Map((usersData || []).map(u => [u.id, u]));
+      
+      const nicknameMap = new Map();
+      nicknamesData.forEach(n => {
+        // ใช้ key เป็น 'chat_id:target_user_id' เพื่อให้เข้าถึงได้ทันที
+        nicknameMap.set(`${n.chat_id}:${n.target_user_id}`, n.nickname);
+      });
+
+      const chatParticipantsMap = new Map<string, string[]>();
+      allParticipants.forEach(p => {
+        if (p.user_id !== user.id) {
+          const current = chatParticipantsMap.get(p.chat_id) || [];
+          chatParticipantsMap.set(p.chat_id, [...current, p.user_id]);
+        }
+      });
 
       const result: Chat[] = [];
 
@@ -205,11 +219,12 @@ export default function MessagesPage() {
         const isEvent = lastMsgId ? !!eventMap[lastMsgId] : false;
         const shouldHide = isHidden || isEvent;
 
-        const chatParticipants = (allParticipants || []).filter(ap => ap.chat_id === p.chat_id && ap.user_id !== user.id);
+        // ✅ 2. ดึงข้อมูลจาก Map โดยตรง ไม่ต้องใช้ .filter() หรือ .find() ซ้ำๆ
+        const participantIds = chatParticipantsMap.get(p.chat_id) || [];
 
         if (chatData.is_group) {
-          const members = chatParticipants
-            .map(cp => usersData?.find(u => u.id === cp.user_id))
+          const members = participantIds
+            .map(id => userMap.get(id))
             .filter(Boolean) as any[];
 
           result.push({
@@ -224,13 +239,12 @@ export default function MessagesPage() {
             unread_count: p.unread_count || 0,
           });
         } else {
-          const otherParticipant = chatParticipants[0];
-          const otherUser = usersData?.find(u => u.id === otherParticipant?.user_id);
+          const otherParticipantId = participantIds[0];
+          const otherUser = userMap.get(otherParticipantId);
           if (!otherUser) continue;
 
-          const nickname = nicknamesData?.find(
-            n => n.chat_id === p.chat_id && n.target_user_id === otherUser.id
-          )?.nickname;
+          // ✅ 3. ดึงชื่อเล่นจาก Map ได้ทันที
+          const nickname = nicknameMap.get(`${p.chat_id}:${otherUser.id}`);
 
           result.push({
             id: chatData.id || p.chat_id,
