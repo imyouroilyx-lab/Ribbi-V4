@@ -176,7 +176,7 @@ export default function FriendsPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black text-gray-900 tracking-tight">เพื่อนของฉัน</h1>
-            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">Total {totalFriends} Connections</p>
+            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">ทั้งหมด {totalFriends} คน</p>
           </div>
           <div className="relative w-full md:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
