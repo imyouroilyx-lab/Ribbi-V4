@@ -187,7 +187,7 @@ export default function ProfileFriendsPage() {
                 เพื่อนของ {profileUser.display_name}
               </h1>
               <p className="text-gray-400 mt-1 text-xs font-bold uppercase tracking-wider">
-                TOTAL {friends.length} FRIENDS
+                ทั้งหมด {friends.length} คน
               </p>
             </div>
           </div>
