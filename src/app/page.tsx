@@ -279,10 +279,11 @@ export default function HomePage() {
               {/* All Members Widget */}
               <div className="card-minimal flex flex-col h-[400px] border border-gray-50 shadow-soft-lg">
                 <h3 className="font-bold text-lg mb-4 flex items-center justify-between flex-shrink-0">
-                  <span className="flex items-center gap-2">
+                  {/* ✅ แก้ไขตรงนี้เป็น Link */}
+                  <Link href="/users" className="flex items-center gap-2 hover:text-frog-600 transition-colors cursor-pointer">
                     <Users className="w-5 h-5 text-frog-600" />
                     สมาชิกทั้งหมด
-                  </span>
+                  </Link>
                   <span className="text-xs font-bold bg-gray-50 text-gray-500 px-2.5 py-0.5 rounded-full border border-gray-100">
                     {allUsers.length}
                   </span>
