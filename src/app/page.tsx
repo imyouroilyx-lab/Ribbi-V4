@@ -277,7 +277,7 @@ export default function HomePage() {
               </div>
 
               {/* All Members Widget */}
-              <div className="card-minimal flex flex-col h-[500px] border border-gray-50 shadow-soft-lg">
+              <div className="card-minimal flex flex-col h-[400px] border border-gray-50 shadow-soft-lg">
                 <h3 className="font-bold text-lg mb-4 flex items-center justify-between flex-shrink-0">
                   <span className="flex items-center gap-2">
                     <Users className="w-5 h-5 text-frog-600" />
