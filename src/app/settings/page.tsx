@@ -26,12 +26,11 @@ export default function SettingsPage() {
     newPassword: '',
     confirmPassword: '',
   });
+  // ✅ ถอด currentPassword ออกจากการเปลี่ยน Username และ DisplayName
   const [usernameForm, setUsernameForm] = useState({
-    currentPassword: '',
     newUsername: '',
   });
   const [displayNameForm, setDisplayNameForm] = useState({
-    currentPassword: '',
     newDisplayName: '',
   });
 
@@ -60,7 +59,7 @@ export default function SettingsPage() {
     setIsLoading(false);
   };
 
-  // ฟังก์ชันตรวจสอบรหัสผ่านปัจจุบัน
+  // ฟังก์ชันตรวจสอบรหัสผ่านปัจจุบัน (ใช้เฉพาะตอนเปลี่ยนรหัสผ่านเท่านั้น)
   const verifyCurrentPassword = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -92,6 +91,7 @@ export default function SettingsPage() {
         return;
       }
 
+      // อันนี้จำเป็นต้องเช็ค เพราะเปลี่ยนความปลอดภัยหลัก
       const isValid = await verifyCurrentPassword(user.email, passwordForm.currentPassword);
       if (!isValid) {
         setError('รหัสผ่านปัจจุบันไม่ถูกต้อง');
@@ -110,7 +110,7 @@ export default function SettingsPage() {
       setTimeout(() => {
         setShowPasswordModal(false);
         setSuccess('');
-      }, 2000);
+      }, 1500);
 
     } catch (err: any) {
       setError(err.message || 'เกิดข้อผิดพลาด');
@@ -127,31 +127,27 @@ export default function SettingsPage() {
     setIsSubmitting(true);
 
     try {
-      if (!/^[a-zA-Z0-9_]+$/.test(usernameForm.newUsername)) {
+      const newUsername = usernameForm.newUsername.toLowerCase().trim();
+
+      if (!/^[a-zA-Z0-9_]+$/.test(newUsername)) {
         setError('Username ต้องเป็น a-z, 0-9, _ เท่านั้น');
         return;
       }
-      if (usernameForm.newUsername.length < 3) {
+      if (newUsername.length < 3) {
         setError('Username ต้องมีอย่างน้อย 3 ตัวอักษร');
         return;
       }
 
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.email) {
+      if (!user) {
         setError('ไม่พบข้อมูลผู้ใช้');
-        return;
-      }
-
-      const isValid = await verifyCurrentPassword(user.email, usernameForm.currentPassword);
-      if (!isValid) {
-        setError('รหัสผ่านไม่ถูกต้อง');
         return;
       }
 
       const { data: existingUser } = await supabase
         .from('users')
         .select('username')
-        .eq('username', usernameForm.newUsername.toLowerCase())
+        .eq('username', newUsername)
         .neq('id', user.id)
         .maybeSingle();
 
@@ -162,19 +158,23 @@ export default function SettingsPage() {
 
       const { error: updateError } = await supabase
         .from('users')
-        .update({ username: usernameForm.newUsername.toLowerCase() })
+        .update({ username: newUsername })
         .eq('id', user.id);
 
       if (updateError) throw updateError;
 
       setSuccess('เปลี่ยน Username สำเร็จ!');
-      setUsernameForm({ currentPassword: '', newUsername: '' });
-      await loadUser();
+      setUsernameForm({ newUsername: '' });
+      
+      // ✅ อัปเดตหน้าจอทันที ไม่ต้องรอโหลดใหม่
+      if (currentUser) {
+        setCurrentUser({ ...currentUser, username: newUsername });
+      }
       
       setTimeout(() => {
         setShowUsernameModal(false);
         setSuccess('');
-      }, 2000);
+      }, 1000);
 
     } catch (err: any) {
       setError(err.message || 'เกิดข้อผิดพลาด');
@@ -191,38 +191,37 @@ export default function SettingsPage() {
     setIsSubmitting(true);
 
     try {
-      if (!displayNameForm.newDisplayName.trim()) {
+      const newName = displayNameForm.newDisplayName.trim();
+      if (!newName) {
         setError('กรุณากรอกชื่อที่แสดง');
         return;
       }
 
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.email) {
+      if (!user) {
         setError('ไม่พบข้อมูลผู้ใช้');
-        return;
-      }
-
-      const isValid = await verifyCurrentPassword(user.email, displayNameForm.currentPassword);
-      if (!isValid) {
-        setError('รหัสผ่านไม่ถูกต้อง');
         return;
       }
 
       const { error: updateError } = await supabase
         .from('users')
-        .update({ display_name: displayNameForm.newDisplayName.trim() })
+        .update({ display_name: newName })
         .eq('id', user.id);
 
       if (updateError) throw updateError;
 
       setSuccess('เปลี่ยนชื่อที่แสดงสำเร็จ!');
-      setDisplayNameForm({ currentPassword: '', newDisplayName: '' });
-      await loadUser();
+      setDisplayNameForm({ newDisplayName: '' });
+      
+      // ✅ อัปเดตหน้าจอทันที ไม่ต้องรอโหลดใหม่
+      if (currentUser) {
+        setCurrentUser({ ...currentUser, display_name: newName });
+      }
       
       setTimeout(() => {
         setShowDisplayNameModal(false);
         setSuccess('');
-      }, 2000);
+      }, 1000);
 
     } catch (err: any) {
       setError(err.message || 'เกิดข้อผิดพลาด');
@@ -293,7 +292,7 @@ export default function SettingsPage() {
                   </p>
                   <p className="text-sm text-indigo-500 font-black mt-0.5">@{currentUser.username}</p>
                 </div>
-                <button onClick={() => { setUsernameForm({ ...usernameForm, newUsername: currentUser.username }); setShowUsernameModal(true); }} className="px-5 py-2 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95">
+                <button onClick={() => { setUsernameForm({ newUsername: currentUser.username }); setShowUsernameModal(true); }} className="px-5 py-2 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95">
                   แก้ไข
                 </button>
               </div>
@@ -307,7 +306,7 @@ export default function SettingsPage() {
                   </p>
                   <p className="text-sm text-slate-600 font-medium mt-0.5">{currentUser.display_name}</p>
                 </div>
-                <button onClick={() => { setDisplayNameForm({ ...displayNameForm, newDisplayName: currentUser.display_name }); setShowDisplayNameModal(true); }} className="px-5 py-2 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95">
+                <button onClick={() => { setDisplayNameForm({ newDisplayName: currentUser.display_name }); setShowDisplayNameModal(true); }} className="px-5 py-2 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95">
                   แก้ไข
                 </button>
               </div>
@@ -398,15 +397,11 @@ export default function SettingsPage() {
             <form onSubmit={handleChangeUsername} className="space-y-6">
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2.5 ml-1">Username ใหม่</label>
-                <input type="text" value={usernameForm.newUsername} onChange={(e) => setUsernameForm({ ...usernameForm, newUsername: e.target.value.toLowerCase() })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 outline-none font-bold text-indigo-600" required pattern="[a-zA-Z0-9_]+" minLength={3} maxLength={20} disabled={isSubmitting} placeholder="username123" />
+                <input type="text" value={usernameForm.newUsername} onChange={(e) => setUsernameForm({ newUsername: e.target.value.toLowerCase() })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 outline-none font-bold text-indigo-600" required pattern="[a-zA-Z0-9_]+" minLength={3} maxLength={20} disabled={isSubmitting} placeholder="username123" />
                 <p className="text-[10px] text-slate-400 font-black uppercase mt-2 ml-1">ตัวอักษร a-z, 0-9 และ _ เท่านั้น</p>
               </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2.5 ml-1">รหัสผ่านปัจจุบัน</label>
-                <input type="password" value={usernameForm.currentPassword} onChange={(e) => setUsernameForm({ ...usernameForm, currentPassword: e.target.value })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 outline-none font-medium" required disabled={isSubmitting} placeholder="••••••••" />
-              </div>
               <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => { setShowUsernameModal(false); setError(''); setSuccess(''); setUsernameForm({ currentPassword: '', newUsername: '' }); }} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-black transition-all active:scale-95" disabled={isSubmitting}>ยกเลิก</button>
+                <button type="button" onClick={() => { setShowUsernameModal(false); setError(''); setSuccess(''); setUsernameForm({ newUsername: '' }); }} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-black transition-all active:scale-95" disabled={isSubmitting}>ยกเลิก</button>
                 <button type="submit" className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black transition-all shadow-lg shadow-indigo-200 active:scale-95" disabled={isSubmitting}>{isSubmitting ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}</button>
               </div>
             </form>
@@ -423,14 +418,10 @@ export default function SettingsPage() {
             <form onSubmit={handleChangeDisplayName} className="space-y-6">
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2.5 ml-1">ชื่อที่แสดงใหม่</label>
-                <input type="text" value={displayNameForm.newDisplayName} onChange={(e) => setDisplayNameForm({ ...displayNameForm, newDisplayName: e.target.value })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 outline-none font-bold" required disabled={isSubmitting} placeholder="ชื่อของคุณ" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2.5 ml-1">รหัสผ่านปัจจุบัน</label>
-                <input type="password" value={displayNameForm.currentPassword} onChange={(e) => setDisplayNameForm({ ...displayNameForm, currentPassword: e.target.value })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 outline-none font-medium" required disabled={isSubmitting} placeholder="••••••••" />
+                <input type="text" value={displayNameForm.newDisplayName} onChange={(e) => setDisplayNameForm({ newDisplayName: e.target.value })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/10 outline-none font-bold" required disabled={isSubmitting} placeholder="ชื่อของคุณ" />
               </div>
               <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => { setShowDisplayNameModal(false); setError(''); setSuccess(''); setDisplayNameForm({ currentPassword: '', newDisplayName: '' }); }} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-black transition-all active:scale-95" disabled={isSubmitting}>ยกเลิก</button>
+                <button type="button" onClick={() => { setShowDisplayNameModal(false); setError(''); setSuccess(''); setDisplayNameForm({ newDisplayName: '' }); }} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-black transition-all active:scale-95" disabled={isSubmitting}>ยกเลิก</button>
                 <button type="submit" className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black transition-all shadow-lg shadow-indigo-200 active:scale-95" disabled={isSubmitting}>{isSubmitting ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}</button>
               </div>
             </form>
