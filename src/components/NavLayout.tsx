@@ -226,15 +226,20 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             <span>ออกจากระบบ</span>
           </button>
         </nav>
+        
+        {/* ✅ ปรับเปลี่ยนส่วนล่างเป็น Link ไปยังหน้าโปรไฟล์ (บน Desktop) */}
         {currentUser && (
           <div className="absolute bottom-4 left-4 right-4">
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-              <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt={currentUser.display_name} className="w-10 h-10 rounded-full object-cover" />
+            <Link 
+              href={`/profile/${currentUser.username}`} 
+              className="flex items-center gap-3 p-3 bg-gray-50 hover:bg-gray-100 transition-colors rounded-xl border border-transparent hover:border-gray-200"
+            >
+              <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt={currentUser.display_name} className="w-10 h-10 rounded-full object-cover border border-gray-200" />
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm truncate">{currentUser.display_name}</p>
+                <p className="font-medium text-sm truncate text-gray-900">{currentUser.display_name}</p>
                 <p className="text-xs text-gray-500 truncate">@{currentUser.username}</p>
               </div>
-            </div>
+            </Link>
           </div>
         )}
       </aside>
@@ -269,17 +274,24 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                 <X className="w-6 h-6" />
               </button>
             </div>
+            
+            {/* ✅ ปรับเปลี่ยนส่วนบนเป็น Link ไปยังหน้าโปรไฟล์ (บน Mobile Menu) */}
             {currentUser && (
-              <div className="mb-6 p-3 bg-gray-50 rounded-xl">
+              <Link 
+                href={`/profile/${currentUser.username}`} 
+                onClick={() => setShowMobileMenu(false)}
+                className="block mb-6 p-3 bg-gray-50 hover:bg-gray-100 transition-colors rounded-xl border border-transparent hover:border-gray-200"
+              >
                 <div className="flex items-center gap-3">
-                  <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt={currentUser.display_name} className="w-12 h-12 rounded-full object-cover" />
-                  <div>
-                    <p className="font-medium">{currentUser.display_name}</p>
-                    <p className="text-sm text-gray-500">@{currentUser.username}</p>
+                  <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt={currentUser.display_name} className="w-12 h-12 rounded-full object-cover border border-gray-200" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{currentUser.display_name}</p>
+                    <p className="text-sm text-gray-500 truncate">@{currentUser.username}</p>
                   </div>
                 </div>
-              </div>
+              </Link>
             )}
+
             <nav className="space-y-2">
               <Link href="/" onClick={(e) => { setShowMobileMenu(false); handleHomeClick(e); }} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600' : 'hover:bg-gray-100'}`}>
                 <Home className="w-5 h-5" />
