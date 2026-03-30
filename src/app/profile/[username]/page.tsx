@@ -102,8 +102,7 @@ export default function ProfilePage() {
     try {
       const date = new Date(dateStr);
       const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-      const age = calculateAge(dateStr);
-      return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()} (${age} ปี)`;
+      return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()} (${calculateAge(dateStr)} ปี)`;
     } catch { return dateStr; }
   };
 
@@ -161,7 +160,7 @@ export default function ProfilePage() {
 
   const loadFriends = async (userId: string) => {
     const { data } = await supabase.from('friendships').select('*, sender:sender_id(id, username, display_name, profile_img_url, is_online), receiver:receiver_id(id, username, display_name, profile_img_url, is_online)').eq('status', 'accepted').or(`sender_id.eq.${userId},receiver_id.eq.${userId}`).order('created_at', { ascending: false }).limit(4);
-    const friendsList = (data || []).map((f: any) => f.sender_id === userId ? f.receiver : f.sender).filter((friend: any) => friend);
+    const friendsList = (data || []).map((f: any) => f.sender_id === userId ? f.receiver : f.sender).filter((u: any) => u);
     setFriends(friendsList);
   };
 
@@ -201,7 +200,7 @@ export default function ProfilePage() {
 
   const relationshipContent = (
     <div className="card-minimal bg-white shadow-sm border border-gray-100">
-      <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2"><Heart className="w-4 h-4 text-red-500" />ความสัมพันธ์</h3>
+      <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2"><Heart className="w-4 h-4 text-red-500" /> ความสัมพันธ์</h3>
       {profileUser.relationship_status && (
         <div className="mb-4 p-3 bg-red-50/50 rounded-2xl border border-red-50">
            <p className="text-[10px] font-black text-red-600 uppercase mb-1 opacity-70">สถานะหัวใจ</p>
@@ -230,6 +229,7 @@ export default function ProfilePage() {
           ))}
         </div>
       ) : (profileUser.relationship_status || familyMembers.length > 0) && <p className="text-[10px] text-gray-400 italic px-1">ยังไม่มีรายชื่อคนใกล้ชิด</p>}
+      
       {!isOwnProfile && friendshipStatus === 'accepted' && !isAlreadyInMyFamily && (
         <div className="mt-4">
           {!showAddFamily ? (
@@ -262,7 +262,10 @@ export default function ProfilePage() {
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="flex-1 min-w-0 space-y-6">
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm">
-              <div className="h-32 md:h-56" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
+              <div 
+                className="h-32 md:h-56"
+                style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }}
+              />
               <div className="p-4 md:p-6 bg-white">
                 <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6 -mt-20 mb-6">
                   <div className="w-24 h-24 md:w-36 md:h-36 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0" style={{ borderColor: themeColor, borderWidth: '4px' }}>
@@ -300,7 +303,6 @@ export default function ProfilePage() {
                 <div className="space-y-4">
                   <div><h1 className="text-2xl md:text-3xl font-black text-gray-900">{profileUser.display_name}</h1><p className="text-gray-400 text-sm font-medium">@{profileUser.username}</p></div>
                   
-                  {/* ✅ Bio: whitespace-pre-wrap เพื่อแสดงหลายบรรทัดตามจริง */}
                   {profileUser.bio && <p className="text-gray-700 leading-relaxed whitespace-pre-wrap break-words italic">{profileUser.bio}</p>}
 
                   {profileUser.music_url && profileUser.music_name && (
@@ -321,7 +323,7 @@ export default function ProfilePage() {
                     <div className="flex flex-wrap gap-2 pt-2">
                       {profileUser.hobbies.map((h: any, i: number) => (
                         <span key={i} className="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all hover:scale-105" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: `${themeColor}30` }}>
-                          {h.emoji && <span>{h.emoji} </span>}{h.name}
+                          {h.name}
                         </span>
                       ))}
                     </div>
@@ -329,7 +331,7 @@ export default function ProfilePage() {
                 </div>
               </div>
             </div>
-            {/* Mobile Widgets */}
+
             <div className="lg:hidden space-y-4">
               <div className="card-minimal bg-white shadow-sm border border-gray-100">
                 <div className="flex items-center justify-between mb-4"><h3 className="font-black text-gray-900">เพื่อน</h3><Link href={`/profile/${profileUser.username}/friends`} className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1">ดูทั้งหมด <ChevronRight size={14} /></Link></div>
@@ -355,7 +357,7 @@ export default function ProfilePage() {
               )}
             </div>
           </div>
-          {/* Desktop Sidebar */}
+          {/* Sidebar */}
           <div className="hidden lg:block w-80 flex-shrink-0">
             <div className="sticky top-4 space-y-6">
               <div className="card-minimal bg-white shadow-sm border border-gray-100">
@@ -371,9 +373,8 @@ export default function ProfilePage() {
         </div>
       </div>
       {/* Modals */}
-      <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} onConfirm={() => handleDeletePost()} title="ลบโพสต์ถาวร?" message="คุณจะไม่สามารถกู้คืนโพสต์นี้กลับมาได้อีกครั้ง" confirmText="ยืนยันการลบ" cancelText="ยกเลิก" variant="danger" />
-      <ConfirmModal isOpen={showFamilyDeleteConfirm} onClose={() => { setShowFamilyDeleteConfirm(false); setFamilyToDelete(null); }} onConfirm={() => handleRemoveFamilyMember()} title="ลบความสัมพันธ์?" message="ข้อมูลความสัมพันธ์ครอบครัวจะถูกลบออกจากโปรไฟล์ของคุณ" confirmText="ลบออก" cancelText="ยกเลิก" variant="danger" />
-      {/* ✅ Build Fix: onConfirm={handleRemoveFriend} (ไม่ใส่ parens) */}
+      <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} onConfirm={handleDeletePost} title="ลบโพสต์ถาวร?" message="คุณจะไม่สามารถกู้คืนโพสต์นี้กลับมาได้อีกครั้ง" confirmText="ยืนยันการลบ" cancelText="ยกเลิก" variant="danger" />
+      <ConfirmModal isOpen={showFamilyDeleteConfirm} onClose={() => { setShowFamilyDeleteConfirm(false); setFamilyToDelete(null); }} onConfirm={handleRemoveFamilyMember} title="ลบความสัมพันธ์?" message="ข้อมูลความสัมพันธ์ครอบครัวจะถูกลบออกจากโปรไฟล์ของคุณ" confirmText="ลบออก" cancelText="ยกเลิก" variant="danger" />
       <ConfirmModal isOpen={showUnfriendModal} onClose={() => setShowUnfriendModal(false)} onConfirm={handleRemoveFriend} title="เลิกเป็นเพื่อน?" message={`หากเลิกเป็นเพื่อน คุณจะไม่เห็นโพสต์ของ ${profileUser.display_name} ในหน้าแรกอีกต่อไป`} confirmText="ลบเพื่อน" cancelText="ยกเลิก" variant="danger" />
     </NavLayout>
   );
