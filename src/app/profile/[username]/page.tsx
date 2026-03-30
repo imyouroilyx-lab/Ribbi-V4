@@ -35,60 +35,28 @@ interface Friendship {
 
 async function getOrCreateChat(currentUserId: string, targetUserId: string): Promise<string | null> {
   try {
-    const { data: currentUserChats } = await supabase
-      .from('chat_participants')
-      .select('chat_id')
-      .eq('user_id', currentUserId);
-
-    const { data: targetUserChats } = await supabase
-      .from('chat_participants')
-      .select('chat_id')
-      .eq('user_id', targetUserId);
-
+    const { data: currentUserChats } = await supabase.from('chat_participants').select('chat_id').eq('user_id', currentUserId);
+    const { data: targetUserChats } = await supabase.from('chat_participants').select('chat_id').eq('user_id', targetUserId);
     if (currentUserChats && targetUserChats) {
       const currentChatIds = currentUserChats.map(c => c.chat_id);
       const targetChatIds = targetUserChats.map(c => c.chat_id);
       const sharedChatIds = currentChatIds.filter(id => targetChatIds.includes(id));
-
       if (sharedChatIds.length > 0) {
-        const { data: dmChats } = await supabase
-          .from('chats')
-          .select('id')
-          .in('id', sharedChatIds)
-          .eq('is_group', false)
-          .limit(1);
-
-        if (dmChats && dmChats.length > 0) {
-          return dmChats[0].id;
-        }
+        const { data: dmChats } = await supabase.from('chats').select('id').in('id', sharedChatIds).eq('is_group', false).limit(1);
+        if (dmChats && dmChats.length > 0) return dmChats[0].id;
       }
     }
-
-    const { data: newChat, error: chatError } = await supabase
-      .from('chats')
-      .insert({ is_group: false })
-      .select()
-      .single();
-
+    const { data: newChat, error: chatError } = await supabase.from('chats').insert({ is_group: false }).select().single();
     if (chatError || !newChat) return null;
-
-    await supabase.from('chat_participants').insert([
-      { chat_id: newChat.id, user_id: currentUserId, role: 'member' },
-      { chat_id: newChat.id, user_id: targetUserId, role: 'member' }
-    ]);
-
+    await supabase.from('chat_participants').insert([{ chat_id: newChat.id, user_id: currentUserId, role: 'member' }, { chat_id: newChat.id, user_id: targetUserId, role: 'member' }]);
     return newChat.id;
-  } catch (error) {
-    console.error(error);
-    return null;
-  }
+  } catch (error) { console.error(error); return null; }
 }
 
 export default function ProfilePage() {
   const params = useParams();
   const router = useRouter();
   const username = params.username as string;
-  
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [profileUser, setProfileUser] = useState<any | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -96,7 +64,6 @@ export default function ProfilePage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
-  
   const [friendshipStatus, setFriendshipStatus] = useState<'none' | 'pending' | 'accepted' | 'sent'>('none');
   const [friendshipId, setFriendshipId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -107,7 +74,6 @@ export default function ProfilePage() {
   const [isSaved, setIsSaved] = useState(false);
   const [blockStatus, setBlockStatus] = useState<'none' | 'blocked' | 'ignored'>('none');
   const [friends, setFriends] = useState<User[]>([]);
-  
   const [showDeletePostConfirm, setShowDeletePostConfirm] = useState(false);
   const [postToDelete, setPostToDelete] = useState<string | null>(null);
   const [showFamilyDeleteConfirm, setShowFamilyDeleteConfirm] = useState(false);
@@ -119,35 +85,17 @@ export default function ProfilePage() {
   const lastPostElementRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoading || isLoadingMore) return;
     if (observer.current) observer.current.disconnect();
-
-    observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) {
-        setPage(prevPage => prevPage + 1);
-      }
-    });
-
+    observer.current = new IntersectionObserver(entries => { if (entries[0].isIntersecting && hasMore) setPage(p => p + 1); });
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
 
   const isOwnProfile = currentUser?.username === username;
 
+  useEffect(() => { loadInitialData(); }, [username, refreshTrigger]);
+  useEffect(() => { if (page > 0) loadMorePosts(); }, [page]);
   useEffect(() => {
-    loadInitialData();
-  }, [username, refreshTrigger]);
-
-  useEffect(() => {
-    if (page > 0) {
-      loadMorePosts();
-    }
-  }, [page]);
-
-  useEffect(() => {
-    if (profileUser?.theme_color) {
-      document.documentElement.style.setProperty('--profile-theme', profileUser.theme_color);
-    }
-    return () => {
-      document.documentElement.style.removeProperty('--profile-theme');
-    };
+    if (profileUser?.theme_color) document.documentElement.style.setProperty('--profile-theme', profileUser.theme_color);
+    return () => { document.documentElement.style.removeProperty('--profile-theme'); };
   }, [profileUser?.theme_color]);
 
   const formatBirthday = (dateStr: string) => {
@@ -168,190 +116,92 @@ export default function ProfilePage() {
   };
 
   const loadInitialData = async () => {
-    setIsLoading(true);
-    setPage(0);
+    setIsLoading(true); setPage(0);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/login'); return; }
-
       const { data: currentUserData } = await supabase.from('users').select('*').eq('id', user.id).single();
       setCurrentUser(currentUserData);
-
       const { data: profileUserData } = await supabase.from('users').select('*').eq('username', username).single();
       if (!profileUserData) { router.push('/'); return; }
       setProfileUser(profileUserData);
-
-      const { data: postsData } = await supabase
-        .from('posts')
-        .select('*, author:author_id(id, username, display_name, profile_img_url), target:target_id(id, username, display_name, profile_img_url)')
-        .eq('target_id', profileUserData.id)
-        .order('created_at', { ascending: false })
-        .range(0, POSTS_PER_PAGE - 1);
-
+      const { data: postsData } = await supabase.from('posts').select('*, author:author_id(id, username, display_name, profile_img_url), target:target_id(id, username, display_name, profile_img_url)').eq('target_id', profileUserData.id).order('created_at', { ascending: false }).range(0, POSTS_PER_PAGE - 1);
       setPosts(postsData || []);
       setHasMore((postsData?.length || 0) === POSTS_PER_PAGE);
-
       if (currentUserData.id !== profileUserData.id) {
         await Promise.all([
           checkFriendshipStatus(currentUserData.id, profileUserData.id),
           checkBlockStatus(currentUserData.id, profileUserData.id),
           supabase.from('profile_views').insert({ profile_id: profileUserData.id, visitor_id: currentUserData.id }),
-          loadMyFamilyMembers(currentUserData.id)
+          loadMyFamilyMembers(currentUserData.id) 
         ]);
       }
-
-      await Promise.all([
-        loadFamilyMembers(profileUserData.id),
-        loadFriends(profileUserData.id)
-      ]);
-
-    } catch (error) {
-      console.error('Error loading profile:', error);
-    } finally {
-      setIsLoading(false);
-    }
+      await Promise.all([loadFamilyMembers(profileUserData.id), loadFriends(profileUserData.id)]);
+    } catch (error) { console.error(error); } finally { setIsLoading(false); }
   };
 
   const loadMyFamilyMembers = async (myUserId: string) => {
-    try {
-      const { data } = await supabase.from('family_members').select('member_user_id').eq('user_id', myUserId);
-      setMyFamilyMembers(data || []);
-    } catch (error) { console.error(error); }
+    const { data } = await supabase.from('family_members').select('member_user_id').eq('user_id', myUserId);
+    setMyFamilyMembers(data || []);
   };
 
   const loadMorePosts = async () => {
     if (isLoadingMore || !hasMore || !profileUser) return;
     setIsLoadingMore(true);
     const start = page * POSTS_PER_PAGE;
-    try {
-      const { data: newPosts } = await supabase
-        .from('posts')
-        .select('*, author:author_id(id, username, display_name, profile_img_url), target:target_id(id, username, display_name, profile_img_url)')
-        .eq('target_id', profileUser.id)
-        .order('created_at', { ascending: false })
-        .range(start, start + POSTS_PER_PAGE - 1);
-      if (newPosts && newPosts.length > 0) {
-        setPosts(prev => [...prev, ...newPosts]);
-        setHasMore(newPosts.length === POSTS_PER_PAGE);
-      } else { setHasMore(false); }
-    } catch (error) { console.error(error); } finally { setIsLoadingMore(false); }
+    const { data: newPosts } = await supabase.from('posts').select('*, author:author_id(id, username, display_name, profile_img_url), target:target_id(id, username, display_name, profile_img_url)').eq('target_id', profileUser.id).order('created_at', { ascending: false }).range(start, start + POSTS_PER_PAGE - 1);
+    if (newPosts && newPosts.length > 0) { setPosts(prev => [...prev, ...newPosts]); setHasMore(newPosts.length === POSTS_PER_PAGE); } else { setHasMore(false); }
+    setIsLoadingMore(false);
   };
 
   const loadFamilyMembers = async (userId: string) => {
-    try {
-      const { data } = await supabase.from('family_members').select('*, member:member_user_id(*)').eq('user_id', userId);
-      setFamilyMembers(data || []);
-    } catch (error) { console.error(error); }
+    const { data } = await supabase.from('family_members').select('*, member:member_user_id(*)').eq('user_id', userId);
+    setFamilyMembers(data || []);
   };
 
   const loadFriends = async (userId: string) => {
-    try {
-      const { data } = await supabase
-        .from('friendships')
-        .select('*, sender:sender_id(id, username, display_name, profile_img_url, is_online), receiver:receiver_id(id, username, display_name, profile_img_url, is_online)')
-        .eq('status', 'accepted')
-        .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-        .order('created_at', { ascending: false })
-        .limit(4);
-      const friendsList = (data || []).map((f: any) => f.sender_id === userId ? f.receiver : f.sender).filter((u: any) => u);
-      setFriends(friendsList);
-    } catch (error) { console.error(error); }
+    const { data } = await supabase.from('friendships').select('*, sender:sender_id(id, username, display_name, profile_img_url, is_online), receiver:receiver_id(id, username, display_name, profile_img_url, is_online)').eq('status', 'accepted').or(`sender_id.eq.${userId},receiver_id.eq.${userId}`).order('created_at', { ascending: false }).limit(4);
+    const friendsList = (data || []).map((f: any) => f.sender_id === userId ? f.receiver : f.sender).filter((friend: any) => friend);
+    setFriends(friendsList);
   };
 
   const checkFriendshipStatus = async (userId: string, profileId: string) => {
-    try {
-      const { data } = await supabase.from('friendships').select('*').or(`and(sender_id.eq.${userId},receiver_id.eq.${profileId}),and(sender_id.eq.${profileId},receiver_id.eq.${userId})`).maybeSingle();
-      if (data) {
-        setFriendshipId(data.id);
-        if (data.status === 'accepted') setFriendshipStatus('accepted');
-        else if (data.sender_id === userId) setFriendshipStatus('sent');
-        else setFriendshipStatus('pending');
-      }
-    } catch (error) { console.error(error); }
+    const { data } = await supabase.from('friendships').select('*').or(`and(sender_id.eq.${userId},receiver_id.eq.${profileId}),and(sender_id.eq.${profileId},receiver_id.eq.${userId})`).maybeSingle();
+    if (data) { setFriendshipId(data.id); if (data.status === 'accepted') setFriendshipStatus('accepted'); else if (data.sender_id === userId) setFriendshipStatus('sent'); else setFriendshipStatus('pending'); }
   };
 
   const checkBlockStatus = async (userId: string, profileId: string) => {
-    try {
-      const { data } = await supabase.from('blocks').select('*').eq('blocker_id', userId).eq('blocked_id', profileId).maybeSingle();
-      if (data) setBlockStatus(data.block_type === 'block' ? 'blocked' : 'ignored');
-    } catch (error) { console.error(error); }
+    const { data } = await supabase.from('blocks').select('*').eq('blocker_id', userId).eq('blocked_id', profileId).maybeSingle();
+    if (data) setBlockStatus(data.block_type === 'block' ? 'blocked' : 'ignored');
   };
 
-  const handleSendMessage = async () => {
-    if (!currentUser || !profileUser) return;
-    const chatId = await getOrCreateChat(currentUser.id, profileUser.id);
-    if (chatId) router.push(`/messages?chat=${chatId}`);
-  };
-
-  const handleAddFriend = async () => {
-    if (!currentUser || !profileUser) return;
-    await supabase.from('friendships').insert({ sender_id: currentUser.id, receiver_id: profileUser.id, status: 'pending' });
-    setFriendshipStatus('sent');
-  };
-
-  const handleAcceptFriend = async () => {
-    if (!friendshipId) return;
-    await supabase.from('friendships').update({ status: 'accepted' }).eq('id', friendshipId);
-    setFriendshipStatus('accepted');
-    loadFriends(profileUser.id);
-  };
-
-  const handleRemoveFriend = async () => {
-    if (!friendshipId) return;
-    await supabase.from('friendships').delete().eq('id', friendshipId);
-    setFriendshipStatus('none'); setFriendshipId(null);
-    setShowUnfriendModal(false); setShowUnfriendConfirm(false);
-    loadFriends(profileUser.id);
-  };
+  const handleSendMessage = async () => { if (!currentUser || !profileUser) return; const chatId = await getOrCreateChat(currentUser.id, profileUser.id); if (chatId) router.push(`/messages?chat=${chatId}`); };
+  const handleAddFriend = async () => { if (!currentUser || !profileUser) return; await supabase.from('friendships').insert({ sender_id: currentUser.id, receiver_id: profileUser.id, status: 'pending' }); setFriendshipStatus('sent'); };
+  const handleAcceptFriend = async () => { if (!friendshipId) return; await supabase.from('friendships').update({ status: 'accepted' }).eq('id', friendshipId); setFriendshipStatus('accepted'); loadFriends(profileUser.id); };
+  const handleRemoveFriend = async () => { if (!friendshipId) return; await supabase.from('friendships').delete().eq('id', friendshipId); setFriendshipStatus('none'); setFriendshipId(null); setShowUnfriendModal(false); setShowUnfriendConfirm(false); loadFriends(profileUser.id); };
 
   const handleAddFamilyMember = async () => {
     if (!currentUser || !profileUser || !newRelationship.trim()) return;
     await supabase.from('family_members').insert({ user_id: currentUser.id, member_user_id: profileUser.id, relationship_label: newRelationship.trim() });
     if (isOwnProfile) await loadFamilyMembers(currentUser.id);
-    else {
-      setIsSaved(true);
-      setMyFamilyMembers(prev => [...prev, { member_user_id: profileUser.id }]);
-      setTimeout(() => { setIsSaved(false); setShowAddFamily(false); }, 2000);
-    }
+    else { setIsSaved(true); setMyFamilyMembers(prev => [...prev, { member_user_id: profileUser.id }]); setTimeout(() => { setIsSaved(false); setShowAddFamily(false); }, 2000); }
     setNewRelationship('');
   };
 
-  const handleRemoveFamilyMember = async () => {
-    if (!familyToDelete) return;
-    await supabase.from('family_members').delete().eq('id', familyToDelete);
-    if (profileUser) await loadFamilyMembers(profileUser.id);
-    setFamilyToDelete(null);
-  };
+  const handleRemoveFamilyMember = async () => { if (!familyToDelete) return; await supabase.from('family_members').delete().eq('id', familyToDelete); if (profileUser) await loadFamilyMembers(profileUser.id); setFamilyToDelete(null); };
+  const handleBlock = async (type: 'block' | 'ignore') => { if (!currentUser || !profileUser) return; await supabase.from('blocks').upsert({ blocker_id: currentUser.id, blocked_id: profileUser.id, block_type: type }); setBlockStatus(type === 'block' ? 'blocked' : 'ignored'); };
+  const handleUnblock = async () => { if (!currentUser || !profileUser) return; await supabase.from('blocks').delete().eq('blocker_id', currentUser.id).eq('blocked_id', profileUser.id); setBlockStatus('none'); };
+  const handleDeletePost = async () => { if (!postToDelete) return; await supabase.from('posts').delete().eq('id', postToDelete); setPosts(prev => prev.filter(p => p.id !== postToDelete)); setPostToDelete(null); };
 
-  const handleBlock = async (type: 'block' | 'ignore') => {
-    if (!currentUser || !profileUser) return;
-    await supabase.from('blocks').upsert({ blocker_id: currentUser.id, blocked_id: profileUser.id, block_type: type });
-    setBlockStatus(type === 'block' ? 'blocked' : 'ignored');
-  };
-
-  const handleUnblock = async () => {
-    if (!currentUser || !profileUser) return;
-    await supabase.from('blocks').delete().eq('blocker_id', currentUser.id).eq('blocked_id', profileUser.id);
-    setBlockStatus('none');
-  };
-
-  const handleDeletePost = async () => {
-    if (!postToDelete) return;
-    await supabase.from('posts').delete().eq('id', postToDelete);
-    setPosts(prev => prev.filter(p => p.id !== postToDelete));
-    setPostToDelete(null);
-  };
-
-  if (isLoading && page === 0) return <NavLayout><div className="flex items-center justify-center py-20"><img src="https://iili.io/qbtgKBt.png" className="w-16 h-16 animate-bounce" alt="" /></div></NavLayout>;
+  if (isLoading && page === 0) return <NavLayout><div className="flex items-center justify-center h-64"><img src="https://iili.io/qbtgKBt.png" className="w-16 h-16 animate-bounce" alt="" /></div></NavLayout>;
   if (!profileUser || !currentUser) return null;
 
   const themeColor = profileUser.theme_color || '#9de5a8';
   const isAlreadyInMyFamily = myFamilyMembers.some(m => m.member_user_id === profileUser.id);
 
-  // Widget ความสัมพันธ์ (Inline เพื่อป้องกัน Focus หลุด)
   const relationshipContent = (
     <div className="card-minimal bg-white shadow-sm border border-gray-100">
-      <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2"><Heart className="w-4 h-4 text-red-500" /> ความสัมพันธ์</h3>
+      <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2"><Heart className="w-4 h-4 text-red-500" />ความสัมพันธ์</h3>
       {profileUser.relationship_status && (
         <div className="mb-4 p-3 bg-red-50/50 rounded-2xl border border-red-50">
            <p className="text-[10px] font-black text-red-600 uppercase mb-1 opacity-70">สถานะหัวใจ</p>
@@ -380,7 +230,6 @@ export default function ProfilePage() {
           ))}
         </div>
       ) : (profileUser.relationship_status || familyMembers.length > 0) && <p className="text-[10px] text-gray-400 italic px-1">ยังไม่มีรายชื่อคนใกล้ชิด</p>}
-      
       {!isOwnProfile && friendshipStatus === 'accepted' && !isAlreadyInMyFamily && (
         <div className="mt-4">
           {!showAddFamily ? (
@@ -419,7 +268,6 @@ export default function ProfilePage() {
               />
               <div className="p-4 md:p-6 bg-white">
                 <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6 -mt-20 mb-6">
-                  {/* รูปโปรไฟล์: วงกลม rounded-full */}
                   <div className="w-24 h-24 md:w-36 md:h-36 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0" style={{ borderColor: themeColor, borderWidth: '4px' }}>
                     <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt={profileUser.display_name} className="w-full h-full rounded-full object-cover" />
                   </div>
@@ -455,7 +303,6 @@ export default function ProfilePage() {
                 <div className="space-y-4">
                   <div><h1 className="text-2xl md:text-3xl font-black text-gray-900">{profileUser.display_name}</h1><p className="text-gray-400 text-sm font-medium">@{profileUser.username}</p></div>
                   
-                  {/* ✅ Bio: แสดงหลายบรรทัด */}
                   {profileUser.bio && <p className="text-gray-700 leading-relaxed whitespace-pre-wrap break-words italic">{profileUser.bio}</p>}
 
                   {profileUser.music_url && profileUser.music_name && (
@@ -519,9 +366,9 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
-      <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} onConfirm={() => handleDeletePost()} title="ลบโพสต์ถาวร?" message="ไม่สามารถกู้คืนได้" confirmText="ยืนยันการลบ" cancelText="ยกเลิก" variant="danger" />
-      <ConfirmModal isOpen={showFamilyDeleteConfirm} onClose={() => { setShowFamilyDeleteConfirm(false); setFamilyToDelete(null); }} onConfirm={() => handleRemoveFamilyMember()} title="ลบความสัมพันธ์?" message="จะถูกลบออกจากโปรไฟล์ของคุณ" confirmText="ลบออก" cancelText="ยกเลิก" variant="danger" />
-      <ConfirmModal isOpen={showUnfriendModal} onClose={() => setShowUnfriendModal(false)} onConfirm={handleRemoveFriend()} title="เลิกเป็นเพื่อน?" message={`จะไม่เห็นโพสต์ของ ${profileUser.display_name} อีก`} confirmText="ลบเพื่อน" cancelText="ยกเลิก" variant="danger" />
+      <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} onConfirm={handleDeletePost} title="ลบโพสต์ถาวร?" message="คุณจะไม่สามารถกู้คืนโพสต์นี้กลับมาได้อีกครั้ง" confirmText="ยืนยันการลบ" cancelText="ยกเลิก" variant="danger" />
+      <ConfirmModal isOpen={showFamilyDeleteConfirm} onClose={() => { setShowFamilyDeleteConfirm(false); setFamilyToDelete(null); }} onConfirm={handleRemoveFamilyMember} title="ลบความสัมพันธ์?" message="ข้อมูลความสัมพันธ์ครอบครัวจะถูกลบออกจากโปรไฟล์ของคุณ" confirmText="ลบออก" cancelText="ยกเลิก" variant="danger" />
+      <ConfirmModal isOpen={showUnfriendModal} onClose={() => setShowUnfriendModal(false)} onConfirm={handleRemoveFriend} title="เลิกเป็นเพื่อน?" message={`หากเลิกเป็นเพื่อน คุณจะไม่เห็นโพสต์ของ ${profileUser.display_name} ในหน้าแรกอีกต่อไป`} confirmText="ลบเพื่อน" cancelText="ยกเลิก" variant="danger" />
     </NavLayout>
   );
 }
