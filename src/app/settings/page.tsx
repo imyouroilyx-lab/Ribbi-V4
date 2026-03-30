@@ -364,7 +364,7 @@ export default function SettingsPage() {
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-100 rounded-2xl">
               <Copyright size={14} className="text-slate-400" />
               <p className="text-[11px] md:text-xs font-bold text-slate-500 tracking-tight">
-                © RoleplayTH - since 2021
+                RoleplayTH - since 2021
               </p>
             </div>
             <div className="mt-3 px-6">
