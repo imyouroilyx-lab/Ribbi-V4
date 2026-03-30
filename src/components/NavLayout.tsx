@@ -174,7 +174,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         {/* Footer Sidebar: User Profile & ✅ LOGOUT BUTTON */}
         <div className="mt-auto pt-4 border-t border-gray-100 space-y-2">
           {currentUser && (
-            <Link href={`/profile/${currentUser.username}`} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-2xl transition-all group border border-transparent hover:border-gray-100">
+            <Link href={`/profile/page.tsx`} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-2xl transition-all group border border-transparent hover:border-gray-100">
               <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" alt="" />
               <div className="min-w-0 flex-1">
                 <p className="font-bold text-xs truncate text-gray-900">{currentUser.display_name}</p>
