@@ -34,7 +34,7 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
   const [showMentions, setShowMentions] = useState(false);
   const [mentionResults, setMentionResults] = useState<any[]>([]);
   const [cursorIndex, setCursorIndex] = useState(0);
-  const [mentionSearchQuery, setMentionSearchQuery] = useState<string | null>(null); // ✅ เพิ่ม State สำหรับคำค้นหา
+  const [mentionSearchQuery, setMentionSearchQuery] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleAddImage = () => {
@@ -48,7 +48,7 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
     setImageUrls(imageUrls.filter((_, i) => i !== index));
   };
 
-  // ✅ 1. ฟังก์ชันนี้ทำหน้าที่แค่ "ตรวจสอบ" ว่ากำลังพิมพ์ @ อยู่ไหม (ไม่ยิง DB) เพื่อให้พิมพ์ลื่นสุดๆ
+  // ตรวจสอบว่ากำลังพิมพ์ @ อยู่ไหม
   const detectMention = (val: string, cursor: number) => {
     const textBeforeCursor = val.slice(0, cursor);
     const mentionMatch = textBeforeCursor.match(/(?:\s|^)@([a-zA-Z0-9_ก-๙]*)$/);
@@ -62,21 +62,24 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
     }
   };
 
-  // ✅ 2. ระบบ Debounce: ยิง DB ก็ต่อเมื่อผู้ใช้ "หยุดพิมพ์" ไปแล้ว 0.3 วินาที
+  // ระบบ Debounce & Fetch Mentions
   useEffect(() => {
     if (mentionSearchQuery === null) return;
 
     const timer = setTimeout(async () => {
       try {
         if (mentionSearchQuery.length > 0) {
+          // ✅ แก้ไข Performance: เปลี่ยนจากการค้นหาตรงกลาง (%..%) เป็นขึ้นต้นด้วย (..%)
+          // เพื่อให้ Database สามารถใช้ Index ได้ และลดอาการ CPU 100% ตอนคนใช้เยอะๆ
           const { data } = await supabase
             .from('users')
             .select('id, username, display_name, profile_img_url')
             .neq('id', currentUser.id)
-            .or(`username.ilike.%${mentionSearchQuery}%,display_name.ilike.%${mentionSearchQuery}%`)
+            .or(`username.ilike.${mentionSearchQuery}%,display_name.ilike.${mentionSearchQuery}%`)
             .limit(5);
           setMentionResults(data || []);
         } else {
+          // ถ้าพิมพ์แค่ @ เปล่าๆ ให้ดึงรายชื่อเพื่อนหรือผู้ใช้อื่นมาแนะนำ
           const { data } = await supabase
             .from('users')
             .select('id, username, display_name, profile_img_url')
@@ -87,7 +90,7 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
       } catch (error) {
         console.error('Error fetching mentions:', error);
       }
-    }, 300); // หน่วงเวลา 300ms
+    }, 300);
 
     return () => clearTimeout(timer);
   }, [mentionSearchQuery, currentUser.id]);
@@ -96,13 +99,13 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
     const val = e.target.value;
     setContent(val);
     setCursorIndex(e.target.selectionStart);
-    detectMention(val, e.target.selectionStart); // เช็คตอนพิมพ์
+    detectMention(val, e.target.selectionStart);
   };
 
   const handleSelectionChange = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
     const target = e.target as HTMLTextAreaElement;
     setCursorIndex(target.selectionStart);
-    detectMention(target.value, target.selectionStart); // เช็คตอนคลิกหรือเลื่อนลูกศร
+    detectMention(target.value, target.selectionStart);
   };
 
   const insertMention = (user: any) => {
@@ -158,8 +161,6 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
         const { error: insertError } = await supabase.from('notifications').insert(notifications);
         if (insertError) {
           console.error("❌ [ERROR] บันทึกการแจ้งเตือนลงตารางล้มเหลว:", insertError.message, insertError.details);
-        } else {
-          console.log("✅ [SUCCESS] บันทึกการแจ้งเตือนสำเร็จ");
         }
       }
     } catch (error) {
