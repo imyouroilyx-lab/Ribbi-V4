@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 
 /**
- * สร้างการแจ้งเตือนใหม่
+ * สร้างการแจ้งเตือนลง Database
  */
 export async function createNotification(
   receiverId: string,
@@ -10,6 +10,8 @@ export async function createNotification(
   linkUrl?: string,
   content?: string
 ) {
+  if (receiverId === senderId) return false; // ป้องกันการส่งหาตัวเอง
+
   try {
     const { error } = await supabase.from('notifications').insert({
       receiver_id: receiverId,
@@ -29,41 +31,20 @@ export async function createNotification(
 }
 
 /**
- * สร้างการแจ้งเตือนเมื่อมีคนโพสต์บนหน้าโปรไฟล์
+ * แจ้งเตือนเมื่อมีคนมาโพสต์หน้าโปรไฟล์
  */
-export async function notifyProfilePost(
-  profileOwnerId: string,
-  postAuthorId: string,
-  postId: string
-) {
-  if (profileOwnerId === postAuthorId) return; // ไม่แจ้งเตือนตัวเอง
-
-  const { data: author } = await supabase
-    .from('users')
-    .select('display_name')
-    .eq('id', postAuthorId)
-    .single();
-
-  await createNotification(
+export async function notifyProfilePost(profileOwnerId: string, postAuthorId: string, postId: string) {
+  return createNotification(
     profileOwnerId,
     postAuthorId,
     'post',
-    `/profile/${profileOwnerId}`,
+    `/profile/${profileOwnerId}`, // หรือชี้ไปที่โพสต์โดยตรง
     `โพสต์ข้อความบนหน้าโปรไฟล์ของคุณ`
   );
 }
 
 /**
- * สร้างการแจ้งเตือนเมื่อมีคนส่งคำขอเป็นเพื่อน
- */
-export async function notifyFriendRequest(receiverId: string, senderId: string) {
-  // 🛑 ไม่ต้องสร้างการแจ้งเตือนลงฐานข้อมูลแล้ว 
-  // ให้ระบบไปเช็กและขึ้น Badge ที่หน้า Friends โดยตรงแทน
-  return; 
-}
-
-/**
- * สร้างการแจ้งเตือนเมื่อมีคนรับคำขอเป็นเพื่อน
+ * แจ้งเตือนเมื่อรับเพื่อน
  */
 export async function notifyFriendAccept(receiverId: string, senderId: string) {
   const { data: sender } = await supabase
@@ -72,7 +53,7 @@ export async function notifyFriendAccept(receiverId: string, senderId: string) {
     .eq('id', senderId)
     .single();
 
-  await createNotification(
+  return createNotification(
     receiverId,
     senderId,
     'friend_accept',
@@ -82,17 +63,10 @@ export async function notifyFriendAccept(receiverId: string, senderId: string) {
 }
 
 /**
- * สร้างการแจ้งเตือนเมื่อถูกแท็กในโพสต์
+ * แจ้งเตือนเมื่อถูกแท็ก
  */
-export async function notifyTag(
-  taggedUserId: string,
-  taggerId: string,
-  postId: string,
-  postLink: string
-) {
-  if (taggedUserId === taggerId) return;
-
-  await createNotification(
+export async function notifyTag(taggedUserId: string, taggerId: string, postLink: string) {
+  return createNotification(
     taggedUserId,
     taggerId,
     'tag',
@@ -102,26 +76,14 @@ export async function notifyTag(
 }
 
 /**
- * สร้างการแจ้งเตือนเมื่อมีข้อความใหม่
+ * แจ้งเตือนข้อความใหม่ (ถ้าแอปต้องการบันทึกลง Table notifications ด้วย)
  */
-export async function notifyNewMessage(
-  receiverId: string,
-  senderId: string,
-  roomId: string
-) {
-  if (receiverId === senderId) return;
-
-  const { data: sender } = await supabase
-    .from('users')
-    .select('display_name')
-    .eq('id', senderId)
-    .single();
-
-  await createNotification(
+export async function notifyNewMessage(receiverId: string, senderId: string, chatId: string) {
+  return createNotification(
     receiverId,
     senderId,
     'message',
-    `/messages?room=${roomId}`,
+    `/messages?chat=${chatId}`,
     `ส่งข้อความถึงคุณ`
   );
 }
