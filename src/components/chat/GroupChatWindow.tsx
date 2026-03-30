@@ -510,14 +510,14 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
 
   if (isLoading || !groupData) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="flex flex-1 items-center justify-center bg-white rounded-2xl shadow-sm border border-gray-200 h-[calc(100dvh-5rem)] lg:h-[calc(100vh-3rem)]">
         <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-16 h-16 animate-bounce" />
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="flex flex-1 flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden h-[calc(100dvh-5rem)] lg:h-[calc(100vh-3rem)] min-h-0">
       {/* Header */}
       <div className="p-4 border-b flex items-center gap-3 transition-colors duration-300"
         style={{ borderColor: `${themeColor}40` }}>
@@ -575,10 +575,17 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
                     style={{ backgroundColor: themeColor }} onClick={() => colorInputRef.current?.click()} />
                   <div className="flex-1">
                     <p className="text-xs text-gray-500 mb-1">เลือกสีเอง</p>
-                    <input ref={colorInputRef} type="color" value={themeColor}
-                      onChange={(e) => setThemeColor(e.target.value)}
-                      onBlur={(e) => { saveThemeColor(e.target.value); setShowColorPicker(false); }}
-                      className="w-full h-8 rounded cursor-pointer border border-gray-200" />
+                    <div className="flex items-center gap-2">
+                      <input ref={colorInputRef} type="color" value={themeColor}
+                        onChange={(e) => setThemeColor(e.target.value)}
+                        className="w-full h-8 rounded cursor-pointer border border-gray-200 p-0" />
+                      <button
+                        onClick={() => { saveThemeColor(themeColor); setShowColorPicker(false); }}
+                        className="h-8 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition flex items-center justify-center flex-shrink-0"
+                      >
+                        ยืนยัน
+                      </button>
+                    </div>
                   </div>
                 </div>
                 {isSavingColor && <p className="text-xs text-gray-400 text-center mt-2">กำลังบันทึก...</p>}
