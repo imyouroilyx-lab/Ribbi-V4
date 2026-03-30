@@ -76,7 +76,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
   
-  // ✅ ใช้ Ref เก็บรายชื่อสมาชิก เพื่อให้ระบบ Real-time ค้นหาข้อมูลผู้ส่งได้ทันที
   const membersRef = useRef<any[]>([]);
   const isInitialLoad = useRef(true);
 
@@ -105,7 +104,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
 
   const loadGroupData = async () => {
     try {
-      // ✅ ดึงข้อมูลพื้นฐานกลุ่มและผู้เข้าร่วมพร้อมกันแบบ Parallel
       const [chatRes, participantsRes] = await Promise.all([
         supabase.from('chats').select('*').eq('id', chatId).single(),
         supabase.from('chat_participants').select('role, user_id').eq('chat_id', chatId)
@@ -122,15 +120,12 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       setGroupData(chatData);
       if (chatData.theme_color) setThemeColor(chatData.theme_color);
 
-      // ดึงข้อมูล User ของสมาชิกทุกคน และข้อความพร้อมกัน
       const userIds = participants.map(p => p.user_id);
       const [usersRes, messagesRes] = await Promise.all([
         supabase.from('users').select('id, username, display_name, profile_img_url, is_online').in('id', userIds),
         supabase.from('messages')
           .select('id, sender_id, content, images, created_at, updated_at, deleted_by, event')
           .eq('chat_id', chatId)
-          // 💡 ถ้าไม่ได้ทำ Index ที่ deleted_by, เอา .not() ออก แล้วไป filter ฝั่ง client เหมือนโค้ดล่างนี้จะลดภาระ Database ได้ดีกว่า
-          // .not('deleted_by', 'cs', `{${currentUser.id}}`) 
           .order('created_at', { ascending: false })
           .limit(MESSAGE_LIMIT)
       ]);
@@ -147,23 +142,22 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       const me = formattedMembers.find(m => m.id === currentUser.id);
       setIsAdmin(me?.role === 'admin' || chatData?.created_by === currentUser.id);
 
-      // ✅ Optimization: กรองข้อความและ Reverse ในจังหวะเดียวกันเพื่อลด O(N) operations
       const messagesData = messagesRes.data;
       if (messagesData) {
         setHasMore(messagesData.length === MESSAGE_LIMIT);
         
+        // ✅ ระบุ Type เพื่อป้องกัน Error บน Vercel
         const formattedMessages: Message[] = [];
         for (let i = messagesData.length - 1; i >= 0; i--) {
           const msg = messagesData[i];
-          // กรองข้อมูลที่โดนลบที่ฝั่ง Client ช่วยลดภาระ Seq Scan ที่ฝั่ง DB
           if (!(msg.deleted_by || []).includes(currentUser.id)) {
             formattedMessages.push({
-              ...msg,
+              ...(msg as any),
               sender: formattedMembers.find(m => m.id === msg.sender_id) || null
             });
           }
         }
-        setMessages(formattedMessages as any);
+        setMessages(formattedMessages);
       }
     } catch (error) {
       console.error('Error loading group chat:', error);
@@ -191,19 +185,19 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       if (olderMessages && olderMessages.length > 0) {
         setHasMore(olderMessages.length === MESSAGE_LIMIT);
         
-        // ✅ นำ Optimization มาใช้กับการ Load More ด้วย
+        // ✅ ระบุ Type เพื่อป้องกัน Error บน Vercel
         const formattedOlder: Message[] = [];
         for (let i = olderMessages.length - 1; i >= 0; i--) {
           const msg = olderMessages[i];
           if (!(msg.deleted_by || []).includes(currentUser.id)) {
             formattedOlder.push({
-              ...msg,
+              ...(msg as any),
               sender: membersRef.current.find(m => m.id === msg.sender_id) || null
             });
           }
         }
 
-        setMessages(prev => [...formattedOlder as any, ...prev]);
+        setMessages(prev => [...formattedOlder, ...prev]);
 
         setTimeout(() => {
           if (scrollContainer) {
@@ -373,7 +367,6 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
     } catch (error) { alert('ไม่สามารถลบสมาชิกได้'); }
   };
 
-  // ✅ Optimize: ใช้ Foreign Key Join ในการดึงเพื่อนและ User เพื่อลดจำนวน Query
   const loadFriendsToAdd = async () => {
     setIsLoadingFriends(true);
     setSelectedFriendIds([]);
@@ -392,18 +385,14 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
         return;
       }
 
-      // ดึงเฉพาะคนที่เป็นเพื่อนเรา
       const allFriends = friendships.map(f => {
         const sender = f.sender as any;
         const receiver = f.receiver as any;
         return sender.id === currentUser.id ? receiver : sender;
       }).filter(Boolean);
 
-      // กรองคนที่อยู่ในกลุ่มอยู่แล้วออก
       const existingMemberIds = new Set(members.map(m => m.id));
       const availableFriends = allFriends.filter(f => !existingMemberIds.has(f.id));
-
-      // เอาคนที่ซ้ำออก (กรณี Database เบิ้ลข้อมูล)
       const uniqueAvailableFriends = Array.from(new Map(availableFriends.map(f => [f.id, f])).values());
 
       setFriendsToAdd(uniqueAvailableFriends);
