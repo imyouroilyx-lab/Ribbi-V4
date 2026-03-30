@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase, Post, User } from '@/lib/supabase';
-import { Heart, MessageCircle, Trash2, MapPin, Image as ImageIcon, X, Edit2, Check, Link2 } from 'lucide-react';
+import { Heart, MessageCircle, Trash2, MapPin, Image as ImageIcon, X, Edit2, Check, Link2, Send } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -42,7 +42,7 @@ const LinkPreview = ({ url }: { url: string }) => {
             return;
           }
         }
-      } catch (error) { /* fail silent */ }
+      } catch (error) { }
 
       try {
         const res2 = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
@@ -52,7 +52,7 @@ const LinkPreview = ({ url }: { url: string }) => {
             setPreview({ title: json2.data.title, description: json2.data.description, image: json2.data.image?.url || json2.data.logo?.url, publisher: json2.data.publisher });
           }
         }
-      } catch (error) { /* fail silent */ } finally { if (isMounted) setLoading(false); }
+      } catch (error) { } finally { if (isMounted) setLoading(false); }
     };
     fetchPreview();
     return () => { isMounted = false; };
@@ -76,19 +76,14 @@ const LinkPreview = ({ url }: { url: string }) => {
 export default function PostCardV3({ post, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
-  const [replyTo, setReplyTo] = useState<string | null>(null);
-  const [replyContent, setReplyContent] = useState('');
   const [showComments, setShowComments] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
+  const [commentCount, setCommentCount] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
-  const [showLikeList, setShowLikeList] = useState(false);
-  const [likedUsers, setLikedUsers] = useState<User[]>([]);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [editedPostContent, setEditedPostContent] = useState(post.content || '');
-  const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
-  const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const canDelete = post.author_id === currentUserId || profileOwnerId === currentUserId;
   const canEdit = post.author_id === currentUserId;
@@ -96,20 +91,28 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
   useEffect(() => {
     loadLikes();
     checkIfLiked();
+    loadCommentCount();
     if (showComments) loadComments();
 
     const channel = supabase
       .channel(`post-updates-${post.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `post_id=eq.${post.id}` }, () => loadLikes())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `post_id=eq.${post.id}` }, () => loadComments())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `post_id=eq.${post.id}` }, () => {
+        loadComments();
+        loadCommentCount();
+      })
       .subscribe();
 
     return () => { void supabase.removeChannel(channel); };
   }, [post.id, showComments]);
 
+  const loadCommentCount = async () => {
+    const { count } = await supabase.from('comments').select('*', { count: 'exact', head: true }).eq('post_id', post.id);
+    setCommentCount(count || 0);
+  };
+
   const loadComments = async () => {
     try {
-      // ✅ แก้ปัญหา N+1: ดึงคอมเมนต์พร้อมคนเขียนในคราวเดียว
       const { data } = await supabase
         .from('comments')
         .select('*, author:users(id, username, display_name, profile_img_url)')
@@ -122,17 +125,14 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
           ...c,
           replies: data.filter(r => r.parent_comment_id === c.id)
         }));
-        setComments(formatted);
+        setComments(formatted as any);
       }
     } catch (error) { console.error(error); }
   };
 
   const loadLikes = async () => {
-    const { data } = await supabase.from('likes').select('user_id, users(id, display_name, username, profile_img_url)').eq('post_id', post.id);
-    if (data) {
-      setLikeCount(data.length);
-      setLikedUsers(data.map(d => d.users as any));
-    }
+    const { data } = await supabase.from('likes').select('user_id').eq('post_id', post.id);
+    if (data) setLikeCount(data.length);
   };
 
   const checkIfLiked = async () => {
@@ -147,6 +147,27 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     } else {
       setIsLiked(true); setLikeCount(prev => prev + 1);
       await supabase.from('likes').insert({ post_id: post.id, user_id: currentUserId });
+    }
+  };
+
+  const handleComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim() || isSubmitting) return;
+
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from('comments').insert({
+        post_id: post.id,
+        author_id: currentUserId,
+        content: newComment.trim()
+      });
+      if (error) throw error;
+      setNewComment('');
+      loadComments();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -207,25 +228,51 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
           <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
           <span className="text-sm font-bold">{likeCount}</span>
         </button>
-        <button onClick={() => setShowComments(!showComments)} className="flex items-center gap-1.5 text-gray-500">
+        <button onClick={() => setShowComments(!showComments)} className="flex items-center gap-1.5 text-gray-500 hover:text-frog-600 transition">
           <MessageCircle className="w-5 h-5" />
-          <span className="text-sm font-bold">{comments.length}</span>
+          <span className="text-sm font-bold">{commentCount}</span>
         </button>
       </div>
 
       {showComments && (
-        <div className="mt-4 space-y-4">
-          {comments.map(c => (
-            <div key={c.id} className="flex gap-3">
-              <img src={c.author?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" alt="" loading="lazy" />
-              <div className="flex-1">
-                <div className="bg-gray-100 rounded-2xl px-3 py-2">
-                  <p className="font-bold text-xs">{c.author?.display_name}</p>
-                  <p className="text-sm">{renderTextWithTags(c.content)}</p>
+        <div className="mt-4 pt-4 border-t border-gray-50 space-y-4">
+          {/* ช่องส่งคอมเมนต์ */}
+          <form onSubmit={handleComment} className="flex gap-2">
+            <input 
+              type="text"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="เขียนความคิดเห็น..."
+              className="input-minimal flex-1 text-sm py-2"
+              disabled={isSubmitting}
+            />
+            <button 
+              type="submit" 
+              disabled={!newComment.trim() || isSubmitting}
+              className="p-2 bg-frog-500 text-white rounded-xl disabled:opacity-50"
+            >
+              <Send size={18} />
+            </button>
+          </form>
+
+          {/* รายการคอมเมนต์ */}
+          <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar">
+            {comments.length === 0 ? (
+              <p className="text-center text-xs text-gray-400 py-2 italic">ยังไม่มีความคิดเห็น</p>
+            ) : (
+              comments.map(c => (
+                <div key={c.id} className="flex gap-3">
+                  <img src={c.author?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" alt="" loading="lazy" />
+                  <div className="flex-1">
+                    <div className="bg-gray-100 rounded-2xl px-3 py-2">
+                      <p className="font-bold text-xs">{c.author?.display_name}</p>
+                      <p className="text-sm">{renderTextWithTags(c.content)}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>
