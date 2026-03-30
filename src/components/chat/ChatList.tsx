@@ -3,7 +3,7 @@
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { Search, Plus, X, Users, Check } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Chat } from '@/components/MessagesPage';
 
@@ -32,18 +32,39 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
   const [isCreating, setIsCreating] = useState(false);
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
 
-  const filteredChats = chats.filter(chat => {
-    const name = chat.is_group
-      ? (chat.name || '').toLowerCase()
-      : (chat.other_user?.nickname || chat.other_user?.display_name || '').toLowerCase();
-    const username = chat.is_group ? '' : (chat.other_user?.username || '').toLowerCase();
-    return name.includes(searchQuery.toLowerCase()) || username.includes(searchQuery.toLowerCase());
-  });
+  // ✅ แก้ไข: เพิ่มการ Sort และ Memoize ข้อมูลเพื่อให้การจัดเรียงคงที่และถูกต้อง
+  const sortedAndFilteredChats = useMemo(() => {
+    // 1. Filter ตามคำค้นหา
+    const filtered = chats.filter(chat => {
+      const name = chat.is_group
+        ? (chat.name || '').toLowerCase()
+        : (chat.other_user?.nickname || chat.other_user?.display_name || '').toLowerCase();
+      const username = chat.is_group ? '' : (chat.other_user?.username || '').toLowerCase();
+      
+      const search = searchQuery.toLowerCase();
+      return name.includes(search) || username.includes(search);
+    });
+
+    // 2. Sort ตามเวลาข้อความล่าสุด (Newest to Oldest)
+    return [...filtered].sort((a, b) => {
+      const timeA = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+      const timeB = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+      
+      // ถ้าเวลาเท่ากัน ให้ใช้ id เป็นตัวตัดสินลำดับให้นิ่ง
+      if (timeB === timeA) {
+        return b.id.localeCompare(a.id);
+      }
+      return timeB - timeA;
+    });
+  }, [chats, searchQuery]);
 
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return '';
-    try { return formatDistanceToNow(new Date(timestamp), { addSuffix: true, locale: th }); }
-    catch { return ''; }
+    try { 
+      return formatDistanceToNow(new Date(timestamp), { addSuffix: true, locale: th }); 
+    } catch { 
+      return ''; 
+    }
   };
 
   const loadFriends = async (forGroup = false) => {
@@ -187,7 +208,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
 
       {/* Chat List */}
       <div className="flex-1 overflow-y-auto">
-        {filteredChats.length === 0 ? (
+        {sortedAndFilteredChats.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 p-8">
             <p className="text-center">{searchQuery ? 'ไม่พบแชท' : 'ยังไม่มีแชท'}</p>
             {!searchQuery && (
@@ -199,7 +220,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {filteredChats.map((chat) => {
+            {sortedAndFilteredChats.map((chat) => {
               const display = getChatDisplay(chat);
               return (
                 <button
@@ -243,7 +264,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
                         )}
                       </p>
                       {chat.unread_count > 0 && (
-                        <div className="ml-2 flex-shrink-0 min-w-[20px] h-5 px-1.5 bg-frog-500 text-white text-xs rounded-full flex items-center justify-center">
+                        <div className="ml-2 flex-shrink-0 min-w-[20px] h-5 px-1.5 bg-frog-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
                           {chat.unread_count > 99 ? '99+' : chat.unread_count}
                         </div>
                       )}
@@ -259,7 +280,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] flex flex-col">
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] flex flex-col shadow-2xl">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <div className="flex gap-2">
                 <button onClick={() => { setModalMode('dm'); loadFriends(false); }}
@@ -271,10 +292,9 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
                   สร้างกลุ่ม
                 </button>
               </div>
-              <button onClick={closeModal} className="p-2 hover:bg-gray-100 rounded-full"><X className="w-5 h-5" /></button>
+              <button onClick={closeModal} className="p-2 hover:bg-gray-100 rounded-full transition"><X className="w-5 h-5 text-gray-500" /></button>
             </div>
 
-            {/* Group inputs */}
             {modalMode === 'group' && (
               <div className="p-4 border-b border-gray-100 space-y-3">
                 <input type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)}
@@ -284,7 +304,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
                   placeholder="URL รูปกลุ่ม (ไม่บังคับ)"
                   className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-frog-500 text-sm" />
                 {selectedMemberIds.length > 0 && (
-                  <p className="text-xs text-frog-600 font-medium">เลือกแล้ว {selectedMemberIds.length} คน</p>
+                  <p className="text-xs text-frog-600 font-bold">เลือกแล้ว {selectedMemberIds.length} คน</p>
                 )}
               </div>
             )}
@@ -296,8 +316,8 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
                 </div>
               ) : (modalMode === 'dm' ? friends : allFriends).length === 0 ? (
                 <div className="text-center text-gray-400 py-8">
-                  <p>{modalMode === 'dm' ? 'ไม่มีเพื่อนที่สามารถเริ่มแชทได้' : 'ยังไม่มีเพื่อน'}</p>
-                  {modalMode === 'dm' && <p className="text-sm mt-1 text-gray-300">(คุณมีแชทกับเพื่อนทุกคนแล้ว)</p>}
+                  <p className="font-medium">{modalMode === 'dm' ? 'ไม่มีเพื่อนที่สามารถเริ่มแชทได้' : 'ยังไม่มีเพื่อน'}</p>
+                  {modalMode === 'dm' && <p className="text-xs mt-1 text-gray-300">(คุณมีแชทกับเพื่อนทุกคนแล้ว)</p>}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -309,13 +329,14 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
                           ? setSelectedFriendId(friend.id)
                           : setSelectedMemberIds(prev => prev.includes(friend.id) ? prev.filter(id => id !== friend.id) : [...prev, friend.id])
                         }
-                        className={`w-full p-3 flex items-center gap-3 rounded-xl transition ${isSelected ? 'bg-frog-100 border-2 border-frog-500' : 'hover:bg-gray-50 border-2 border-transparent'}`}>
-                        <img src={friend.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt={friend.display_name} className="w-12 h-12 rounded-full object-cover" />
+                        className={`w-full p-3 flex items-center gap-3 rounded-xl transition-all border-2 ${isSelected ? 'bg-frog-50 border-frog-500' : 'hover:bg-gray-50 border-transparent'}`}>
+                        <img src={friend.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt={friend.display_name} className="w-12 h-12 rounded-full object-cover shadow-sm" />
                         <div className="flex-1 text-left">
-                          <p className="font-semibold">{friend.display_name}</p>
-                          <p className="text-sm text-gray-500">@{friend.username}</p>
+                          <p className="font-bold text-gray-800">{friend.display_name}</p>
+                          <p className="text-xs text-gray-500 font-medium">@{friend.username}</p>
                         </div>
                         {modalMode === 'group' && isSelected && <Check className="w-5 h-5 text-frog-500 flex-shrink-0" />}
+                        {modalMode === 'dm' && isSelected && <div className="w-2.5 h-2.5 bg-frog-500 rounded-full"></div>}
                       </button>
                     );
                   })}
@@ -327,7 +348,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
               <button
                 onClick={modalMode === 'dm' ? createDM : createGroup}
                 disabled={isCreating || (modalMode === 'dm' ? !selectedFriendId : (!groupName.trim() || selectedMemberIds.length === 0))}
-                className="w-full py-3 bg-frog-500 text-white rounded-xl hover:bg-frog-600 disabled:opacity-50 disabled:cursor-not-allowed transition font-semibold">
+                className="w-full py-3 bg-frog-500 text-white rounded-xl hover:bg-frog-600 disabled:opacity-50 disabled:cursor-not-allowed transition font-bold shadow-md active:scale-95">
                 {modalMode === 'dm'
                   ? (isCreating ? 'กำลังสร้าง...' : 'เริ่มแชท')
                   : (isCreating ? 'กำลังสร้าง...' : `สร้างกลุ่ม${selectedMemberIds.length > 0 ? ` (${selectedMemberIds.length} คน)` : ''}`)}
