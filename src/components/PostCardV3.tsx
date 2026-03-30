@@ -15,8 +15,7 @@ import {
   Smile, 
   Activity as ActivityIcon,
   MapPin,
-  Check,
-  Type
+  Check
 } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
 import Link from 'next/link';
@@ -91,6 +90,7 @@ const LinkPreview = ({ url }: { url: string }) => {
 };
 
 export default function PostCardV3({ post: initialPost, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
+  // ✅ ใช้ State ภายในเพื่อความรวดเร็วในการอัปเดตหน้าจอ
   const [post, setPost] = useState(initialPost);
   const [comments, setComments] = useState<Comment[]>([]);
   const [showComments, setShowComments] = useState(false);
@@ -100,7 +100,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [isLiked, setIsLiked] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // States สำหรับแก้ไขโพสต์
+  // Edit States
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [editContent, setEditContent] = useState(post.content || '');
   const [editMood, setEditMood] = useState(post.mood || '');
@@ -203,6 +203,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     }
   };
 
+  // ✅ ฟังก์ชันบันทึกการแก้ไขที่ปรับปรุงแล้ว
   const handleUpdatePost = async () => {
     if (!editContent.trim() || isUpdatingPost) return;
     setIsUpdatingPost(true);
@@ -220,9 +221,11 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        alert("บันทึกไม่สำเร็จ: " + error.message + " (ตรวจสอบสิทธิ์ RLS ในฐานข้อมูล)");
+        throw error;
+      }
       
-      // อัปเดต State หน้าจอ
       setPost({ ...post, ...data });
       setIsEditingPost(false);
     } catch (error) {
@@ -245,49 +248,22 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     setIsLoadingLikes(true);
     const from = page * LIKES_PER_PAGE;
     const to = from + LIKES_PER_PAGE - 1;
-
     try {
-      const { data } = await supabase
-        .from('likes')
-        .select(`
-          users (
-            id, 
-            username, 
-            display_name, 
-            profile_img_url, 
-            created_at, 
-            updated_at
-          )
-        `)
-        .eq('post_id', post.id)
-        .range(from, to);
-
+      const { data } = await supabase.from('likes').select(`users (id, username, display_name, profile_img_url)` as any).eq('post_id', post.id).range(from, to);
       if (data) {
-        const users = (data as any[]).map(item => item.users).filter(Boolean) as unknown as User[];
+        const users = (data as any[]).map(item => item.users).filter(Boolean);
         setLikedUsers(prev => reset ? users : [...prev, ...users]);
         setHasMoreLikes(users.length === LIKES_PER_PAGE);
       }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsLoadingLikes(false);
-    }
+    } catch (error) { console.error(error); } finally { setIsLoadingLikes(false); }
   };
 
   const loadComments = async () => {
     try {
-      const { data } = await supabase
-        .from('comments')
-        .select('*, author:users(id, username, display_name, profile_img_url)')
-        .eq('post_id', post.id)
-        .order('created_at', { ascending: true });
-
+      const { data } = await supabase.from('comments').select('*, author:users(id, username, display_name, profile_img_url)').eq('post_id', post.id).order('created_at', { ascending: true });
       if (data) {
         const topLevel = data.filter(c => !c.parent_comment_id);
-        const formatted = topLevel.map(c => ({
-          ...c,
-          replies: data.filter(r => r.parent_comment_id === c.id)
-        }));
+        const formatted = topLevel.map(c => ({ ...c, replies: data.filter(r => r.parent_comment_id === c.id) }));
         setComments(formatted as any);
       }
     } catch (error) { console.error(error); }
@@ -297,12 +273,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     try {
       const commentIds = comments.flatMap(c => [c.id, ...(c.replies?.map(r => r.id) || [])]);
       if (commentIds.length === 0) return;
-
-      const { data: allLikes } = await supabase
-        .from('comment_likes')
-        .select('comment_id, user_id')
-        .in('comment_id', commentIds);
-
+      const { data: allLikes } = await supabase.from('comment_likes').select('comment_id, user_id').in('comment_id', commentIds);
       if (allLikes) {
         const counts: Record<string, number> = {};
         const userLiked = new Set<string>();
@@ -310,8 +281,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           counts[like.comment_id] = (counts[like.comment_id] || 0) + 1;
           if (like.user_id === currentUserId) userLiked.add(like.comment_id);
         });
-        setCommentLikes(counts);
-        setLikedComments(userLiked);
+        setCommentLikes(counts); setLikedComments(userLiked);
       }
     } catch (error) { console.error(error); }
   };
@@ -319,13 +289,8 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const handleCommentLike = async (commentId: string) => {
     const isAlreadyLiked = likedComments.has(commentId);
     const newLiked = new Set(likedComments);
-    if (isAlreadyLiked) {
-      newLiked.delete(commentId);
-      setCommentLikes(prev => ({ ...prev, [commentId]: (prev[commentId] || 1) - 1 }));
-    } else {
-      newLiked.add(commentId);
-      setCommentLikes(prev => ({ ...prev, [commentId]: (prev[commentId] || 0) + 1 }));
-    }
+    if (isAlreadyLiked) { newLiked.delete(commentId); setCommentLikes(prev => ({ ...prev, [commentId]: (prev[commentId] || 1) - 1 })); }
+    else { newLiked.add(commentId); setCommentLikes(prev => ({ ...prev, [commentId]: (prev[commentId] || 0) + 1 })); }
     setLikedComments(newLiked);
     try {
       if (isAlreadyLiked) await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', currentUserId);
@@ -334,19 +299,12 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   };
 
   const handleComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newComment.trim() && !commentImageUrl.trim() || isSubmitting) return;
+    e.preventDefault(); if (!newComment.trim() && !commentImageUrl.trim() || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('comments').insert({
-        post_id: post.id,
-        author_id: currentUserId,
-        content: newComment.trim(),
-        image_url: commentImageUrl.trim() || null
-      });
+      const { error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: newComment.trim(), image_url: commentImageUrl.trim() || null });
       if (error) throw error;
-      setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false);
-      loadComments();
+      setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); loadComments();
     } catch (error) { console.error(error); } finally { setIsSubmitting(false); }
   };
 
@@ -354,60 +312,31 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (!replyContent.trim() && !replyImageUrl.trim() || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('comments').insert({
-        post_id: post.id,
-        author_id: currentUserId,
-        content: replyContent.trim(),
-        parent_comment_id: parentCommentId,
-        image_url: replyImageUrl.trim() || null
-      });
+      const { error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: replyContent.trim(), parent_comment_id: parentCommentId, image_url: replyImageUrl.trim() || null });
       if (error) throw error;
-      setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false);
-      loadComments();
+      setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false); loadComments();
     } catch (error) { console.error(error); } finally { setIsSubmitting(false); }
   };
 
   const handleDeleteComment = async (id: string) => {
     if (!confirm('ยืนยันการลบความคิดเห็นนี้?')) return;
-    try {
-      await supabase.from('comments').delete().eq('id', id);
-      setComments(prev => prev.filter(c => c.id !== id));
-      loadCommentCount();
-    } catch (error) { console.error(error); }
+    try { await supabase.from('comments').delete().eq('id', id); setComments(prev => prev.filter(c => c.id !== id)); loadCommentCount(); } catch (error) { console.error(error); }
   };
 
   const handleUpdateComment = async (id: string) => {
     if (!editCommentContent.trim() && !editCommentImageUrl.trim()) return;
     setIsSubmitting(true);
-    try {
-      await supabase.from('comments').update({
-        content: editCommentContent.trim(),
-        image_url: editCommentImageUrl.trim() || null
-      }).eq('id', id);
-      setEditingCommentId(null);
-      loadComments();
-    } catch (error) { console.error(error); } finally { setIsSubmitting(false); }
+    try { await supabase.from('comments').update({ content: editCommentContent.trim(), image_url: editCommentImageUrl.trim() || null }).eq('id', id); setEditingCommentId(null); loadComments(); } catch (error) { console.error(error); } finally { setIsSubmitting(false); }
   };
 
   const renderTextWithTags = (text: string) => {
     if (!text) return null;
     const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|#[a-zA-Z0-9_ก-๙]+|https?:\/\/[^\s]+)/g;
-    const parts = text.split(regex);
-    return parts.map((part, i) => {
+    return text.split(regex).map((part, i) => {
       if (!part) return null;
       const mdMatch = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
       if (mdMatch) return <Link key={i} href={`/profile/${mdMatch[2]}`} className="text-frog-600 font-semibold hover:underline">{mdMatch[1]}</Link>;
-      
-      if (part.startsWith('#')) return (
-        <span 
-          key={i} 
-          onClick={(e) => e.preventDefault()} 
-          className="text-blue-500 font-bold hover:underline cursor-pointer transition-all"
-        >
-          {part}
-        </span>
-      );
-      
+      if (part.startsWith('#')) return <span key={i} className="text-blue-500 font-bold hover:underline cursor-pointer transition-all">{part}</span>;
       if (part.startsWith('http')) return <a key={i} href={part} target="_blank" className="text-blue-500 hover:underline">{part}</a>;
       return <span key={i}>{part}</span>;
     });
@@ -416,99 +345,24 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const renderComment = (c: Comment, isReply: boolean = false) => {
     const isEditing = editingCommentId === c.id;
     const canManageComment = c.author_id === currentUserId || post.author_id === currentUserId || profileOwnerId === currentUserId;
-
     return (
-      <div key={c.id} className={`${isReply ? 'ml-10 mt-3' : 'mb-4 animate-in fade-in slide-in-from-top-1'}`}>
+      <div key={c.id} className={`${isReply ? 'ml-10 mt-3' : 'mb-4 animate-in fade-in'}`}>
         <div className="flex gap-3">
-          <Link href={`/profile/${c.author?.username}`} className="flex-shrink-0">
-            <img src={c.author?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className={`${isReply ? 'w-7 h-7' : 'w-8 h-8'} rounded-full object-cover border border-gray-100 shadow-sm`} alt="" loading="lazy" />
-          </Link>
+          <Link href={`/profile/${c.author?.username}`} className="flex-shrink-0"><img src={c.author?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className={`${isReply ? 'w-7 h-7' : 'w-8 h-8'} rounded-full object-cover border border-gray-100 shadow-sm`} alt="" /></Link>
           <div className="flex-1 min-w-0">
             {isEditing ? (
-              <div className="space-y-2">
-                <textarea 
-                  value={editCommentContent}
-                  onChange={(e) => setEditCommentContent(e.target.value)}
-                  className="input-minimal w-full text-sm"
-                  rows={2}
-                />
-                <input 
-                  type="text"
-                  value={editCommentImageUrl}
-                  onChange={(e) => setEditCommentImageUrl(e.target.value)}
-                  placeholder="URL รูปภาพใหม่..."
-                  className="input-minimal w-full text-[10px]"
-                />
-                <div className="flex gap-2">
-                  <button onClick={() => handleUpdateComment(c.id)} className="btn-primary py-1 px-3 text-xs">บันทึก</button>
-                  <button onClick={() => setEditingCommentId(null)} className="btn-secondary py-1 px-3 text-xs">ยกเลิก</button>
-                </div>
-              </div>
+              <div className="space-y-2"><textarea value={editCommentContent} onChange={(e) => setEditCommentContent(e.target.value)} className="input-minimal w-full text-sm" rows={2} /><input type="text" value={editCommentImageUrl} onChange={(e) => setEditCommentImageUrl(e.target.value)} placeholder="URL รูป..." className="input-minimal w-full text-[10px]" /><div className="flex gap-2"><button onClick={() => handleUpdateComment(c.id)} className="btn-primary py-1 px-3 text-xs">บันทึก</button><button onClick={() => setEditingCommentId(null)} className="btn-secondary py-1 px-3 text-xs">ยกเลิก</button></div></div>
             ) : (
               <div className="bg-gray-100 rounded-2xl px-3 py-2 relative group border border-transparent hover:border-gray-200 transition-colors">
-                <div className="flex justify-between items-start gap-2">
-                  <p className="font-bold text-xs text-gray-900">{c.author?.display_name}</p>
-                  {canManageComment && (
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {c.author_id === currentUserId && (
-                        <button onClick={() => { setEditingCommentId(c.id); setEditCommentContent(c.content); setEditCommentImageUrl(c.image_url || ''); }} className="text-gray-400 hover:text-frog-600"><Edit2 size={12} /></button>
-                      )}
-                      <button onClick={() => handleDeleteComment(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={12} /></button>
-                    </div>
-                  )}
-                </div>
+                <div className="flex justify-between items-start gap-2"><p className="font-bold text-xs text-gray-900">{c.author?.display_name}</p>{canManageComment && (<div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">{c.author_id === currentUserId && (<button onClick={() => { setEditingCommentId(c.id); setEditCommentContent(c.content); setEditCommentImageUrl(c.image_url || ''); }} className="text-gray-400 hover:text-frog-600"><Edit2 size={12} /></button>)}<button onClick={() => handleDeleteComment(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={12} /></button></div>)}</div>
                 <p className="text-sm text-gray-800 leading-relaxed">{renderTextWithTags(c.content)}</p>
-                {c.image_url && (
-                  <img src={c.image_url} className="mt-2 rounded-xl max-h-60 object-cover cursor-pointer hover:brightness-95 transition shadow-sm" onClick={() => setSelectedImage(c.image_url!)} alt="" />
-                )}
-                {(commentLikes[c.id] || 0) > 0 && (
-                  <div className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1">
-                    <Heart size={10} className="fill-red-500 text-red-500" />
-                    <span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span>
-                  </div>
-                )}
+                {c.image_url && <img src={c.image_url} className="mt-2 rounded-xl max-h-60 object-cover cursor-pointer shadow-sm" onClick={() => setSelectedImage(c.image_url!)} alt="" />}
+                {(commentLikes[c.id] || 0) > 0 && <div className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1"><Heart size={10} className="fill-red-500 text-red-500" /><span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span></div>}
               </div>
             )}
-            
-            <div className="flex items-center gap-4 mt-1 ml-2">
-              <span className="text-[10px] text-gray-400">{getRelativeTime(c.created_at)}</span>
-              <button onClick={() => handleCommentLike(c.id)} className={`text-[10px] font-bold transition-colors ${likedComments.has(c.id) ? 'text-red-500' : 'text-gray-500 hover:text-red-500'}`}>ถูกใจ</button>
-              {!isReply && (
-                <button onClick={() => { setReplyTo(replyTo === c.id ? null : c.id); setReplyContent(''); setReplyImageUrl(''); setShowReplyImageInput(false); }} className="text-[10px] font-bold text-gray-500 hover:text-frog-600">ตอบกลับ</button>
-              )}
-            </div>
-
-            {replyTo === c.id && (
-              <div className="mt-3 animate-in slide-in-from-left-2 duration-200">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input 
-                      type="text"
-                      value={replyContent}
-                      onChange={(e) => setReplyContent(e.target.value)}
-                      placeholder={`ตอบกลับคุณ ${c.author?.display_name.split(' ')[0]}...`}
-                      className="input-minimal w-full text-xs py-1.5 pr-8"
-                      autoFocus
-                    />
-                    <button onClick={() => handleReply(c.id)} disabled={(!replyContent.trim() && !replyImageUrl.trim()) || isSubmitting} className="absolute right-2 top-1/2 -translate-y-1/2 text-frog-600 disabled:opacity-30">
-                      <Send size={14} />
-                    </button>
-                  </div>
-                  <button onClick={() => setShowReplyImageInput(!showReplyImageInput)} className={`p-1.5 rounded-lg transition ${showReplyImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400 hover:text-frog-600'}`}>
-                    <ImageIcon size={16} />
-                  </button>
-                </div>
-                {showReplyImageInput && (
-                  <input type="text" value={replyImageUrl} onChange={(e) => setReplyImageUrl(e.target.value)} placeholder="ใส่ URL รูปภาพตอบกลับ..." className="mt-2 input-minimal w-full text-[10px] py-1 animate-in fade-in" />
-                )}
-              </div>
-            )}
-
-            {c.replies && c.replies.length > 0 && (
-              <div className="space-y-1">
-                {c.replies.map(reply => renderComment(reply, true))}
-              </div>
-            )}
+            <div className="flex items-center gap-4 mt-1 ml-2"><span className="text-[10px] text-gray-400">{getRelativeTime(c.created_at)}</span><button onClick={() => handleCommentLike(c.id)} className={`text-[10px] font-bold transition-colors ${likedComments.has(c.id) ? 'text-red-500' : 'text-gray-500 hover:text-red-500'}`}>ถูกใจ</button>{!isReply && (<button onClick={() => { setReplyTo(replyTo === c.id ? null : c.id); setReplyContent(''); setReplyImageUrl(''); }} className="text-[10px] font-bold text-gray-500 hover:text-frog-600">ตอบกลับ</button>)}</div>
+            {replyTo === c.id && (<div className="mt-3 animate-in slide-in-from-left-2"><div className="flex gap-2"><div className="relative flex-1"><input type="text" value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder={`ตอบกลับคุณ ${c.author?.display_name.split(' ')[0]}...`} className="input-minimal w-full text-xs py-1.5 pr-8" autoFocus /><button onClick={() => handleReply(c.id)} disabled={(!replyContent.trim() && !replyImageUrl.trim()) || isSubmitting} className="absolute right-2 top-1/2 -translate-y-1/2 text-frog-600 disabled:opacity-30"><Send size={14} /></button></div><button onClick={() => setShowReplyImageInput(!showReplyImageInput)} className={`p-1.5 rounded-lg transition ${showReplyImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400'}`}><ImageIcon size={16} /></button></div>{showReplyImageInput && (<input type="text" value={replyImageUrl} onChange={(e) => setReplyImageUrl(e.target.value)} placeholder="ใส่ URL รูป..." className="mt-2 input-minimal w-full text-[10px] py-1" />)}</div>)}
+            {c.replies && c.replies.length > 0 && (<div className="space-y-1">{c.replies.map(reply => renderComment(reply, true))}</div>)}
           </div>
         </div>
       </div>
@@ -520,115 +374,47 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       <div className="flex items-start gap-3 mb-4">
         {post.author && (
           <Link href={`/profile/${post.author.username}`} className="flex-shrink-0">
-            <img src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover border border-gray-50 shadow-sm" alt="" loading="lazy" />
+            <img src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover border border-gray-50 shadow-sm" alt="" />
           </Link>
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1 md:gap-2 flex-wrap">
-            {post.author && <Link href={`/profile/${post.author.username}`} className="font-black text-sm md:text-base hover:text-frog-600 transition-colors whitespace-nowrap">{post.author.display_name}</Link>}
-            
-            {post.mood && (
-              <span className="text-xs md:text-sm text-gray-600 flex items-center gap-1 whitespace-nowrap">
-                <span className="text-gray-400 text-[10px] uppercase font-bold px-1">รู้สึก</span>
-                <span className="font-medium bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full border border-yellow-100">{post.mood}</span>
-              </span>
-            )}
-
-            {post.activity && (
-              <span className="text-xs md:text-sm text-gray-600 flex items-center gap-1 whitespace-nowrap">
-                <span className="text-gray-400 text-[10px] uppercase font-bold px-1">กำลัง</span>
-                <span className="font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-100">{post.activity}</span>
-              </span>
-            )}
-
-            {post.author_id !== post.target_id && post.target && (
-              <div className="flex items-center gap-1 whitespace-nowrap">
-                <span className="text-gray-300">→</span>
-                <Link href={`/profile/${post.target.username}`} className="font-bold text-sm text-frog-600">{post.target.display_name}</Link>
-              </div>
-            )}
+            {post.author && <Link href={`/profile/${post.author.username}`} className="font-black text-sm md:text-base hover:text-frog-600 transition-colors">{post.author.display_name}</Link>}
+            {post.mood && (<span className="text-xs md:text-sm text-gray-600 flex items-center gap-1"><span className="text-gray-400 text-[10px] uppercase font-bold">รู้สึก</span><span className="font-medium bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full border border-yellow-100">{post.mood}</span></span>)}
+            {post.activity && (<span className="text-xs md:text-sm text-gray-600 flex items-center gap-1"><span className="text-gray-400 text-[10px] uppercase font-bold">กำลัง</span><span className="font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-100">{post.activity}</span></span>)}
+            {post.author_id !== post.target_id && post.target && (<div className="flex items-center gap-1"><span className="text-gray-300">→</span><Link href={`/profile/${post.target.username}`} className="font-bold text-sm text-frog-600">{post.target.display_name}</Link></div>)}
           </div>
-          
           <div className="flex items-center gap-2 mt-1">
             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{getRelativeTime(post.created_at)}</p>
-            {post.location && (
-              <span className="text-[10px] text-red-500 font-bold flex items-center gap-0.5 uppercase tracking-tight">
-                <MapPin size={10} /> {post.location}
-              </span>
-            )}
+            {post.location && (<span className="text-[10px] text-red-500 font-bold flex items-center gap-0.5 uppercase tracking-tight"><MapPin size={10} /> {post.location}</span>)}
           </div>
         </div>
         {(canEditPost || canDeletePost) && (
           <div className="flex gap-1">
-            {canEditPost && (
-              <button 
-                onClick={() => {
-                  setIsEditingPost(!isEditingPost);
-                  setEditContent(post.content || '');
-                  setEditMood(post.mood || '');
-                  setEditActivity(post.activity || '');
-                  setEditLocation(post.location || '');
-                }} 
-                className={`p-2 transition-colors ${isEditingPost ? 'text-frog-600 bg-frog-50 rounded-xl' : 'text-gray-300 hover:text-frog-600'}`}
-              >
-                <Edit2 size={16} />
-              </button>
-            )}
+            {canEditPost && (<button onClick={() => { setIsEditingPost(!isEditingPost); setEditContent(post.content || ''); setEditMood(post.mood || ''); setEditActivity(post.activity || ''); setEditLocation(post.location || ''); }} className={`p-2 transition-colors ${isEditingPost ? 'text-frog-600 bg-frog-50 rounded-xl' : 'text-gray-300 hover:text-frog-600'}`}><Edit2 size={16} /></button>)}
             {canDeletePost && <button onClick={() => onDelete?.(post.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>}
           </div>
         )}
       </div>
 
-      {/* ✅ ส่วนเนื้อหาโพสต์: ปกติ หรือ โหมดแก้ไข */}
       {isEditingPost ? (
         <div className="mb-4 space-y-3 animate-in fade-in zoom-in-95 duration-200">
           <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100 space-y-3 shadow-inner">
-            <textarea 
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              className="w-full bg-transparent border-none focus:ring-0 text-sm md:text-base text-gray-800 placeholder-gray-400 resize-none min-h-[100px]"
-              placeholder="คุณกำลังคิดอะไรอยู่..."
-              autoFocus
-            />
-            
+            <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full bg-transparent border-none focus:ring-0 text-sm md:text-base text-gray-800 placeholder-gray-400 resize-none min-h-[100px]" placeholder="คุณกำลังคิดอะไรอยู่..." autoFocus />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-               <div className="relative">
-                 <Smile size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                 <input type="text" value={editMood} onChange={(e) => setEditMood(e.target.value)} placeholder="อารมณ์..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" />
-               </div>
-               <div className="relative">
-                 <ActivityIcon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                 <input type="text" value={editActivity} onChange={(e) => setEditActivity(e.target.value)} placeholder="กิจกรรม..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" />
-               </div>
-               <div className="relative">
-                 <MapPin size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                 <input type="text" value={editLocation} onChange={(e) => setEditLocation(e.target.value)} placeholder="สถานที่..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" />
-               </div>
+               <div className="relative"><Smile size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" value={editMood} onChange={(e) => setEditMood(e.target.value)} placeholder="อารมณ์..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" /></div>
+               <div className="relative"><ActivityIcon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" value={editActivity} onChange={(e) => setEditActivity(e.target.value)} placeholder="กิจกรรม..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" /></div>
+               <div className="relative"><MapPin size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" value={editLocation} onChange={(e) => setEditLocation(e.target.value)} placeholder="สถานที่..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" /></div>
             </div>
           </div>
-          
           <div className="flex gap-2">
-            <button 
-              onClick={handleUpdatePost} 
-              disabled={!editContent.trim() || isUpdatingPost}
-              className="flex-1 bg-frog-600 text-white font-black py-2.5 rounded-xl shadow-lg hover:bg-frog-700 transition active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 text-xs uppercase"
-            >
-              {isUpdatingPost ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-              บันทึกการแก้ไข
-            </button>
-            <button 
-              onClick={() => setIsEditingPost(false)} 
-              className="px-4 py-2.5 bg-gray-100 text-gray-500 font-black rounded-xl hover:bg-gray-200 transition text-xs uppercase"
-            >
-              ยกเลิก
-            </button>
+            <button onClick={handleUpdatePost} disabled={!editContent.trim() || isUpdatingPost} className="flex-1 bg-frog-600 text-white font-black py-2.5 rounded-xl shadow-lg hover:bg-frog-700 transition active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 text-xs uppercase">{isUpdatingPost ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}บันทึกการแก้ไข</button>
+            <button onClick={() => setIsEditingPost(false)} className="px-4 py-2.5 bg-gray-100 text-gray-500 font-black rounded-xl hover:bg-gray-200 transition text-xs uppercase">ยกเลิก</button>
           </div>
         </div>
       ) : (
         <>
-          <div className="text-sm md:text-base text-gray-800 mb-4 whitespace-pre-wrap break-words leading-relaxed">
-            {renderTextWithTags(post.content || '')}
-          </div>
+          <div className="text-sm md:text-base text-gray-800 mb-4 whitespace-pre-wrap break-words leading-relaxed">{renderTextWithTags(post.content || '')}</div>
           {renderEmbeds(post.content || '')}
         </>
       )}
@@ -645,99 +431,32 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
 
       <div className="flex items-center gap-6 pt-4 border-t border-gray-50">
         <div className="flex items-center gap-1.5 group/like">
-          <button onClick={handleLike} className={`transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}>
-            <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
-          </button>
-          <button onClick={openLikeModal} className="text-xs font-black text-gray-500 hover:underline">
-            {likeCount}
-          </button>
+          <button onClick={handleLike} className={`transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}><Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} /></button>
+          <button onClick={openLikeModal} className="text-xs font-black text-gray-500 hover:underline">{likeCount}</button>
         </div>
-
-        <button onClick={() => setShowComments(!showComments)} className={`flex items-center gap-2 transition-colors ${showComments ? 'text-frog-600' : 'text-gray-400 hover:text-frog-600'}`}>
-          <MessageCircle className="w-5 h-5" />
-          <span className="text-xs font-black">{commentCount}</span>
-        </button>
+        <button onClick={() => setShowComments(!showComments)} className={`flex items-center gap-2 transition-colors ${showComments ? 'text-frog-600' : 'text-gray-400 hover:text-frog-600'}`}><MessageCircle className="w-5 h-5" /><span className="text-xs font-black">{commentCount}</span></button>
       </div>
 
       {showComments && (
         <div className="mt-4 pt-4 border-t border-gray-50 space-y-4 animate-in fade-in duration-300">
           <form onSubmit={handleComment} className="space-y-2">
-            <div className="flex gap-2">
-              <input 
-                type="text"
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="เขียนความคิดเห็นของคุณ..."
-                className="input-minimal flex-1 text-sm py-2 px-4 shadow-inner"
-                disabled={isSubmitting}
-              />
-              <button 
-                type="button" 
-                onClick={() => setShowCommentImageInput(!showCommentImageInput)}
-                className={`p-2 rounded-xl transition ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400 hover:text-frog-600'}`}
-              >
-                <ImageIcon size={20} />
-              </button>
-              <button 
-                type="submit" 
-                disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting}
-                className="p-2.5 bg-frog-500 text-white rounded-xl disabled:opacity-50 shadow-sm hover:bg-frog-600 transition-all"
-              >
-                <Send size={18} />
-              </button>
-            </div>
-            {showCommentImageInput && (
-              <input 
-                type="text" 
-                value={commentImageUrl} 
-                onChange={(e) => setCommentImageUrl(e.target.value)} 
-                placeholder="ใส่ URL รูปภาพ..." 
-                className="input-minimal w-full text-xs py-1.5 animate-in slide-in-from-top-1"
-              />
-            )}
+            <div className="flex gap-2"><input type="text" value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="เขียนความคิดเห็นของคุณ..." className="input-minimal flex-1 text-sm py-2 px-4 shadow-inner" disabled={isSubmitting} /><button type="button" onClick={() => setShowCommentImageInput(!showCommentImageInput)} className={`p-2 rounded-xl transition ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400'}`}><ImageIcon size={20} /></button><button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2.5 bg-frog-500 text-white rounded-xl disabled:opacity-50 shadow-sm hover:bg-frog-600 transition-all"><Send size={18} /></button></div>
+            {showCommentImageInput && (<input type="text" value={commentImageUrl} onChange={(e) => setCommentImageUrl(e.target.value)} placeholder="ใส่ URL รูปภาพ..." className="input-minimal w-full text-xs py-1.5 animate-in slide-in-from-top-1" />)}
           </form>
-
-          <div className="space-y-2 max-h-[500px] overflow-y-auto no-scrollbar pr-1">
-            {comments.length === 0 ? (
-              <div className="text-center py-6">
-                <p className="text-gray-300 text-xs font-bold uppercase tracking-widest italic">No comments yet</p>
-              </div>
-            ) : (
-              comments.map(c => renderComment(c))
-            )}
-          </div>
+          <div className="space-y-2 max-h-[500px] overflow-y-auto no-scrollbar pr-1">{comments.length === 0 ? (<div className="text-center py-6"><p className="text-gray-300 text-xs font-bold uppercase tracking-widest italic">No comments yet</p></div>) : (comments.map(c => renderComment(c)))}</div>
         </div>
       )}
 
-      {/* --- Modals --- */}
+      {/* Like Modal & Image Preview (คงเดิม) */}
       {showLikeModal && (
         <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowLikeModal(false)}>
           <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-              <h3 className="font-black text-gray-900 flex items-center gap-2 uppercase tracking-widest text-[10px]">
-                <Heart size={14} className="text-red-500 fill-current" /> คนที่กดถูกใจ
-              </h3>
-              <button onClick={() => setShowLikeModal(false)} className="p-1.5 hover:bg-white rounded-full transition shadow-sm"><X size={18} /></button>
-            </div>
-            
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50"><h3 className="font-black text-gray-900 flex items-center gap-2 uppercase tracking-widest text-[10px]"><Heart size={14} className="text-red-500 fill-current" /> คนที่กดถูกใจ</h3><button onClick={() => setShowLikeModal(false)} className="p-1.5 hover:bg-white rounded-full transition shadow-sm"><X size={18} /></button></div>
             <div className="flex-1 overflow-y-auto no-scrollbar p-2">
-              {likedUsers.length === 0 && !isLoadingLikes ? (
-                <div className="py-10 text-center text-gray-400 italic text-sm">ยังไม่มีคนกดถูกใจ</div>
-              ) : (
+              {likedUsers.length === 0 && !isLoadingLikes ? (<div className="py-10 text-center text-gray-400 italic text-sm">ยังไม่มีคนกดถูกใจ</div>) : (
                 <div className="space-y-1">
-                  {likedUsers.map((user, idx) => (
-                    <Link key={`${user.id}-${idx}`} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors group">
-                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm group-hover:scale-105 transition-transform" />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm text-gray-900 truncate">{user.display_name}</p>
-                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{user.username}</p>
-                      </div>
-                      <ChevronRight size={14} className="text-gray-300 group-hover:text-indigo-500 transition-colors" />
-                    </Link>
-                  ))}
-                  <div ref={lastLikeRef} className="h-4 w-full flex justify-center py-6">
-                    {isLoadingLikes && <Loader2 size={20} className="animate-spin text-frog-500" />}
-                  </div>
+                  {likedUsers.map((user, idx) => (<Link key={`${user.id}-${idx}`} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors group"><img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" /><div className="flex-1 min-w-0"><p className="font-bold text-sm text-gray-900 truncate">{user.display_name}</p><p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{user.username}</p></div><ChevronRight size={14} className="text-gray-300 group-hover:text-indigo-500 transition-colors" /></Link>))}
+                  <div ref={lastLikeRef} className="h-4 w-full flex justify-center py-6">{isLoadingLikes && <Loader2 size={20} className="animate-spin text-frog-500" />}</div>
                 </div>
               )}
             </div>
@@ -746,7 +465,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       )}
 
       {selectedImage && (
-        <div className="fixed inset-0 bg-black/95 z-[120] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setSelectedImage(null)}>
+        <div className="fixed inset-0 bg-black/95 z-[120] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedImage(null)}>
           <button className="absolute top-6 right-6 text-white hover:scale-110 transition"><X size={32} /></button>
           <img src={selectedImage} className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" alt="" />
         </div>
@@ -759,11 +478,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (!urls) return null;
     const ytMatch = urls[0].match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
     if (ytMatch && ytMatch[2].length === 11) {
-      return (
-        <div className="mb-4 rounded-2xl overflow-hidden relative pt-[56.25%] w-full shadow-lg border border-gray-100">
-          <iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube.com/embed/${ytMatch[2]}`} allowFullScreen></iframe>
-        </div>
-      );
+      return (<div className="mb-4 rounded-2xl overflow-hidden relative pt-[56.25%] w-full shadow-lg border border-gray-100"><iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube.com/embed/${ytMatch[2]}`} allowFullScreen></iframe></div>);
     }
     return <LinkPreview url={urls[0]} />;
   }
