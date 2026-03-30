@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase, User } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import NavLayout from '@/components/NavLayout';
-import { Settings, User as UserIcon, Bell, Shield, Trash2, Lock, Edit2, AtSign, CheckCircle, AlertCircle } from 'lucide-react';
+import { Settings, User as UserIcon, Bell, Shield, Trash2, Lock, Edit2, AtSign, CheckCircle, AlertCircle, Copyright } from 'lucide-react';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -73,7 +73,6 @@ export default function SettingsPage() {
     setIsSubmitting(true);
 
     try {
-      // Validate
       if (passwordForm.newPassword.length < 6) {
         setError('รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร');
         return;
@@ -84,21 +83,18 @@ export default function SettingsPage() {
         return;
       }
 
-      // Get current user email
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.email) {
         setError('ไม่พบข้อมูลผู้ใช้');
         return;
       }
 
-      // Verify current password
       const isValid = await verifyCurrentPassword(user.email, passwordForm.currentPassword);
       if (!isValid) {
         setError('รหัสผ่านปัจจุบันไม่ถูกต้อง');
         return;
       }
 
-      // Update password
       const { error: updateError } = await supabase.auth.updateUser({
         password: passwordForm.newPassword,
       });
@@ -128,7 +124,6 @@ export default function SettingsPage() {
     setIsSubmitting(true);
 
     try {
-      // Validate username format
       if (!/^[a-zA-Z0-9_]+$/.test(usernameForm.newUsername)) {
         setError('Username ต้องเป็น a-z, 0-9, _ เท่านั้น');
         return;
@@ -139,21 +134,18 @@ export default function SettingsPage() {
         return;
       }
 
-      // Get current user email
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.email) {
         setError('ไม่พบข้อมูลผู้ใช้');
         return;
       }
 
-      // Verify current password
       const isValid = await verifyCurrentPassword(user.email, usernameForm.currentPassword);
       if (!isValid) {
         setError('รหัสผ่านไม่ถูกต้อง');
         return;
       }
 
-      // Check if username is taken
       const { data: existingUser } = await supabase
         .from('users')
         .select('username')
@@ -166,7 +158,6 @@ export default function SettingsPage() {
         return;
       }
 
-      // Update username
       const { error: updateError } = await supabase
         .from('users')
         .update({ username: usernameForm.newUsername.toLowerCase() })
@@ -204,21 +195,18 @@ export default function SettingsPage() {
         return;
       }
 
-      // Get current user email
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.email) {
         setError('ไม่พบข้อมูลผู้ใช้');
         return;
       }
 
-      // Verify current password
       const isValid = await verifyCurrentPassword(user.email, displayNameForm.currentPassword);
       if (!isValid) {
         setError('รหัสผ่านไม่ถูกต้อง');
         return;
       }
 
-      // Update display name
       const { error: updateError } = await supabase
         .from('users')
         .update({ display_name: displayNameForm.newDisplayName.trim() })
@@ -268,7 +256,7 @@ export default function SettingsPage() {
 
   return (
     <NavLayout>
-      <div className="max-w-2xl mx-auto px-4">
+      <div className="max-w-2xl mx-auto px-4 pb-12">
         <h1 className="text-2xl md:text-3xl font-bold mb-6 flex items-center gap-3">
           <Settings className="w-6 h-6 md:w-8 md:h-8" />
           ตั้งค่า
@@ -369,6 +357,22 @@ export default function SettingsPage() {
             >
               ลบบัญชีถาวร
             </button>
+          </div>
+
+          {/* Copyright Section */}
+          <div className="pt-6 pb-2 text-center">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-100 rounded-2xl">
+              <Copyright size={14} className="text-slate-400" />
+              <p className="text-[11px] md:text-xs font-bold text-slate-500 tracking-tight">
+                © RoleplayTH - since 2021
+              </p>
+            </div>
+            <div className="mt-3 px-6">
+              <p className="text-[10px] md:text-[11px] text-slate-400 leading-relaxed font-medium">
+                สงวนลิขสิทธิ์เนื้อหาและซอฟต์แวร์ตามกฎหมาย <br className="hidden md:block" />
+                <span className="text-indigo-400/80">ไม่อนุญาตให้คัดลอก ดัดแปลง หรือละเมิดสิทธิ์ในทุกกรณีโดยไม่ได้รับอนุญาต</span>
+              </p>
+            </div>
           </div>
         </div>
       </div>
