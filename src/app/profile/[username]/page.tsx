@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-// ✅ แก้ไข path ให้ Build ผ่านแน่นอน
+// ✅ ใช้ Relative path เพื่อให้ Build ผ่าน
 import { supabase, type User, type Post } from '../../../lib/supabase'; 
 import { useParams, useRouter } from 'next/navigation';
 import NavLayout from '../../../components/NavLayout';
@@ -18,6 +18,20 @@ import { calculateAge } from '../../../lib/utils';
 
 const POSTS_PER_PAGE = 10;
 
+// ✅ ฟังก์ชันจัดรูปแบบวันที่เป็น dd-mm-yyyy (English Format)
+const formatDate = (dateString: string) => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear(); // ปี ค.ศ.
+    return `${day}-${month}-${year}`;
+  } catch {
+    return dateString;
+  }
+};
+
 export default function ProfilePage() {
   const params = useParams();
   const router = useRouter();
@@ -33,7 +47,6 @@ export default function ProfilePage() {
   const [friendshipId, setFriendshipId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   
-  // ✅ คืนค่าข้อมูลครอบครัวและความสัมพันธ์
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
   const [isAlreadyInMyFamily, setIsAlreadyInMyFamily] = useState(false);
   const [blockStatus, setBlockStatus] = useState<'none' | 'blocked' | 'ignored'>('none');
@@ -60,7 +73,7 @@ export default function ProfilePage() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
 
-      // 1. ดึงข้อมูล Profile หลัก (รวม Bio และ Hobbies)
+      // 1. ดึงข้อมูล Profile หลัก
       const { data: profileData } = await supabase.from('users').select('*').eq('username', username).single();
       if (!profileData) { router.push('/'); return; }
       setProfileUser(profileData);
@@ -71,7 +84,7 @@ export default function ProfilePage() {
         supabase.rpc('get_profile_initial_data', { current_uid: authUser.id, target_uid: profileData.id }),
         supabase.from('posts').select('*, author:author_id(id, username, display_name, profile_img_url), target:target_id(id, username, display_name, profile_img_url)').eq('target_id', profileData.id).order('created_at', { ascending: false }).range(0, POSTS_PER_PAGE - 1),
         supabase.from('family_members').select('*, member:member_user_id(*)').eq('user_id', profileData.id),
-        supabase.from('friendships').select('*, sender:sender_id(*), receiver:receiver_id(*)').eq('status', 'accepted').or(`sender_id.eq.${profileData.id},receiver_id.eq.${profileData.id}`).limit(6)
+        supabase.from('friendships').select('*, sender:sender_id(*), receiver:receiver_id(*)').eq('status', 'accepted').or(`sender_id.eq.${profileData.id},receiver_id.eq.${profileData.id}`).order('created_at', { ascending: false }).limit(6)
       ]);
 
       setCurrentUser(currentUserRes.data);
@@ -136,7 +149,6 @@ export default function ProfilePage() {
 
   const themeColor = profileUser.theme_color || '#9de5a8';
 
-  // ✅ UI ส่วนความสัมพันธ์ (Relationship Section)
   const relationshipSection = (
     <div className="card-minimal bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm space-y-4">
       <h3 className="font-black text-gray-900 flex items-center gap-2 text-sm uppercase tracking-wider"><Heart className="w-4 h-4 text-red-500" /> ความสัมพันธ์</h3>
@@ -202,26 +214,50 @@ export default function ProfilePage() {
                     <p className="text-gray-400 font-bold uppercase text-xs tracking-[0.2em]">@{profileUser.username}</p>
                   </div>
 
-                  {/* ✅ Bio รองรับหลายบรรทัด */}
                   {profileUser.bio && (
                     <p className="text-gray-600 font-medium leading-relaxed whitespace-pre-wrap break-words border-l-4 border-gray-100 pl-5 text-lg italic">
                       {profileUser.bio}
                     </p>
                   )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-500 font-bold">
-                    {profileUser.birthday && <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-frog-500" /> {calculateAge(profileUser.birthday)} ปี ({profileUser.birthday})</div>}
-                    {profileUser.occupation && <div className="flex items-center gap-2"><Briefcase className="w-4 h-4 text-frog-500" /> {profileUser.occupation}</div>}
-                    {profileUser.address && <div className="flex items-center gap-2"><MapPin className="w-4 h-4 text-red-500" /> {profileUser.address}</div>}
-                    <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-gray-400" /> เป็นสมาชิกเมื่อ {new Date(profileUser.created_at).toLocaleDateString('th-TH')}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-600 font-medium">
+                    {/* ✅ แสดงวันที่แบบ dd-mm-yyyy */}
+                    {profileUser.birthday && (
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-frog-500" /> เกิดวันที่ {formatDate(profileUser.birthday)} (อายุ {calculateAge(profileUser.birthday)} ปี)
+                      </div>
+                    )}
+                    {profileUser.created_at && (
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-gray-400" /> เข้าร่วมเมื่อ {formatDate(profileUser.created_at)}
+                      </div>
+                    )}
+                    {profileUser.occupation && (
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="w-4 h-4 text-frog-500" /> {profileUser.occupation}
+                      </div>
+                    )}
+                    {profileUser.workplace && (
+                      <div className="flex items-center gap-2">
+                        <HomeIcon className="w-4 h-4 text-frog-500" /> ทำงานที่ {profileUser.workplace}
+                      </div>
+                    )}
+                    {profileUser.address && (
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-red-500" /> {profileUser.address}
+                      </div>
+                    )}
                   </div>
 
-                  {/* ✅ กู้คืนงานอดิเรก (Hobbies) */}
                   {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
                     <div className="flex flex-wrap gap-2 pt-2">
                       {profileUser.hobbies.map((h: any, i: number) => (
-                        <span key={i} className="px-4 py-2 rounded-2xl text-xs font-black border transition-all hover:scale-105 uppercase tracking-tighter" style={{ backgroundColor: `${themeColor}15`, color: themeColor, borderColor: `${themeColor}30` }}>
-                          # {typeof h === 'string' ? h : h.name}
+                        <span 
+                          key={i} 
+                          className="px-4 py-2 rounded-2xl text-xs font-bold border transition-all hover:scale-105 tracking-wide" 
+                          style={{ backgroundColor: `${themeColor}15`, color: themeColor, borderColor: `${themeColor}30` }}
+                        >
+                          {typeof h === 'string' ? h : h.name}
                         </span>
                       ))}
                     </div>
@@ -264,7 +300,6 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* ✅ แสดงสถานะความสัมพันธ์และครอบครัวใน Sidebar */}
             {relationshipSection}
             
             <div className="text-center opacity-30"><p className="text-[10px] font-black uppercase tracking-[0.3em]">Ribbi Community</p></div>
