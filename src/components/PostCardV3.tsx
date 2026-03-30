@@ -49,41 +49,28 @@ const LinkPreview = ({ url }: { url: string }) => {
     let isMounted = true;
     const fetchPreview = async () => {
       try {
-        const res1 = await fetch(`https://api.dub.co/metatags?url=${encodeURIComponent(url)}`);
-        if (res1.ok) {
-          const json1 = await res1.json();
-          if (isMounted && (json1.title || json1.image)) {
-            setPreview({ title: json1.title, description: json1.description, image: json1.image, publisher: new URL(url).hostname });
-            setLoading(false);
+        const res = await fetch(`https://api.dub.co/metatags?url=${encodeURIComponent(url)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (isMounted && (json.title || json.image)) {
+            setPreview({ title: json.title, description: json.description, image: json.image, publisher: new URL(url).hostname });
             return;
           }
         }
-      } catch (error) { }
-
-      try {
-        const res2 = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
-        if (res2.ok) {
-          const json2 = await res2.json();
-          if (isMounted && json2.status === 'success') {
-            setPreview({ title: json2.data.title, description: json2.data.description, image: json2.data.image?.url || json2.data.logo?.url, publisher: json2.data.publisher });
-          }
-        }
-      } catch (error) { } finally { if (isMounted) setLoading(false); }
+      } catch (e) {} finally { if (isMounted) setLoading(false); }
     };
     fetchPreview();
     return () => { isMounted = false; };
   }, [url]);
 
-  if (loading) return <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden animate-pulse"><div className="w-full h-40 bg-gray-200"></div></div>;
-  if (!preview || (!preview.title && !preview.image)) return null;
+  if (loading || !preview || (!preview.title && !preview.image)) return null;
 
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mb-4 block border border-gray-200 rounded-xl hover:shadow-md transition overflow-hidden bg-gray-50 group">
-      {preview.image && <div className="w-full h-48 md:h-64 overflow-hidden border-b border-gray-200"><img src={preview.image} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition duration-500" alt="" /></div>}
-      <div className="p-3 md:p-4 bg-white">
-         <p className="text-[10px] text-gray-500 font-semibold mb-1 uppercase">{preview.publisher}</p>
-         <p className="text-sm md:text-base font-bold text-gray-900 line-clamp-2">{preview.title}</p>
-         {preview.description && <p className="text-xs md:text-sm text-gray-600 mt-1 line-clamp-2">{preview.description}</p>}
+    <a href={url} target="_blank" rel="noopener noreferrer" className="mb-4 block border border-gray-100 rounded-2xl overflow-hidden bg-white hover:border-indigo-200 transition-all group">
+      {preview.image && <div className="w-full h-40 overflow-hidden"><img src={preview.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" /></div>}
+      <div className="p-3">
+         <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">{preview.publisher}</p>
+         <p className="text-sm font-bold text-gray-900 line-clamp-1">{preview.title}</p>
       </div>
     </a>
   );
@@ -142,89 +129,28 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (isLoadingLikes) return;
     if (likeObserver.current) likeObserver.current.disconnect();
     likeObserver.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMoreLikes) {
-        setLikePage(prev => prev + 1);
-      }
+      if (entries[0].isIntersecting && hasMoreLikes) setLikePage(prev => prev + 1);
     });
     if (node) likeObserver.current.observe(node);
   }, [isLoadingLikes, hasMoreLikes]);
 
+  // ✅ Optimization: ใช้ Parallel Fetching และเอา Realtime ต่อโพสต์ออกเพื่อเซฟ Disk IO
   useEffect(() => {
-    loadLikeCount();
-    checkIfLiked();
-    loadCommentCount();
-    
-    if (showComments) {
-      loadComments();
-      loadCommentLikes();
-    }
+    const loadStats = async () => {
+      const [lCount, cCount, isL] = await Promise.all([
+        supabase.from('likes').select('*', { count: 'exact', head: true }).eq('post_id', post.id),
+        supabase.from('comments').select('*', { count: 'exact', head: true }).eq('post_id', post.id),
+        supabase.from('likes').select('id').eq('post_id', post.id).eq('user_id', currentUserId).maybeSingle()
+      ]);
+      setLikeCount(lCount.count || 0);
+      setCommentCount(cCount.count || 0);
+      setIsLiked(!!isL.data);
+    };
+    loadStats();
+    if (showComments) { loadComments(); loadCommentLikes(); }
   }, [post.id, showComments]);
 
-  useEffect(() => {
-    if (showLikeModal && likePage > 0) {
-      fetchLikedUsers(likePage);
-    }
-  }, [likePage, showLikeModal]);
-
-  const loadLikeCount = async () => {
-    const { count } = await supabase.from('likes').select('*', { count: 'exact', head: true }).eq('post_id', post.id);
-    setLikeCount(count || 0);
-  };
-
-  const loadCommentCount = async () => {
-    const { count } = await supabase.from('comments').select('*', { count: 'exact', head: true }).eq('post_id', post.id);
-    setCommentCount(count || 0);
-  };
-
-  const checkIfLiked = async () => {
-    const { data } = await supabase.from('likes').select('id').eq('post_id', post.id).eq('user_id', currentUserId).maybeSingle();
-    setIsLiked(!!data);
-  };
-
-  const handleLike = async () => {
-    if (isLiked) {
-      setIsLiked(false); setLikeCount(prev => prev - 1);
-      await supabase.from('likes').delete().eq('post_id', post.id).eq('user_id', currentUserId);
-    } else {
-      setIsLiked(true); setLikeCount(prev => prev + 1);
-      await supabase.from('likes').insert({ post_id: post.id, user_id: currentUserId });
-    }
-  };
-
-  const handleUpdatePost = async () => {
-    if (!editContent.trim() || isUpdatingPost) return;
-    setIsUpdatingPost(true);
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .update({
-          content: editContent.trim(),
-          mood: editMood.trim() || null,
-          activity: editActivity.trim() || null,
-          location: editLocation.trim() || null
-        })
-        .eq('id', post.id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      setPost({ ...post, ...data });
-      setIsEditingPost(false);
-    } catch (error) {
-      console.error('Error updating post:', error);
-      alert('ไม่สามารถบันทึกได้ กรุณาลองใหม่');
-    } finally {
-      setIsUpdatingPost(false);
-    }
-  };
-
-  const openLikeModal = () => {
-    setLikedUsers([]);
-    setLikePage(0);
-    setHasMoreLikes(true);
-    setShowLikeModal(true);
-    fetchLikedUsers(0, true);
-  };
+  useEffect(() => { if (showLikeModal && likePage > 0) fetchLikedUsers(likePage); }, [likePage, showLikeModal]);
 
   const fetchLikedUsers = async (page: number, reset = false) => {
     if (isLoadingLikes) return;
@@ -238,132 +164,64 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         setLikedUsers(prev => reset ? users : [...prev, ...users]);
         setHasMoreLikes(users.length === LIKES_PER_PAGE);
       }
-    } catch (error) { console.error(error); } finally { setIsLoadingLikes(false); }
+    } catch (e) {} finally { setIsLoadingLikes(false); }
   };
 
-  const openCommentLikeModal = async (commentId: string) => {
-    setCommentLikedUsers([]);
-    setShowCommentLikeModal(true);
-    setIsLoadingCommentLikes(true);
-    try {
-      const { data } = await supabase.from('comment_likes').select(`users (id, username, display_name, profile_img_url)` as any).eq('comment_id', commentId);
-      if (data) {
-        const users = (data as any[]).map(item => item.users).filter(Boolean);
-        setCommentLikedUsers(users);
-      }
-    } catch (error) { console.error(error); } finally { setIsLoadingCommentLikes(false); }
+  const handleLike = async () => {
+    if (isLiked) {
+      setIsLiked(false); setLikeCount(prev => prev - 1);
+      await supabase.from('likes').delete().eq('post_id', post.id).eq('user_id', currentUserId);
+    } else {
+      setIsLiked(true); setLikeCount(prev => prev + 1);
+      await supabase.from('likes').insert({ post_id: post.id, user_id: currentUserId });
+    }
   };
 
   const loadComments = async () => {
-    try {
-      const { data } = await supabase.from('comments').select('*, author:users(id, username, display_name, profile_img_url)').eq('post_id', post.id).order('created_at', { ascending: true });
-      if (data) {
-        const topLevel = data.filter(c => !c.parent_comment_id);
-        const formatted = topLevel.map(c => ({ ...c, replies: data.filter(r => r.parent_comment_id === c.id) }));
-        setComments(formatted as any);
-      }
-    } catch (error) { console.error(error); }
+    const { data } = await supabase.from('comments').select('*, author:users(id, username, display_name, profile_img_url)').eq('post_id', post.id).order('created_at', { ascending: true });
+    if (data) {
+      const topLevel = data.filter(c => !c.parent_comment_id);
+      const formatted = topLevel.map(c => ({ ...c, replies: data.filter(r => r.parent_comment_id === c.id) }));
+      setComments(formatted as any);
+    }
   };
 
   const loadCommentLikes = async () => {
-    try {
-      const commentIds = comments.flatMap(c => [c.id, ...(c.replies?.map(r => r.id) || [])]);
-      if (commentIds.length === 0) return;
-      const { data: allLikes } = await supabase.from('comment_likes').select('comment_id, user_id').in('comment_id', commentIds);
-      if (allLikes) {
-        const counts: Record<string, number> = {};
-        const userLiked = new Set<string>();
-        allLikes.forEach(like => {
-          counts[like.comment_id] = (counts[like.comment_id] || 0) + 1;
-          if (like.user_id === currentUserId) userLiked.add(like.comment_id);
-        });
-        setCommentLikes(counts); setLikedComments(userLiked);
-      }
-    } catch (error) { console.error(error); }
+    const commentIds = comments.flatMap(c => [c.id, ...(c.replies?.map(r => r.id) || [])]);
+    if (commentIds.length === 0) return;
+    const { data } = await supabase.from('comment_likes').select('comment_id, user_id').in('comment_id', commentIds);
+    if (data) {
+      const counts: Record<string, number> = {};
+      const userLiked = new Set<string>();
+      data.forEach(like => {
+        counts[like.comment_id] = (counts[like.comment_id] || 0) + 1;
+        if (like.user_id === currentUserId) userLiked.add(like.comment_id);
+      });
+      setCommentLikes(counts); setLikedComments(userLiked);
+    }
   };
 
   const handleCommentLike = async (commentId: string) => {
     const isAlreadyLiked = likedComments.has(commentId);
-    const newLiked = new Set(likedComments);
-    if (isAlreadyLiked) { newLiked.delete(commentId); setCommentLikes(prev => ({ ...prev, [commentId]: (prev[commentId] || 1) - 1 })); }
-    else { newLiked.add(commentId); setCommentLikes(prev => ({ ...prev, [commentId]: (prev[commentId] || 0) + 1 })); }
-    setLikedComments(newLiked);
-    try {
-      if (isAlreadyLiked) await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', currentUserId);
-      else await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: currentUserId });
-    } catch (error) { console.error(error); loadCommentLikes(); }
-  };
-
-  const notifyTaggedUsers = async (text: string, commentId: string) => {
-    const markdownMatches = Array.from(text.matchAll(/@\[.*?\]\((.*?)\)/g)).map(m => m[1]);
-    const plainMatches = Array.from(text.matchAll(/(?:\s|^)@([a-zA-Z0-9_]+)/g)).map(m => m[1]);
-    const usernames = [...new Set([...markdownMatches, ...plainMatches])];
-    if (usernames.length === 0) return;
-    try {
-      const { data: users } = await supabase.from('users').select('id, username').in('username', usernames);
-      if (!users || users.length === 0) return;
-      const usersToNotify = users.filter(u => u.id !== currentUserId);
-      const notifications = usersToNotify.map(u => ({
-        receiver_id: u.id, sender_id: currentUserId, type: 'tag_comment', post_id: post.id, is_read: false
-      }));
-      if (notifications.length > 0) { await supabase.from('notifications').insert(notifications); }
-    } catch (error) { console.error(error); }
-  };
-
-  const handleComment = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault(); 
-    if (!newComment.trim() && !commentImageUrl.trim() || isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      const { data, error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: newComment.trim(), image_url: commentImageUrl.trim() || null }).select().single();
-      if (error) throw error;
-      if (data) await notifyTaggedUsers(data.content, data.id); 
-      setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); 
-      loadComments(); loadCommentCount();
-      setMentionConfig({ show: false, query: '', type: null, cursor: 0 });
-    } catch (error) { console.error(error); } finally { setIsSubmitting(false); }
-  };
-
-  const handleReply = async (parentCommentId: string) => {
-    if (!replyContent.trim() && !replyImageUrl.trim() || isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      const { data, error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: replyContent.trim(), parent_comment_id: parentCommentId, image_url: replyImageUrl.trim() || null }).select().single();
-      if (error) throw error;
-      if (data) await notifyTaggedUsers(data.content, data.id);
-      setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false); 
-      loadComments(); loadCommentCount();
-      setMentionConfig({ show: false, query: '', type: null, cursor: 0 });
-    } catch (error) { console.error(error); } finally { setIsSubmitting(false); }
-  };
-
-  const handleDeleteComment = async (id: string) => {
-    if (!confirm('ยืนยันการลบความคิดเห็นนี้?')) return;
-    try { await supabase.from('comments').delete().eq('id', id); setComments(prev => prev.filter(c => c.id !== id)); loadCommentCount(); } catch (error) { console.error(error); }
-  };
-
-  const handleUpdateComment = async (id: string) => {
-    if (!editCommentContent.trim() && !editCommentImageUrl.trim()) return;
-    setIsSubmitting(true);
-    try { await supabase.from('comments').update({ content: editCommentContent.trim(), image_url: editCommentImageUrl.trim() || null }).eq('id', id); setEditingCommentId(null); loadComments(); } catch (error) { console.error(error); } finally { setIsSubmitting(false); }
+    setLikedComments(prev => {
+      const next = new Set(prev);
+      if (isAlreadyLiked) next.delete(commentId); else next.add(commentId);
+      return next;
+    });
+    setCommentLikes(prev => ({ ...prev, [commentId]: (prev[commentId] || 0) + (isAlreadyLiked ? -1 : 1) }));
+    if (isAlreadyLiked) await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', currentUserId);
+    else await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: currentUserId });
   };
 
   const checkMention = async (val: string, cursor: number, type: 'comment' | 'reply', replyId?: string) => {
     const textBeforeCursor = val.slice(0, cursor);
     const mentionMatch = textBeforeCursor.match(/(?:\s|^)@([a-zA-Z0-9_ก-๙]*)$/);
-
     if (mentionMatch) {
       const query = mentionMatch[1];
       setMentionConfig({ show: true, query, type, replyId, cursor });
-      try {
-        let q = supabase.from('users').select('id, username, display_name, profile_img_url').neq('id', currentUserId).limit(5);
-        if (query.length > 0) { q = q.or(`username.ilike.%${query}%,display_name.ilike.%${query}%`); }
-        const { data } = await q;
-        setMentionResults(data || []);
-      } catch (e) { console.error(e); }
-    } else {
-      setMentionConfig(prev => ({ ...prev, show: false }));
-    }
+      const { data } = await supabase.from('users').select('id, username, display_name, profile_img_url').neq('id', currentUserId).ilike('display_name', `%${query}%`).limit(5);
+      setMentionResults(data || []);
+    } else setMentionConfig(prev => ({ ...prev, show: false }));
   };
 
   const insertMention = (user: any) => {
@@ -372,271 +230,145 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     const textBeforeCursor = contentText.slice(0, cursor);
     const textAfterCursor = contentText.slice(cursor);
     const lastAtPos = textBeforeCursor.lastIndexOf('@');
-    
     if (lastAtPos !== -1) {
-      const textBeforeMention = contentText.slice(0, lastAtPos);
-      const safeDisplayName = user.display_name.replace(/[\[\]\(\)]/g, ''); 
-      const newText = textBeforeMention + `@[${safeDisplayName}](${user.username}) ` + textAfterCursor;
-      if (type === 'comment') { setNewComment(newText); } else { setReplyContent(newText); }
+      const newText = contentText.slice(0, lastAtPos) + `@[${user.display_name.replace(/[\[\]\(\)]/g, '')}](${user.username}) ` + textAfterCursor;
+      if (type === 'comment') setNewComment(newText); else setReplyContent(newText);
     }
     setMentionConfig({ show: false, query: '', type: null, cursor: 0 });
   };
 
-  // ✅ Optimization: ใช้ useMemo เพื่อประหยัด CPU ในการประมวลผล Regex
-  const renderTextWithTags = useCallback((text: string) => {
+  const renderTextWithTags = useMemo(() => (text: string) => {
     if (!text) return null;
     const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|#[a-zA-Z0-9_ก-๙]+|https?:\/\/[^\s]+)/g;
     return text.split(regex).map((part, i) => {
       if (!part) return null;
       const mdMatch = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
-      if (mdMatch) return <Link key={i} href={`/profile/${mdMatch[2]}`} className="text-frog-600 font-semibold hover:underline">{mdMatch[1]}</Link>;
-      if (part.match(/^@[a-zA-Z0-9_]+$/)) return <Link key={i} href={`/profile/${part.slice(1)}`} className="text-frog-600 font-bold hover:underline">{part}</Link>;
-      if (part.startsWith('#')) return <span key={i} className="text-blue-500 font-bold hover:underline cursor-pointer transition-all">{part}</span>;
+      if (mdMatch) return <Link key={i} href={`/profile/${mdMatch[2]}`} className="text-frog-600 font-bold hover:underline">{mdMatch[1]}</Link>;
+      if (part.startsWith('#')) return <span key={i} className="text-blue-500 font-bold">{part}</span>;
       if (part.startsWith('http')) return <a key={i} href={part} target="_blank" className="text-blue-500 hover:underline">{part}</a>;
       return <span key={i}>{part}</span>;
     });
   }, []);
 
-  const renderComment = (c: Comment, isReply: boolean = false) => {
-    const isEditing = editingCommentId === c.id;
-    const canManageComment = c.author_id === currentUserId || post.author_id === currentUserId || profileOwnerId === currentUserId;
-    return (
-      <div key={c.id} className={`${isReply ? 'ml-10 mt-3' : 'mb-4 animate-in fade-in'}`}>
-        <div className="flex gap-3">
-          <Link href={`/profile/${c.author?.username}`} className="flex-shrink-0"><img src={c.author?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className={`${isReply ? 'w-7 h-7' : 'w-8 h-8'} rounded-full object-cover border border-gray-100 shadow-sm`} alt="" /></Link>
-          <div className="flex-1 min-w-0">
-            {isEditing ? (
-              <div className="space-y-2"><textarea value={editCommentContent} onChange={(e) => setEditCommentContent(e.target.value)} className="input-minimal w-full text-sm" rows={2} /><input type="text" value={editCommentImageUrl} onChange={(e) => setEditCommentImageUrl(e.target.value)} placeholder="URL รูป..." className="input-minimal w-full text-[10px]" /><div className="flex gap-2"><button onClick={() => handleUpdateComment(c.id)} className="btn-primary py-1 px-3 text-xs">บันทึก</button><button onClick={() => setEditingCommentId(null)} className="btn-secondary py-1 px-3 text-xs">ยกเลิก</button></div></div>
-            ) : (
-              <div className="bg-gray-100 rounded-2xl px-3 py-2 relative group border border-transparent hover:border-gray-200 transition-colors">
-                <div className="flex justify-between items-start gap-2"><p className="font-bold text-xs text-gray-900">{c.author?.display_name}</p>{canManageComment && (<div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">{c.author_id === currentUserId && (<button onClick={() => { setEditingCommentId(c.id); setEditCommentContent(c.content); setEditCommentImageUrl(c.image_url || ''); }} className="text-gray-400 hover:text-frog-600"><Edit2 size={12} /></button>)}<button onClick={() => handleDeleteComment(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={12} /></button></div>)}</div>
-                <p className="text-sm text-gray-800 leading-relaxed">{renderTextWithTags(c.content)}</p>
-                {c.image_url && <img src={c.image_url} loading="lazy" className="mt-2 rounded-xl max-h-60 object-cover cursor-pointer shadow-sm" onClick={() => setSelectedImage(c.image_url!)} alt="" />}
-                {(commentLikes[c.id] || 0) > 0 && (
-                  <div onClick={() => openCommentLikeModal(c.id)} className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1 cursor-pointer hover:bg-gray-50 transition hover:scale-110 active:scale-95">
-                    <Heart size={10} className="fill-red-500 text-red-500" />
-                    <span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="flex items-center gap-4 mt-1 ml-2">
-              <span className="text-[10px] text-gray-400">{getRelativeTime(c.created_at)}</span>
-              <button onClick={() => handleCommentLike(c.id)} className={`text-[10px] font-bold transition-colors ${likedComments.has(c.id) ? 'text-red-500' : 'text-gray-500 hover:text-red-500'}`}>ถูกใจ</button>
-              {!isReply && (
-                <button onClick={() => { 
-                  if (replyTo === c.id) { setReplyTo(null); setReplyContent(''); } 
-                  else { setReplyTo(c.id); setReplyContent(`@[${c.author?.display_name}](${c.author?.username}) `); }
-                  setReplyImageUrl(''); setShowReplyImageInput(false);
-                }} className="text-[10px] font-bold text-gray-500 hover:text-frog-600">ตอบกลับ</button>
-              )}
-            </div>
-            {replyTo === c.id && (
-              <div className="mt-3 animate-in slide-in-from-left-2 relative">
-                <div className="flex gap-2 relative">
-                  <div className="relative flex-1">
-                    <input 
-                      type="text" value={replyContent} 
-                      onChange={(e) => { setReplyContent(e.target.value); checkMention(e.target.value, e.target.selectionStart || 0, 'reply', c.id); }} 
-                      onKeyUp={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'reply', c.id)}
-                      onClick={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'reply', c.id)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (!mentionConfig.show) handleReply(c.id); } }}
-                      placeholder={`ตอบกลับคุณ ${c.author?.display_name.split(' ')[0]}...`} 
-                      className="input-minimal w-full text-xs py-1.5 pr-8" autoFocus 
-                    />
-                    {mentionConfig.show && mentionConfig.type === 'reply' && mentionConfig.replyId === c.id && mentionResults.length > 0 && (
-                      <div className="absolute z-20 left-0 bottom-full mb-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-                        {mentionResults.map(user => (<button key={user.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertMention(user)} className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 text-left transition border-b border-gray-50 last:border-0"><img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-6 h-6 rounded-full object-cover flex-shrink-0" /><div className="flex-1 min-w-0"><p className="text-xs font-semibold text-gray-900 truncate">{user.display_name}</p></div></button>))}
-                      </div>
-                    )}
-                    <button onClick={() => handleReply(c.id)} disabled={(!replyContent.trim() && !replyImageUrl.trim()) || isSubmitting} className="absolute right-2 top-1/2 -translate-y-1/2 text-frog-600 disabled:opacity-30"><Send size={14} /></button>
-                  </div>
-                  <button onClick={() => setShowReplyImageInput(!showReplyImageInput)} className={`p-1.5 rounded-lg transition ${showReplyImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400'}`}><ImageIcon size={16} /></button>
-                </div>
-                {showReplyImageInput && (<input type="text" value={replyImageUrl} onChange={(e) => setReplyImageUrl(e.target.value)} placeholder="ใส่ URL รูป..." className="mt-2 input-minimal w-full text-[10px] py-1" />)}
-              </div>
-            )}
-            {c.replies && c.replies.length > 0 && (<div className="space-y-1">{c.replies.map(reply => renderComment(reply, true))}</div>)}
-          </div>
-        </div>
-      </div>
-    );
+  const handleComment = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault(); if (!newComment.trim() && !commentImageUrl.trim() || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: newComment.trim(), image_url: commentImageUrl.trim() || null });
+      setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); loadComments(); setCommentCount(prev => prev + 1);
+    } finally { setIsSubmitting(false); }
+  };
+
+  const handleReply = async (parentCommentId: string) => {
+    if (!replyContent.trim() && !replyImageUrl.trim() || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: replyContent.trim(), parent_comment_id: parentCommentId, image_url: replyImageUrl.trim() || null });
+      setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); loadComments(); setCommentCount(prev => prev + 1);
+    } finally { setIsSubmitting(false); }
   };
 
   return (
     <div className="card-minimal border border-gray-100 shadow-sm relative">
+      {/* Header */}
       <div className="flex items-start gap-3 mb-4">
-        {post.author && (
-          <Link href={`/profile/${post.author.username}`} className="flex-shrink-0">
-            <img src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover border border-gray-50 shadow-sm" alt="" />
-          </Link>
-        )}
+        {post.author && <Link href={`/profile/${post.author.username}`} className="flex-shrink-0"><img src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-gray-50" alt="" /></Link>}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1 md:gap-2 flex-wrap">
-            {post.author && <Link href={`/profile/${post.author.username}`} className="font-black text-sm md:text-base hover:text-frog-600 transition-colors">{post.author.display_name}</Link>}
-            {post.mood && (<span className="text-xs md:text-sm text-gray-600 flex items-center gap-1"><span className="text-gray-400 text-[10px] uppercase font-bold">รู้สึก</span><span className="font-medium bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full border border-yellow-100">{post.mood}</span></span>)}
-            {post.activity && (<span className="text-xs md:text-sm text-gray-600 flex items-center gap-1"><span className="text-gray-400 text-[10px] uppercase font-bold">กำลัง</span><span className="font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-100">{post.activity}</span></span>)}
-            {post.author_id !== post.target_id && post.target && (<div className="flex items-center gap-1"><span className="text-gray-300">→</span><Link href={`/profile/${post.target.username}`} className="font-bold text-sm text-frog-600">{post.target.display_name}</Link></div>)}
+          <div className="flex items-center gap-1 flex-wrap">
+            {post.author && <Link href={`/profile/${post.author.username}`} className="font-black text-sm hover:text-frog-600">{post.author.display_name}</Link>}
+            {post.mood && <span className="text-[10px] bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-bold border border-yellow-100">รู้สึก {post.mood}</span>}
           </div>
-          <div className="flex items-center gap-2 mt-1">
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{getRelativeTime(post.created_at)}</p>
-            {post.location && (<span className="text-[10px] text-red-500 font-bold flex items-center gap-0.5 uppercase tracking-tight"><MapPin size={10} /> {post.location}</span>)}
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-[9px] text-gray-400 font-bold uppercase">{getRelativeTime(post.created_at)}</p>
+            {post.location && <span className="text-[9px] text-red-500 font-bold flex items-center gap-0.5 uppercase"><MapPin size={10} /> {post.location}</span>}
           </div>
         </div>
         {(canEditPost || canDeletePost) && (
           <div className="flex gap-1">
-            {canEditPost && (<button onClick={() => { setIsEditingPost(!isEditingPost); setEditContent(post.content || ''); setEditMood(post.mood || ''); setEditActivity(post.activity || ''); setEditLocation(post.location || ''); }} className={`p-2 transition-colors ${isEditingPost ? 'text-frog-600 bg-frog-50 rounded-xl' : 'text-gray-300 hover:text-frog-600'}`}><Edit2 size={16} /></button>)}
+            {canEditPost && <button onClick={() => setIsEditingPost(!isEditingPost)} className="p-2 text-gray-300 hover:text-frog-600 transition-colors"><Edit2 size={16} /></button>}
             {canDeletePost && <button onClick={() => onDelete?.(post.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>}
           </div>
         )}
       </div>
 
-      {isEditingPost ? (
-        <div className="mb-4 space-y-3 animate-in fade-in zoom-in-95 duration-200">
-          <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100 space-y-3 shadow-inner">
-            <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full bg-transparent border-none focus:ring-0 text-sm md:text-base text-gray-800 placeholder-gray-400 resize-none min-h-[100px]" placeholder="คุณกำลังคิดอะไรอยู่..." autoFocus />
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-               <div className="relative"><Smile size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" value={editMood} onChange={(e) => setEditMood(e.target.value)} placeholder="อารมณ์..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" /></div>
-               <div className="relative"><ActivityIcon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" value={editActivity} onChange={(e) => setEditActivity(e.target.value)} placeholder="กิจกรรม..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" /></div>
-               <div className="relative"><MapPin size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" value={editLocation} onChange={(e) => setEditLocation(e.target.value)} placeholder="สถานที่..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" /></div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={handleUpdatePost} disabled={!editContent.trim() || isUpdatingPost} className="flex-1 bg-slate-900 text-white font-black py-2.5 rounded-xl shadow-lg hover:bg-black transition active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 text-xs uppercase">{isUpdatingPost ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} className="text-green-400" />}ยืนยันการบันทึก</button>
-            <button onClick={() => setIsEditingPost(false)} className="px-4 py-2.5 bg-gray-100 text-gray-500 font-black rounded-xl hover:bg-gray-200 transition text-xs uppercase">ยกเลิก</button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="text-sm md:text-base text-gray-800 mb-4 whitespace-pre-wrap break-words leading-relaxed">{renderTextWithTags(post.content || '')}</div>
-          {renderEmbeds(post.content || '')}
-        </>
-      )}
+      {/* Content */}
+      <div className="text-sm text-gray-800 mb-4 whitespace-pre-wrap leading-relaxed">{renderTextWithTags(post.content || '')}</div>
 
-      {/* ✅ รูปภาพ Layout: 3 ภาพสวยขึ้น (2 บน 1 ล่างเต็มกว้าง) */}
+      {/* ✅ Layout รูปภาพ: 1, 2, 3 (2 บน 1 ล่าง), 4 */}
       {post.images && post.images.length > 0 && (
-        <div className={`grid gap-2 mb-4 ${
-          post.images.length === 1 ? 'grid-cols-1' : 
-          post.images.length === 2 ? 'grid-cols-2' : 
-          'grid-cols-2'
-        }`}>
+        <div className={`grid gap-2 mb-4 ${post.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {post.images.map((img, i) => (
-            <div 
-              key={i} 
-              className={`relative overflow-hidden rounded-2xl bg-gray-50 border border-gray-100 ${
-                post.images!.length === 3 && i === 2 ? 'col-span-2 aspect-[16/9]' : 'aspect-[4/3]'
-              }`}
-            >
-              <img src={img} className="w-full h-full object-cover cursor-pointer hover:scale-105 transition duration-500" onClick={() => setSelectedImage(img)} loading="lazy" alt="" />
+            <div key={i} className={`relative overflow-hidden rounded-2xl bg-gray-50 border border-gray-100 cursor-pointer hover:opacity-95 transition-all ${
+              post.images!.length === 3 && i === 2 ? 'col-span-2 aspect-[16/8]' : 'aspect-[4/3]'
+            }`} onClick={() => setSelectedImage(img)}>
+              <img src={img} className="w-full h-full object-cover" loading="lazy" alt="" />
             </div>
           ))}
         </div>
       )}
 
-      <div className="flex items-center gap-6 pt-4 border-t border-gray-50">
-        <div className="flex items-center gap-1.5 group/like">
-          <button onClick={handleLike} className={`transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}><Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} /></button>
-          <button onClick={openLikeModal} className="text-xs font-black text-gray-500 hover:underline">{likeCount}</button>
-        </div>
-        <button onClick={() => setShowComments(!showComments)} className={`flex items-center gap-2 transition-colors ${showComments ? 'text-frog-600' : 'text-gray-400 hover:text-frog-600'}`}><MessageCircle className="w-5 h-5" /><span className="text-xs font-black">{commentCount}</span></button>
+      {/* Actions */}
+      <div className="flex items-center gap-6 pt-3 border-t border-gray-50">
+        <div className="flex items-center gap-1.5"><button onClick={handleLike} className={`transition-all active:scale-75 ${isLiked ? 'text-red-500' : 'text-gray-400'}`}><Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} /></button><button onClick={() => { setLikedUsers([]); setShowLikeModal(true); fetchLikedUsers(0, true); }} className="text-xs font-black text-gray-500 hover:underline">{likeCount}</button></div>
+        <button onClick={() => setShowComments(!showComments)} className={`flex items-center gap-2 text-xs font-black transition-colors ${showComments ? 'text-frog-600' : 'text-gray-400'}`}><MessageCircle className="w-5 h-5" /> {commentCount}</button>
       </div>
 
+      {/* Comments Section */}
       {showComments && (
         <div className="mt-4 pt-4 border-t border-gray-50 space-y-4 animate-in fade-in duration-300">
           <form onSubmit={handleComment} className="space-y-2">
             <div className="flex gap-2 relative">
               <div className="relative flex-1">
-                <input 
-                  type="text" 
-                  value={newComment} 
-                  onChange={(e) => { setNewComment(e.target.value); checkMention(e.target.value, e.target.selectionStart || 0, 'comment'); }} 
-                  onKeyUp={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'comment')}
-                  onClick={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'comment')}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && mentionConfig.show) e.preventDefault(); }}
-                  placeholder="เขียนความคิดเห็น (พิมพ์ @ เพื่อแท็ก)..." 
-                  className="input-minimal w-full text-sm py-2 px-4 shadow-inner" 
-                  disabled={isSubmitting} 
-                />
+                <input type="text" value={newComment} onChange={(e) => { setNewComment(e.target.value); checkMention(e.target.value, e.target.selectionStart || 0, 'comment'); }} onKeyDown={(e) => e.key === 'Enter' && mentionConfig.show && e.preventDefault()} placeholder="เขียนความคิดเห็น..." className="input-minimal w-full text-sm py-2 px-4 bg-gray-50 border-gray-100 rounded-xl outline-none" disabled={isSubmitting} />
                 {mentionConfig.show && mentionConfig.type === 'comment' && mentionResults.length > 0 && (
-                  <div className="absolute z-20 left-0 bottom-full mb-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-                    {mentionResults.map(user => (<button key={user.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertMention(user)} className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 text-left transition border-b border-gray-50 last:border-0"><img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover flex-shrink-0" /><div className="flex-1 min-w-0"><p className="text-sm font-semibold text-gray-900 truncate">{user.display_name}</p><p className="text-xs text-gray-500 truncate">@{user.username}</p></div></button>))}
+                  <div className="absolute z-20 left-0 bottom-full mb-1 w-full bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden max-h-40 overflow-y-auto">
+                    {mentionResults.map(user => (<button key={user.id} type="button" onMouseDown={e => e.preventDefault()} onClick={() => insertMention(user)} className="w-full flex items-center gap-2 p-2 hover:bg-gray-50 text-left transition"><img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-6 h-6 rounded-full" /><p className="text-xs font-bold truncate">{user.display_name}</p></button>))}
                   </div>
                 )}
               </div>
-              <button type="button" onClick={() => setShowCommentImageInput(!showCommentImageInput)} className={`p-2 rounded-xl transition ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400'}`}><ImageIcon size={20} /></button>
-              <button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2.5 bg-frog-500 text-white rounded-xl disabled:opacity-50 shadow-sm hover:bg-frog-600 transition-all"><Send size={18} /></button>
+              <button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2 bg-frog-500 text-white rounded-xl hover:bg-frog-600 transition-all"><Send size={18} /></button>
             </div>
-            {showCommentImageInput && (<input type="text" value={commentImageUrl} onChange={(e) => setCommentImageUrl(e.target.value)} placeholder="ใส่ URL รูปภาพ..." className="input-minimal w-full text-xs py-1.5 animate-in slide-in-from-top-1" />)}
           </form>
-          <div className="space-y-2 max-h-[500px] overflow-y-auto no-scrollbar pr-1">{comments.length === 0 ? (<div className="text-center py-6"><p className="text-gray-300 text-xs font-bold uppercase tracking-widest italic">No comments yet</p></div>) : (comments.map(c => renderComment(c)))}</div>
-        </div>
-      )}
-
-      {showLikeModal && (
-        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowLikeModal(false)}>
-          <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50"><h3 className="font-black text-gray-900 flex items-center gap-2 uppercase tracking-widest text-[10px]"><Heart size={14} className="text-red-500 fill-current" /> คนที่กดถูกใจ</h3><button onClick={() => setShowLikeModal(false)} className="p-1.5 hover:bg-white rounded-full transition shadow-sm"><X size={18} /></button></div>
-            <div className="flex-1 overflow-y-auto no-scrollbar p-2">
-              {likedUsers.length === 0 && !isLoadingLikes ? (<div className="py-10 text-center text-gray-400 italic text-sm">ยังไม่มีคนกดถูกใจ</div>) : (
-                <div className="space-y-1">
-                  {likedUsers.map((user, idx) => (<Link key={`${user.id}-${idx}`} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors group"><img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" /><div className="flex-1 min-w-0"><p className="font-bold text-sm text-gray-900 truncate">{user.display_name}</p><p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{user.username}</p></div><ChevronRight size={14} className="text-gray-300 group-hover:text-indigo-500 transition-colors" /></Link>))}
-                  <div ref={lastLikeRef} className="h-4 w-full flex justify-center py-6">{isLoadingLikes && <Loader2 size={20} className="animate-spin text-frog-500" />}</div>
+          <div className="space-y-3">
+            {comments.map(c => (
+              <div key={c.id} className="flex gap-3">
+                <img src={c.author?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" alt="" />
+                <div className="flex-1">
+                  <div className="bg-gray-100 rounded-2xl px-3 py-2 inline-block relative group">
+                    <p className="font-bold text-[11px] text-gray-900">{c.author?.display_name}</p>
+                    <p className="text-sm text-gray-800">{renderTextWithTags(c.content)}</p>
+                    {c.image_url && <img src={c.image_url} className="mt-2 rounded-lg max-h-40 object-cover" alt="" />}
+                  </div>
+                  <div className="flex items-center gap-4 mt-1 ml-2 text-[10px] font-bold text-gray-400">
+                    <span>{getRelativeTime(c.created_at)}</span>
+                    <button onClick={() => handleCommentLike(c.id)} className={likedComments.has(c.id) ? 'text-red-500' : ''}>ถูกใจ</button>
+                    {!c.parent_comment_id && <button onClick={() => { setReplyTo(c.id); setReplyContent(`@[${c.author?.display_name}](${c.author?.username}) `); }}>ตอบกลับ</button>}
+                  </div>
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {showCommentLikeModal && (
-        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowCommentLikeModal(false)}>
-          <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-              <h3 className="font-black text-gray-900 flex items-center gap-2 uppercase tracking-widest text-[10px]">
-                <Heart size={14} className="text-red-500 fill-current" /> คนที่ถูกใจคอมเมนต์นี้
-              </h3>
-              <button onClick={() => setShowCommentLikeModal(false)} className="p-1.5 hover:bg-white rounded-full transition shadow-sm"><X size={18} /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto no-scrollbar p-2">
-              {isLoadingCommentLikes ? (
-                <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-frog-500" /></div>
-              ) : commentLikedUsers.length === 0 ? (
-                <div className="py-10 text-center text-gray-400 italic text-sm">ยังไม่มีคนกดถูกใจ</div>
-              ) : (
-                <div className="space-y-1">
-                  {commentLikedUsers.map((user, idx) => (
-                    <Link key={`${user.id}-${idx}`} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors group">
-                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm text-gray-900 truncate">{user.display_name}</p>
-                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{user.username}</p>
-                      </div>
-                      <ChevronRight size={14} className="text-gray-300 group-hover:text-indigo-500 transition-colors" />
-                    </Link>
-                  ))}
-                </div>
-              )}
+      {/* Modals */}
+      {showLikeModal && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowLikeModal(false)}>
+          <div className="bg-white w-full max-w-xs rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[60vh]" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b flex items-center justify-between"><h3 className="font-black text-xs uppercase tracking-widest">คนที่ถูกใจ</h3><button onClick={() => setShowLikeModal(false)}><X size={18} /></button></div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {likedUsers.map((u, i) => (<Link key={i} href={`/profile/${u.username}`} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-xl transition-colors"><img src={u.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full" /><div><p className="text-xs font-bold">{u.display_name}</p><p className="text-[9px] text-gray-400">@{u.username}</p></div></Link>))}
+              <div ref={lastLikeRef} className="h-4 w-full" />
             </div>
           </div>
         </div>
       )}
 
       {selectedImage && (
-        <div className="fixed inset-0 bg-black/95 z-[120] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedImage(null)}>
-          <button className="absolute top-6 right-6 text-white hover:scale-110 transition"><X size={32} /></button>
-          <img src={selectedImage} className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" alt="" />
+        <div className="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center p-4" onClick={() => setSelectedImage(null)}>
+          <img src={selectedImage} className="max-w-full max-h-full rounded-lg shadow-2xl" alt="" />
         </div>
       )}
     </div>
   );
-
-  function renderEmbeds(text: string) {
-    const urls = text.match(/(https?:\/\/[^\s]+)/g);
-    if (!urls) return null;
-    const ytMatch = urls[0].match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
-    if (ytMatch && ytMatch[2].length === 11) {
-      return (<div className="mb-4 rounded-2xl overflow-hidden relative pt-[56.25%] w-full shadow-lg border border-gray-100"><iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube.com/embed/${ytMatch[2]}`} allowFullScreen></iframe></div>);
-    }
-    return <LinkPreview url={urls[0]} />;
-  }
 }
