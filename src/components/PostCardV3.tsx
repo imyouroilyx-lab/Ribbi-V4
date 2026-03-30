@@ -295,8 +295,9 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     } catch (error) { console.error(error); loadCommentLikes(); }
   };
 
-  const handleComment = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!newComment.trim() && !commentImageUrl.trim() || isSubmitting) return;
+  const handleComment = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault(); 
+    if (!newComment.trim() && !commentImageUrl.trim() || isSubmitting) return;
     setIsSubmitting(true);
     try {
       const { error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: newComment.trim(), image_url: commentImageUrl.trim() || null });
@@ -331,8 +332,13 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|#[a-zA-Z0-9_ก-๙]+|https?:\/\/[^\s]+)/g;
     return text.split(regex).map((part, i) => {
       if (!part) return null;
+      
       const mdMatch = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
       if (mdMatch) return <Link key={i} href={`/profile/${mdMatch[2]}`} className="text-frog-600 font-semibold hover:underline">{mdMatch[1]}</Link>;
+      
+      // ✅ แปลง @username ธรรมดาให้เป็นลิงก์คลิกได้
+      if (part.match(/^@[a-zA-Z0-9_]+$/)) return <Link key={i} href={`/profile/${part.slice(1)}`} className="text-frog-600 font-bold hover:underline">{part}</Link>;
+      
       if (part.startsWith('#')) return <span key={i} className="text-blue-500 font-bold hover:underline cursor-pointer transition-all">{part}</span>;
       if (part.startsWith('http')) return <a key={i} href={part} target="_blank" className="text-blue-500 hover:underline">{part}</a>;
       return <span key={i}>{part}</span>;
@@ -357,8 +363,52 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                 {(commentLikes[c.id] || 0) > 0 && <div className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1"><Heart size={10} className="fill-red-500 text-red-500" /><span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span></div>}
               </div>
             )}
-            <div className="flex items-center gap-4 mt-1 ml-2"><span className="text-[10px] text-gray-400">{getRelativeTime(c.created_at)}</span><button onClick={() => handleCommentLike(c.id)} className={`text-[10px] font-bold transition-colors ${likedComments.has(c.id) ? 'text-red-500' : 'text-gray-500 hover:text-red-500'}`}>ถูกใจ</button>{!isReply && (<button onClick={() => { setReplyTo(replyTo === c.id ? null : c.id); setReplyContent(''); setReplyImageUrl(''); }} className="text-[10px] font-bold text-gray-500 hover:text-frog-600">ตอบกลับ</button>)}</div>
-            {replyTo === c.id && (<div className="mt-3 animate-in slide-in-from-left-2"><div className="flex gap-2"><div className="relative flex-1"><input type="text" value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder={`ตอบกลับคุณ ${c.author?.display_name.split(' ')[0]}...`} className="input-minimal w-full text-xs py-1.5 pr-8" autoFocus /><button onClick={() => handleReply(c.id)} disabled={(!replyContent.trim() && !replyImageUrl.trim()) || isSubmitting} className="absolute right-2 top-1/2 -translate-y-1/2 text-frog-600 disabled:opacity-30"><Send size={14} /></button></div><button onClick={() => setShowReplyImageInput(!showReplyImageInput)} className={`p-1.5 rounded-lg transition ${showReplyImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400'}`}><ImageIcon size={16} /></button></div>{showReplyImageInput && (<input type="text" value={replyImageUrl} onChange={(e) => setReplyImageUrl(e.target.value)} placeholder="ใส่ URL รูป..." className="mt-2 input-minimal w-full text-[10px] py-1" />)}</div>)}
+            <div className="flex items-center gap-4 mt-1 ml-2">
+              <span className="text-[10px] text-gray-400">{getRelativeTime(c.created_at)}</span>
+              <button onClick={() => handleCommentLike(c.id)} className={`text-[10px] font-bold transition-colors ${likedComments.has(c.id) ? 'text-red-500' : 'text-gray-500 hover:text-red-500'}`}>ถูกใจ</button>
+              
+              {!isReply && (
+                // ✅ แก้ไข: เติม @username ให้ในช่องตอบกลับ
+                <button onClick={() => { 
+                  if (replyTo === c.id) {
+                    setReplyTo(null);
+                    setReplyContent('');
+                  } else {
+                    setReplyTo(c.id);
+                    setReplyContent(`@${c.author?.username} `); // เติมชื่อแล้วเว้นวรรค 1 ที
+                  }
+                  setReplyImageUrl(''); 
+                }} className="text-[10px] font-bold text-gray-500 hover:text-frog-600">ตอบกลับ</button>
+              )}
+            </div>
+
+            {replyTo === c.id && (
+              <div className="mt-3 animate-in slide-in-from-left-2">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input 
+                      type="text" 
+                      value={replyContent} 
+                      onChange={(e) => setReplyContent(e.target.value)} 
+                      // ✅ เพิ่ม: กด Enter เพื่อส่งตอบกลับ
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleReply(c.id);
+                        }
+                      }}
+                      placeholder={`ตอบกลับคุณ ${c.author?.display_name.split(' ')[0]}...`} 
+                      className="input-minimal w-full text-xs py-1.5 pr-8" 
+                      autoFocus 
+                    />
+                    <button onClick={() => handleReply(c.id)} disabled={(!replyContent.trim() && !replyImageUrl.trim()) || isSubmitting} className="absolute right-2 top-1/2 -translate-y-1/2 text-frog-600 disabled:opacity-30"><Send size={14} /></button>
+                  </div>
+                  <button onClick={() => setShowReplyImageInput(!showReplyImageInput)} className={`p-1.5 rounded-lg transition ${showReplyImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400'}`}><ImageIcon size={16} /></button>
+                </div>
+                {showReplyImageInput && (<input type="text" value={replyImageUrl} onChange={(e) => setReplyImageUrl(e.target.value)} placeholder="ใส่ URL รูป..." className="mt-2 input-minimal w-full text-[10px] py-1" />)}
+              </div>
+            )}
+
             {c.replies && c.replies.length > 0 && (<div className="space-y-1">{c.replies.map(reply => renderComment(reply, true))}</div>)}
           </div>
         </div>
@@ -405,15 +455,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             </div>
           </div>
           <div className="flex gap-2">
-            {/* ✅ เปลี่ยนเป็นสี Slate-900 (ดำเข้ม) เพื่อความชัดเจน */}
-            <button 
-              onClick={handleUpdatePost} 
-              disabled={!editContent.trim() || isUpdatingPost} 
-              className="flex-1 bg-slate-900 text-white font-black py-2.5 rounded-xl shadow-lg hover:bg-black transition active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 text-xs uppercase"
-            >
-              {isUpdatingPost ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} className="text-green-400" />}
-              ยืนยันการบันทึก
-            </button>
+            <button onClick={handleUpdatePost} disabled={!editContent.trim() || isUpdatingPost} className="flex-1 bg-slate-900 text-white font-black py-2.5 rounded-xl shadow-lg hover:bg-black transition active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 text-xs uppercase">{isUpdatingPost ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} className="text-green-400" />}ยืนยันการบันทึก</button>
             <button onClick={() => setIsEditingPost(false)} className="px-4 py-2.5 bg-gray-100 text-gray-500 font-black rounded-xl hover:bg-gray-200 transition text-xs uppercase">ยกเลิก</button>
           </div>
         </div>
@@ -445,7 +487,18 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       {showComments && (
         <div className="mt-4 pt-4 border-t border-gray-50 space-y-4 animate-in fade-in duration-300">
           <form onSubmit={handleComment} className="space-y-2">
-            <div className="flex gap-2"><input type="text" value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="เขียนความคิดเห็นของคุณ..." className="input-minimal flex-1 text-sm py-2 px-4 shadow-inner" disabled={isSubmitting} /><button type="button" onClick={() => setShowCommentImageInput(!showCommentImageInput)} className={`p-2 rounded-xl transition ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400'}`}><ImageIcon size={20} /></button><button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2.5 bg-frog-500 text-white rounded-xl disabled:opacity-50 shadow-sm hover:bg-frog-600 transition-all"><Send size={18} /></button></div>
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                value={newComment} 
+                onChange={(e) => setNewComment(e.target.value)} 
+                placeholder="เขียนความคิดเห็นของคุณ..." 
+                className="input-minimal flex-1 text-sm py-2 px-4 shadow-inner" 
+                disabled={isSubmitting} 
+              />
+              <button type="button" onClick={() => setShowCommentImageInput(!showCommentImageInput)} className={`p-2 rounded-xl transition ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400'}`}><ImageIcon size={20} /></button>
+              <button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2.5 bg-frog-500 text-white rounded-xl disabled:opacity-50 shadow-sm hover:bg-frog-600 transition-all"><Send size={18} /></button>
+            </div>
             {showCommentImageInput && (<input type="text" value={commentImageUrl} onChange={(e) => setCommentImageUrl(e.target.value)} placeholder="ใส่ URL รูปภาพ..." className="input-minimal w-full text-xs py-1.5 animate-in slide-in-from-top-1" />)}
           </form>
           <div className="space-y-2 max-h-[500px] overflow-y-auto no-scrollbar pr-1">{comments.length === 0 ? (<div className="text-center py-6"><p className="text-gray-300 text-xs font-bold uppercase tracking-widest italic">No comments yet</p></div>) : (comments.map(c => renderComment(c)))}</div>
