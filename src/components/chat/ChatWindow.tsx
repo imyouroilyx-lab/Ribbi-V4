@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, MoreVertical, Trash2, Palette, Pencil, X, Check, MessageCircle } from 'lucide-react';
+import { ArrowLeft, MoreVertical, Trash2, Palette, Pencil, X, Check, MessageCircle, Loader2 } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import TypingIndicator from './TypingIndicator';
@@ -39,12 +39,16 @@ const PRESET_COLORS = [
   '#6366f1', '#64748b',
 ];
 
+const MESSAGE_LIMIT = 30;
+
 export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats }: ChatWindowProps) {
   const router = useRouter();
   const [isGroup, setIsGroup] = useState<boolean | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [otherUser, setTargetUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -58,7 +62,9 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
   const [isSavingNickname, setIsSavingNickname] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
+  const isInitialLoad = useRef(true);
 
   useEffect(() => {
     loadChatData();
@@ -68,7 +74,10 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
   }, [chatId]);
 
   useEffect(() => {
-    scrollToBottom();
+    if (isInitialLoad.current && messages.length > 0) {
+      scrollToBottom('auto');
+      isInitialLoad.current = false;
+    }
   }, [messages]);
 
   const loadChatData = async () => {
@@ -106,23 +115,25 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
 
       await loadNicknames();
 
-      // แก้ไข: ดึงข้อความมาทั้งหมด (รวมอันที่ถูกลบ) เพื่อเลี่ยงบัค NULL ใน Supabase
+      // Load initial messages
       const { data: messagesData } = await supabase
         .from('messages')
         .select('id, sender_id, content, images, created_at, updated_at, deleted_by, event')
         .eq('chat_id', chatId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .limit(MESSAGE_LIMIT);
 
       if (messagesData) {
-        // กรองข้อความที่ถูกลบโดย User คนนี้ออกด้วย JavaScript
         const visibleMessages = messagesData.filter(m => !(m.deleted_by || []).includes(currentUser.id));
+        setHasMore(messagesData.length === MESSAGE_LIMIT);
         
-        const senderIds = [...new Set(visibleMessages.filter(m => !m.event && m.sender_id).map(m => m.sender_id))];
+        const reversed = [...visibleMessages].reverse();
+        const senderIds = [...new Set(reversed.filter(m => !m.event && m.sender_id).map(m => m.sender_id))];
         const { data: sendersData } = senderIds.length > 0
           ? await supabase.from('users').select('id, username, display_name, profile_img_url').in('id', senderIds)
           : { data: [] };
 
-        setMessages(visibleMessages.map(msg => ({
+        setMessages(reversed.map(msg => ({
           ...msg,
           sender: sendersData?.find(s => s.id === msg.sender_id) || null
         })) as any);
@@ -131,6 +142,61 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
       console.error('Error loading chat:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMoreMessages = async () => {
+    if (isLoadingMore || !hasMore || messages.length === 0) return;
+    
+    setIsLoadingMore(true);
+    const oldestMessageDate = messages[0].created_at;
+    const scrollContainer = scrollContainerRef.current;
+    const previousHeight = scrollContainer?.scrollHeight || 0;
+
+    try {
+      const { data: olderMessages } = await supabase
+        .from('messages')
+        .select('id, sender_id, content, images, created_at, updated_at, deleted_by, event')
+        .eq('chat_id', chatId)
+        .lt('created_at', oldestMessageDate)
+        .order('created_at', { ascending: false })
+        .limit(MESSAGE_LIMIT);
+
+      if (olderMessages && olderMessages.length > 0) {
+        setHasMore(olderMessages.length === MESSAGE_LIMIT);
+        const visibleOlder = olderMessages.filter(m => !(m.deleted_by || []).includes(currentUser.id));
+        
+        const senderIds = [...new Set(visibleOlder.filter(m => !m.event && m.sender_id).map(m => m.sender_id))];
+        const { data: sendersData } = senderIds.length > 0
+          ? await supabase.from('users').select('id, username, display_name, profile_img_url').in('id', senderIds)
+          : { data: [] };
+
+        const formattedOlder = [...visibleOlder].reverse().map(msg => ({
+          ...msg,
+          sender: sendersData?.find(s => s.id === msg.sender_id) || null
+        }));
+
+        setMessages(prev => [...formattedOlder as any, ...prev]);
+
+        // Restore scroll position
+        setTimeout(() => {
+          if (scrollContainer) {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight - previousHeight;
+          }
+        }, 0);
+      } else {
+        setHasMore(false);
+      }
+    } catch (error) {
+      console.error('Error loading more messages:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop === 0 && hasMore && !isLoadingMore) {
+      loadMoreMessages();
     }
   };
 
@@ -229,8 +295,10 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
     return () => { void supabase.removeChannel(channel); };
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior });
+    }, 100);
   };
 
   const saveThemeColor = async (color: string) => {
@@ -451,8 +519,18 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 relative">
-        {messages.length === 0 ? (
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 space-y-4 relative"
+      >
+        {isLoadingMore && (
+          <div className="flex justify-center py-2 sticky top-0 z-10">
+            <Loader2 className="w-5 h-5 animate-spin" style={{ color: themeColor }} />
+          </div>
+        )}
+
+        {messages.length === 0 && !isLoadingMore ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <MessageCircle className="w-16 h-16 mb-4 opacity-30" />
             <p className="font-medium text-lg text-gray-500">ยังไม่มีข้อความ</p>
