@@ -33,7 +33,6 @@ interface ChatWindowProps {
   onRefreshChats: () => void;
 }
 
-// ✅ เพิ่มฟังก์ชันเล่นเสียงที่ขาดหายไป
 const playNotificationSound = () => {
   try {
     const audio = new Audio('/sounds/ribbi.wav');
@@ -79,7 +78,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
   
-  // Ref สำหรับเก็บข้อมูลที่ Real-time ต้องใช้โดยไม่ต้องยิง Database ซ้ำ
   const currentUserRef = useRef(currentUser);
   const otherUserRef = useRef<any>(null);
   const isInitialLoad = useRef(true);
@@ -111,11 +109,12 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
 
   const loadChatData = async () => {
     try {
-      // Parallel Fetching เพื่อความรวดเร็ว
-      const [chatRes, participantRes, nicknamesRes] = await Promise.all([
+      // ✅ Optimize 1: ใช้ Foreign Key Join ดึงข้อมูล user ใน Query เดียว
+      const [chatRes, participantRes, nicknamesRes, messagesRes] = await Promise.all([
         supabase.from('chats').select('theme_color, is_group').eq('id', chatId).single(),
-        supabase.from('chat_participants').select('user_id').eq('chat_id', chatId).neq('user_id', currentUser.id).maybeSingle(),
-        supabase.from('chat_nicknames').select('target_user_id, nickname').eq('chat_id', chatId)
+        supabase.from('chat_participants').select('user_id, users(id, username, display_name, profile_img_url, is_online)').eq('chat_id', chatId).neq('user_id', currentUser.id).maybeSingle(),
+        supabase.from('chat_nicknames').select('target_user_id, nickname').eq('chat_id', chatId),
+        supabase.from('messages').select('id, sender_id, content, images, created_at, updated_at, deleted_by, event').eq('chat_id', chatId).order('created_at', { ascending: false }).limit(MESSAGE_LIMIT)
       ]);
 
       if (chatRes.data?.is_group) {
@@ -133,36 +132,29 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
         setNicknames(map);
       }
 
-      if (participantRes.data) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('id, username, display_name, profile_img_url, is_online')
-          .eq('id', participantRes.data.user_id)
-          .single();
-        if (userData) {
-          setTargetUser(userData);
-          otherUserRef.current = userData;
-        }
+      // ดึงข้อมูล Target User ออกมาจาก Join Result
+      if (participantRes.data?.users) {
+        const userData = participantRes.data.users;
+        setTargetUser(userData);
+        otherUserRef.current = userData;
       }
 
-      const { data: messagesData } = await supabase
-        .from('messages')
-        .select('id, sender_id, content, images, created_at, updated_at, deleted_by, event')
-        .eq('chat_id', chatId)
-        .order('created_at', { ascending: false })
-        .limit(MESSAGE_LIMIT);
-
+      const messagesData = messagesRes.data;
       if (messagesData) {
-        const visibleMessages = messagesData.filter(m => !(m.deleted_by || []).includes(currentUser.id));
         setHasMore(messagesData.length === MESSAGE_LIMIT);
-        const reversed = [...visibleMessages].reverse();
         
-        const formatted = reversed.map(msg => ({
-          ...msg,
-          sender: msg.sender_id === currentUser.id ? currentUser : otherUserRef.current
-        }));
-
-        setMessages(formatted as any);
+        // ✅ Optimize 2: ยุบรวม Filter, Map, Reverse ใน Loop เดียวกันเพื่อความเร็ว
+        const formattedMessages = [];
+        for (let i = messagesData.length - 1; i >= 0; i--) {
+          const msg = messagesData[i];
+          if (!(msg.deleted_by || []).includes(currentUser.id)) {
+            formattedMessages.push({
+              ...msg,
+              sender: msg.sender_id === currentUser.id ? currentUser : otherUserRef.current
+            });
+          }
+        }
+        setMessages(formattedMessages as any);
       }
     } catch (error) {
       console.error('Error loading chat:', error);
@@ -189,11 +181,18 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
 
       if (olderMessages && olderMessages.length > 0) {
         setHasMore(olderMessages.length === MESSAGE_LIMIT);
-        const visibleOlder = olderMessages.filter(m => !(m.deleted_by || []).includes(currentUser.id));
-        const formattedOlder = [...visibleOlder].reverse().map(msg => ({
-          ...msg,
-          sender: msg.sender_id === currentUser.id ? currentUser : otherUserRef.current
-        }));
+        
+        // ✅ นำ Optimize 2 มาใช้กับการ Load More ด้วย
+        const formattedOlder = [];
+        for (let i = olderMessages.length - 1; i >= 0; i--) {
+          const msg = olderMessages[i];
+          if (!(msg.deleted_by || []).includes(currentUser.id)) {
+            formattedOlder.push({
+              ...msg,
+              sender: msg.sender_id === currentUser.id ? currentUser : otherUserRef.current
+            });
+          }
+        }
 
         setMessages(prev => [...formattedOlder as any, ...prev]);
 
@@ -259,7 +258,7 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
         
         if (newMessage.sender_id !== currentUserRef.current.id) {
           markAsRead();
-          playNotificationSound(); // ✅ เรียกใช้ฟังก์ชันที่เพิ่มเข้ามา
+          playNotificationSound();
         }
         scrollToBottom();
         onRefreshChats();
