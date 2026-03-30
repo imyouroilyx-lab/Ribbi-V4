@@ -99,7 +99,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [isLiked, setIsLiked] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // Edit Mode States
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [editContent, setEditContent] = useState(post.content || '');
   const [editMood, setEditMood] = useState(post.mood || '');
@@ -113,7 +112,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [likePage, setLikePage] = useState(0);
   const [hasMoreLikes, setHasMoreLikes] = useState(true);
 
-  // ✅ States สำหรับคนกดไลก์คอมเมนต์
   const [showCommentLikeModal, setShowCommentLikeModal] = useState(false);
   const [commentLikedUsers, setCommentLikedUsers] = useState<User[]>([]);
   const [isLoadingCommentLikes, setIsLoadingCommentLikes] = useState(false);
@@ -133,14 +131,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
-  // States สำหรับระบบ Mention (@)
-  const [mentionConfig, setMentionConfig] = useState<{
-    show: boolean;
-    query: string;
-    type: 'comment' | 'reply' | null;
-    replyId?: string;
-    cursor: number;
-  }>({ show: false, query: '', type: null, cursor: 0 });
+  const [mentionConfig, setMentionConfig] = useState<{ show: boolean; query: string; type: 'comment' | 'reply' | null; replyId?: string; cursor: number; }>({ show: false, query: '', type: null, cursor: 0 });
   const [mentionResults, setMentionResults] = useState<any[]>([]);
 
   const canDeletePost = post.author_id === currentUserId || profileOwnerId === currentUserId;
@@ -158,6 +149,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (node) likeObserver.current.observe(node);
   }, [isLoadingLikes, hasMoreLikes]);
 
+  // ✅ แก้ไข: เอา supabase.channel ออก เพื่อป้องกัน Disk IO Overload ในหน้าจอที่มีโพสต์เยอะๆ
   useEffect(() => {
     loadLikeCount();
     checkIfLiked();
@@ -167,23 +159,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       loadComments();
       loadCommentLikes();
     }
-
-    const channel = supabase
-      .channel(`post-updates-${post.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `post_id=eq.${post.id}` }, () => {
-        loadLikeCount();
-        if (showLikeModal) fetchLikedUsers(0, true);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `post_id=eq.${post.id}` }, () => {
-        loadComments();
-        loadCommentCount();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comment_likes' }, () => {
-        if (showComments) loadCommentLikes();
-      })
-      .subscribe();
-
-    return () => { void supabase.removeChannel(channel); };
   }, [post.id, showComments]);
 
   useEffect(() => {
@@ -233,15 +208,12 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         .select()
         .single();
 
-      if (error) {
-        alert("บันทึกไม่สำเร็จ: " + error.message);
-        throw error;
-      }
-      
+      if (error) throw error;
       setPost({ ...post, ...data });
       setIsEditingPost(false);
     } catch (error) {
       console.error('Error updating post:', error);
+      alert('ไม่สามารถบันทึกได้ กรุณาลองใหม่');
     } finally {
       setIsUpdatingPost(false);
     }
@@ -270,26 +242,17 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     } catch (error) { console.error(error); } finally { setIsLoadingLikes(false); }
   };
 
-  // ✅ ฟังก์ชันดึงข้อมูลคนกดไลก์คอมเมนต์
   const openCommentLikeModal = async (commentId: string) => {
     setCommentLikedUsers([]);
     setShowCommentLikeModal(true);
     setIsLoadingCommentLikes(true);
     try {
-      const { data } = await supabase
-        .from('comment_likes')
-        .select(`users (id, username, display_name, profile_img_url)` as any)
-        .eq('comment_id', commentId);
-        
+      const { data } = await supabase.from('comment_likes').select(`users (id, username, display_name, profile_img_url)` as any).eq('comment_id', commentId);
       if (data) {
         const users = (data as any[]).map(item => item.users).filter(Boolean);
         setCommentLikedUsers(users);
       }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsLoadingCommentLikes(false);
-    }
+    } catch (error) { console.error(error); } finally { setIsLoadingCommentLikes(false); }
   };
 
   const loadComments = async () => {
@@ -336,28 +299,16 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     const markdownMatches = Array.from(text.matchAll(/@\[.*?\]\((.*?)\)/g)).map(m => m[1]);
     const plainMatches = Array.from(text.matchAll(/(?:\s|^)@([a-zA-Z0-9_]+)/g)).map(m => m[1]);
     const usernames = [...new Set([...markdownMatches, ...plainMatches])];
-    
     if (usernames.length === 0) return;
-
     try {
       const { data: users } = await supabase.from('users').select('id, username').in('username', usernames);
       if (!users || users.length === 0) return;
-
       const usersToNotify = users.filter(u => u.id !== currentUserId);
       const notifications = usersToNotify.map(u => ({
-        receiver_id: u.id,
-        sender_id: currentUserId,
-        type: 'tag_comment',
-        post_id: post.id,
-        is_read: false
+        receiver_id: u.id, sender_id: currentUserId, type: 'tag_comment', post_id: post.id, is_read: false
       }));
-
-      if (notifications.length > 0) {
-        await supabase.from('notifications').insert(notifications);
-      }
-    } catch (error) {
-      console.error('Error notifying tagged users:', error);
-    }
+      if (notifications.length > 0) { await supabase.from('notifications').insert(notifications); }
+    } catch (error) { console.error(error); }
   };
 
   const handleComment = async (e?: React.FormEvent) => {
@@ -365,18 +316,11 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (!newComment.trim() && !commentImageUrl.trim() || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const { data, error } = await supabase.from('comments').insert({ 
-        post_id: post.id, 
-        author_id: currentUserId, 
-        content: newComment.trim(), 
-        image_url: commentImageUrl.trim() || null 
-      }).select().single();
-      
+      const { data, error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: newComment.trim(), image_url: commentImageUrl.trim() || null }).select().single();
       if (error) throw error;
-
       if (data) await notifyTaggedUsers(data.content, data.id); 
-
-      setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); loadComments();
+      setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); 
+      loadComments(); loadCommentCount();
       setMentionConfig({ show: false, query: '', type: null, cursor: 0 });
     } catch (error) { console.error(error); } finally { setIsSubmitting(false); }
   };
@@ -385,19 +329,11 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (!replyContent.trim() && !replyImageUrl.trim() || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const { data, error } = await supabase.from('comments').insert({ 
-        post_id: post.id, 
-        author_id: currentUserId, 
-        content: replyContent.trim(), 
-        parent_comment_id: parentCommentId, 
-        image_url: replyImageUrl.trim() || null 
-      }).select().single();
-
+      const { data, error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: replyContent.trim(), parent_comment_id: parentCommentId, image_url: replyImageUrl.trim() || null }).select().single();
       if (error) throw error;
-
       if (data) await notifyTaggedUsers(data.content, data.id);
-
-      setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false); loadComments();
+      setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false); 
+      loadComments(); loadCommentCount();
       setMentionConfig({ show: false, query: '', type: null, cursor: 0 });
     } catch (error) { console.error(error); } finally { setIsSubmitting(false); }
   };
@@ -420,17 +356,12 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (mentionMatch) {
       const query = mentionMatch[1];
       setMentionConfig({ show: true, query, type, replyId, cursor });
-      
       try {
         let q = supabase.from('users').select('id, username, display_name, profile_img_url').neq('id', currentUserId).limit(5);
-        if (query.length > 0) {
-          q = q.or(`username.ilike.%${query}%,display_name.ilike.%${query}%`);
-        }
+        if (query.length > 0) { q = q.or(`username.ilike.%${query}%,display_name.ilike.%${query}%`); }
         const { data } = await q;
         setMentionResults(data || []);
-      } catch (e) {
-        console.error(e);
-      }
+      } catch (e) { console.error(e); }
     } else {
       setMentionConfig(prev => ({ ...prev, show: false }));
     }
@@ -441,18 +372,13 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     const content = type === 'comment' ? newComment : replyContent;
     const textBeforeCursor = content.slice(0, cursor);
     const textAfterCursor = content.slice(cursor);
-    
     const lastAtPos = textBeforeCursor.lastIndexOf('@');
+    
     if (lastAtPos !== -1) {
       const textBeforeMention = content.slice(0, lastAtPos);
       const safeDisplayName = user.display_name.replace(/[\[\]\(\)]/g, ''); 
       const newText = textBeforeMention + `@[${safeDisplayName}](${user.username}) ` + textAfterCursor;
-      
-      if (type === 'comment') {
-        setNewComment(newText);
-      } else {
-        setReplyContent(newText);
-      }
+      if (type === 'comment') { setNewComment(newText); } else { setReplyContent(newText); }
     }
     setMentionConfig({ show: false, query: '', type: null, cursor: 0 });
   };
@@ -462,12 +388,9 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|#[a-zA-Z0-9_ก-๙]+|https?:\/\/[^\s]+)/g;
     return text.split(regex).map((part, i) => {
       if (!part) return null;
-      
       const mdMatch = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
       if (mdMatch) return <Link key={i} href={`/profile/${mdMatch[2]}`} className="text-frog-600 font-semibold hover:underline">{mdMatch[1]}</Link>;
-      
       if (part.match(/^@[a-zA-Z0-9_]+$/)) return <Link key={i} href={`/profile/${part.slice(1)}`} className="text-frog-600 font-bold hover:underline">{part}</Link>;
-      
       if (part.startsWith('#')) return <span key={i} className="text-blue-500 font-bold hover:underline cursor-pointer transition-all">{part}</span>;
       if (part.startsWith('http')) return <a key={i} href={part} target="_blank" className="text-blue-500 hover:underline">{part}</a>;
       return <span key={i}>{part}</span>;
@@ -489,13 +412,8 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                 <div className="flex justify-between items-start gap-2"><p className="font-bold text-xs text-gray-900">{c.author?.display_name}</p>{canManageComment && (<div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">{c.author_id === currentUserId && (<button onClick={() => { setEditingCommentId(c.id); setEditCommentContent(c.content); setEditCommentImageUrl(c.image_url || ''); }} className="text-gray-400 hover:text-frog-600"><Edit2 size={12} /></button>)}<button onClick={() => handleDeleteComment(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={12} /></button></div>)}</div>
                 <p className="text-sm text-gray-800 leading-relaxed">{renderTextWithTags(c.content)}</p>
                 {c.image_url && <img src={c.image_url} className="mt-2 rounded-xl max-h-60 object-cover cursor-pointer shadow-sm" onClick={() => setSelectedImage(c.image_url!)} alt="" />}
-                
-                {/* ✅ ตัวเลขถูกใจคอมเมนต์ - กดเพื่อดูคนไลก์ได้ */}
                 {(commentLikes[c.id] || 0) > 0 && (
-                  <div 
-                    onClick={() => openCommentLikeModal(c.id)}
-                    className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1 cursor-pointer hover:bg-gray-50 transition hover:scale-110 active:scale-95"
-                  >
+                  <div onClick={() => openCommentLikeModal(c.id)} className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1 cursor-pointer hover:bg-gray-50 transition hover:scale-110 active:scale-95">
                     <Heart size={10} className="fill-red-500 text-red-500" />
                     <span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span>
                   </div>
@@ -505,67 +423,32 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             <div className="flex items-center gap-4 mt-1 ml-2">
               <span className="text-[10px] text-gray-400">{getRelativeTime(c.created_at)}</span>
               <button onClick={() => handleCommentLike(c.id)} className={`text-[10px] font-bold transition-colors ${likedComments.has(c.id) ? 'text-red-500' : 'text-gray-500 hover:text-red-500'}`}>ถูกใจ</button>
-              
               {!isReply && (
                 <button onClick={() => { 
-                  if (replyTo === c.id) {
-                    setReplyTo(null);
-                    setReplyContent('');
-                  } else {
-                    setReplyTo(c.id);
-                    setReplyContent(`@[${c.author?.display_name}](${c.author?.username}) `); 
-                  }
-                  setReplyImageUrl(''); 
-                  setShowReplyImageInput(false);
+                  if (replyTo === c.id) { setReplyTo(null); setReplyContent(''); } 
+                  else { setReplyTo(c.id); setReplyContent(`@[${c.author?.display_name}](${c.author?.username}) `); }
+                  setReplyImageUrl(''); setShowReplyImageInput(false);
                 }} className="text-[10px] font-bold text-gray-500 hover:text-frog-600">ตอบกลับ</button>
               )}
             </div>
-
             {replyTo === c.id && (
               <div className="mt-3 animate-in slide-in-from-left-2 relative">
                 <div className="flex gap-2 relative">
                   <div className="relative flex-1">
                     <input 
-                      type="text" 
-                      value={replyContent} 
-                      onChange={(e) => {
-                        setReplyContent(e.target.value);
-                        checkMention(e.target.value, e.target.selectionStart || 0, 'reply', c.id);
-                      }} 
+                      type="text" value={replyContent} 
+                      onChange={(e) => { setReplyContent(e.target.value); checkMention(e.target.value, e.target.selectionStart || 0, 'reply', c.id); }} 
                       onKeyUp={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'reply', c.id)}
                       onClick={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'reply', c.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          if (!mentionConfig.show) {
-                            handleReply(c.id);
-                          }
-                        }
-                      }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (!mentionConfig.show) handleReply(c.id); } }}
                       placeholder={`ตอบกลับคุณ ${c.author?.display_name.split(' ')[0]}...`} 
-                      className="input-minimal w-full text-xs py-1.5 pr-8" 
-                      autoFocus 
+                      className="input-minimal w-full text-xs py-1.5 pr-8" autoFocus 
                     />
-                    
                     {mentionConfig.show && mentionConfig.type === 'reply' && mentionConfig.replyId === c.id && mentionResults.length > 0 && (
                       <div className="absolute z-20 left-0 bottom-full mb-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-                        {mentionResults.map(user => (
-                          <button
-                            key={user.id}
-                            type="button"
-                            onMouseDown={(e) => e.preventDefault()} 
-                            onClick={() => insertMention(user)}
-                            className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 text-left transition border-b border-gray-50 last:border-0"
-                          >
-                            <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold text-gray-900 truncate">{user.display_name}</p>
-                            </div>
-                          </button>
-                        ))}
+                        {mentionResults.map(user => (<button key={user.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertMention(user)} className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 text-left transition border-b border-gray-50 last:border-0"><img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-6 h-6 rounded-full object-cover flex-shrink-0" /><div className="flex-1 min-w-0"><p className="text-xs font-semibold text-gray-900 truncate">{user.display_name}</p></div></button>))}
                       </div>
                     )}
-
                     <button onClick={() => handleReply(c.id)} disabled={(!replyContent.trim() && !replyImageUrl.trim()) || isSubmitting} className="absolute right-2 top-1/2 -translate-y-1/2 text-frog-600 disabled:opacity-30"><Send size={14} /></button>
                   </div>
                   <button onClick={() => setShowReplyImageInput(!showReplyImageInput)} className={`p-1.5 rounded-lg transition ${showReplyImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400'}`}><ImageIcon size={16} /></button>
@@ -573,7 +456,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                 {showReplyImageInput && (<input type="text" value={replyImageUrl} onChange={(e) => setReplyImageUrl(e.target.value)} placeholder="ใส่ URL รูป..." className="mt-2 input-minimal w-full text-[10px] py-1" />)}
               </div>
             )}
-
             {c.replies && c.replies.length > 0 && (<div className="space-y-1">{c.replies.map(reply => renderComment(reply, true))}</div>)}
           </div>
         </div>
@@ -657,41 +539,20 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                 <input 
                   type="text" 
                   value={newComment} 
-                  onChange={(e) => {
-                    setNewComment(e.target.value);
-                    checkMention(e.target.value, e.target.selectionStart || 0, 'comment');
-                  }} 
+                  onChange={(e) => { setNewComment(e.target.value); checkMention(e.target.value, e.target.selectionStart || 0, 'comment'); }} 
                   onKeyUp={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'comment')}
                   onClick={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'comment')}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && mentionConfig.show) e.preventDefault(); 
-                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && mentionConfig.show) e.preventDefault(); }}
                   placeholder="เขียนความคิดเห็น (พิมพ์ @ เพื่อแท็ก)..." 
                   className="input-minimal w-full text-sm py-2 px-4 shadow-inner" 
                   disabled={isSubmitting} 
                 />
-                
                 {mentionConfig.show && mentionConfig.type === 'comment' && mentionResults.length > 0 && (
                   <div className="absolute z-20 left-0 bottom-full mb-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-                    {mentionResults.map(user => (
-                      <button
-                        key={user.id}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()} 
-                        onClick={() => insertMention(user)}
-                        className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 text-left transition border-b border-gray-50 last:border-0"
-                      >
-                        <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{user.display_name}</p>
-                          <p className="text-xs text-gray-500 truncate">@{user.username}</p>
-                        </div>
-                      </button>
-                    ))}
+                    {mentionResults.map(user => (<button key={user.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertMention(user)} className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 text-left transition border-b border-gray-50 last:border-0"><img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover flex-shrink-0" /><div className="flex-1 min-w-0"><p className="text-sm font-semibold text-gray-900 truncate">{user.display_name}</p><p className="text-xs text-gray-500 truncate">@{user.username}</p></div></button>))}
                   </div>
                 )}
               </div>
-              
               <button type="button" onClick={() => setShowCommentImageInput(!showCommentImageInput)} className={`p-2 rounded-xl transition ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400'}`}><ImageIcon size={20} /></button>
               <button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2.5 bg-frog-500 text-white rounded-xl disabled:opacity-50 shadow-sm hover:bg-frog-600 transition-all"><Send size={18} /></button>
             </div>
@@ -717,7 +578,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </div>
       )}
 
-      {/* ✅ Modal สำหรับดูคนกดไลก์คอมเมนต์ */}
       {showCommentLikeModal && (
         <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowCommentLikeModal(false)}>
           <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
