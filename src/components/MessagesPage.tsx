@@ -145,6 +145,7 @@ export default function MessagesPage() {
     if (!user) return;
 
     try {
+      // 1. ดึงข้อมูลแชททั้งหมดที่เข้าร่วม
       const { data: participantsData, error } = await supabase
         .from('chat_participants')
         .select(`
@@ -162,11 +163,21 @@ export default function MessagesPage() {
         setChats([]); setIsLoading(false); return;
       }
 
+      const chatIds = participantsData.map(p => p.chat_id);
       const lastMessageIds = participantsData.map(p => (p.chats as any)?.last_message_id).filter(Boolean) as string[];
-      const { data: lastMessagesData } = lastMessageIds.length > 0
-        ? await supabase.from('messages').select('id, deleted_by, event').in('id', lastMessageIds)
-        : { data: [] };
 
+      // ✅ 2. ยิง Database พร้อมกัน 3 ตัวในคราวเดียว เพื่อลดความหน่วง (Parallel Fetching)
+      const [lastMessagesRes, allParticipantsRes, nicknamesRes] = await Promise.all([
+        lastMessageIds.length > 0 ? supabase.from('messages').select('id, deleted_by, event').in('id', lastMessageIds) : Promise.resolve({ data: [] }),
+        chatIds.length > 0 ? supabase.from('chat_participants').select('chat_id, user_id').in('chat_id', chatIds) : Promise.resolve({ data: [] }),
+        chatIds.length > 0 ? supabase.from('chat_nicknames').select('chat_id, target_user_id, nickname').in('chat_id', chatIds) : Promise.resolve({ data: [] })
+      ]);
+
+      const lastMessagesData = lastMessagesRes.data;
+      const allParticipants = allParticipantsRes.data;
+      const nicknamesData = nicknamesRes.data;
+
+      // Map ข้อมูลเพื่อความรวดเร็วในการตรวจสอบ
       const deletedByMap: Record<string, string[]> = {};
       const eventMap: Record<string, string | null> = {};
       lastMessagesData?.forEach(msg => {
@@ -174,23 +185,13 @@ export default function MessagesPage() {
         eventMap[msg.id] = msg.event || null;
       });
 
-      const chatIds = participantsData.map(p => p.chat_id);
-
-      const { data: allParticipants } = await supabase
-        .from('chat_participants')
-        .select('chat_id, user_id')
-        .in('chat_id', chatIds);
-
+      // ✅ 3. ดึงข้อมูล User ในขั้นตอนสุดท้าย (หลังจากรู้ว่าใครอยู่แชทไหนบ้าง)
       const allUserIds = [...new Set(
         (allParticipants || []).map(p => p.user_id).filter(id => id !== user.id)
       )];
 
       const { data: usersData } = allUserIds.length > 0
         ? await supabase.from('users').select('id, username, display_name, profile_img_url, is_online').in('id', allUserIds)
-        : { data: [] };
-
-      const { data: nicknamesData } = chatIds.length > 0
-        ? await supabase.from('chat_nicknames').select('chat_id, target_user_id, nickname').in('chat_id', chatIds)
         : { data: [] };
 
       const result: Chat[] = [];
@@ -270,7 +271,6 @@ export default function MessagesPage() {
   if (!currentUser) return null;
 
   return (
-    // ✅ แก้ไขความสูงตรงนี้: ปรับจาก -120px เป็น -64px (หรือ -60px) เพื่อให้แนบชิดพอดีกับแถบ Navigation ด้านล่าง
     <div className="h-[calc(100dvh-64px)] md:h-[calc(100vh-64px)] w-full flex overflow-hidden bg-white">
       <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r border-gray-200 h-full flex-col`}>
         <ChatList
