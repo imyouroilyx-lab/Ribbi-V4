@@ -1,53 +1,44 @@
 import { supabase } from './supabase';
 
 /**
- * หาหรือสร้างแชทระหว่าง 2 คน
- * ใช้ได้ทั้งหน้าแชต, โปรไฟล์, ปุ่มส่งข้อความ
- * @param currentUserId - ID ของผู้ใช้ปัจจุบัน
- * @param targetUserId - ID ของคนที่ต้องการคุยด้วย
- * @returns chatId ของแชทที่มีอยู่หรือสร้างใหม่
+ * หาหรือสร้างแชทระหว่าง 2 คน (DM)
  */
 export async function getOrCreateChat(currentUserId: string, targetUserId: string): Promise<string | null> {
   try {
-    // 1. หาแชทที่มีอยู่แล้ว
-    const { data: currentUserChats } = await supabase
+    // 1. หาแชทที่มี User ทั้งคู่เป็นสมาชิก (DM ปกติจะมีแค่ 2 คน)
+    // เราหา chat_id ที่เรา (currentUserId) อยู่ก่อน
+    const { data: myChats } = await supabase
       .from('chat_participants')
       .select('chat_id')
       .eq('user_id', currentUserId);
 
-    const { data: targetUserChats } = await supabase
-      .from('chat_participants')
-      .select('chat_id')
-      .eq('user_id', targetUserId);
+    if (myChats && myChats.length > 0) {
+      const myChatIds = myChats.map(c => c.chat_id);
 
-    if (!currentUserChats || !targetUserChats) {
-      throw new Error('Failed to fetch chats');
+      // เช็กว่าในบรรดาแชทของฉัน มีแชทไหนที่มี targetUserId อยู่ด้วยไหม (และต้องเป็น DM)
+      const { data: existingParticipant } = await supabase
+        .from('chat_participants')
+        .select('chat_id, chats!inner(is_group)')
+        .in('chat_id', myChatIds)
+        .eq('user_id', targetUserId)
+        .eq('chats.is_group', false) // มั่นใจว่าเป็นแชทส่วนตัว ไม่ใช่กลุ่ม
+        .maybeSingle();
+
+      if (existingParticipant) {
+        return existingParticipant.chat_id;
+      }
     }
 
-    // หา chat_id ที่ซ้ำกัน (แชทที่มีทั้ง 2 คน)
-    const currentChatIds = currentUserChats.map(c => c.chat_id);
-    const targetChatIds = targetUserChats.map(c => c.chat_id);
-    const existingChatId = currentChatIds.find(id => targetChatIds.includes(id));
-
-    if (existingChatId) {
-      console.log('✅ Found existing chat:', existingChatId);
-      return existingChatId;
-    }
-
-    // 2. ไม่มีแชท - สร้างใหม่
-    console.log('🆕 Creating new chat');
-    
+    // 2. ถ้าไม่เจอ ให้สร้างแชทใหม่
     const { data: newChat, error: chatError } = await supabase
       .from('chats')
-      .insert({})
+      .insert({ is_group: false })
       .select()
       .single();
 
-    if (chatError || !newChat) {
-      throw new Error('Failed to create chat');
-    }
+    if (chatError || !newChat) throw new Error('Failed to create chat');
 
-    // เพิ่ม participants
+    // เพิ่มทั้งคู่เข้าไปในแชทใหม่
     const { error: participantsError } = await supabase
       .from('chat_participants')
       .insert([
@@ -55,11 +46,8 @@ export async function getOrCreateChat(currentUserId: string, targetUserId: strin
         { chat_id: newChat.id, user_id: targetUserId }
       ]);
 
-    if (participantsError) {
-      throw new Error('Failed to add participants');
-    }
+    if (participantsError) throw new Error('Failed to add participants');
 
-    console.log('✅ Created new chat:', newChat.id);
     return newChat.id;
 
   } catch (error) {
