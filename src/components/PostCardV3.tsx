@@ -25,6 +25,85 @@ interface PostCardProps {
   profileOwnerId?: string;
 }
 
+// ✅ เพิ่ม Component ย่อยสำหรับดึงหน้าปก Link (Link Preview)
+const LinkPreview = ({ url }: { url: string }) => {
+  const [preview, setPreview] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPreview = async () => {
+      try {
+        // ใช้ microlink API ฟรีในการดึงข้อมูล Open Graph (รูปปก, title, description)
+        const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
+        const json = await res.json();
+        if (isMounted && json.status === 'success') {
+          setPreview(json.data);
+        }
+      } catch (error) {
+        console.error('Error fetching link preview:', error);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+    fetchPreview();
+    return () => { isMounted = false; };
+  }, [url]);
+
+  if (loading) {
+    return (
+      <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden animate-pulse">
+        <div className="w-full h-40 md:h-56 bg-gray-200"></div>
+        <div className="p-3 md:p-4 space-y-3 bg-gray-50">
+          <div className="h-4 bg-gray-300 rounded w-3/4"></div>
+          <div className="h-3 bg-gray-300 rounded w-full"></div>
+          <div className="h-3 bg-gray-300 rounded w-5/6"></div>
+        </div>
+      </div>
+    );
+  }
+
+  // ถ้าระบบดึงข้อมูลไม่ได้ หรือไม่มีรูป/Title ให้แสดงแบบเก่า
+  if (!preview || (!preview.title && !preview.image)) {
+    try {
+      const domain = new URL(url).hostname;
+      return (
+        <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mb-4 flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition block">
+          <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Link2 className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-gray-900 truncate">{domain}</p>
+            <p className="text-xs text-gray-500 truncate">{url}</p>
+          </div>
+        </a>
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  const domain = new URL(url).hostname;
+  const imageUrl = preview.image?.url || preview.logo?.url;
+
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mb-4 block border border-gray-200 rounded-xl hover:shadow-md transition overflow-hidden bg-gray-50 group">
+      {imageUrl && (
+        <div className="w-full h-48 md:h-64 bg-gray-200 overflow-hidden border-b border-gray-200">
+          <img src={imageUrl} alt={preview.title || 'Link preview'} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
+        </div>
+      )}
+      <div className="p-3 md:p-4 flex flex-col justify-center min-w-0">
+         <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider font-semibold mb-1 truncate">{preview.publisher || domain}</p>
+         <p className="text-sm md:text-base font-bold text-gray-900 line-clamp-2 leading-snug group-hover:text-blue-600 transition">{preview.title || domain}</p>
+         {preview.description && (
+           <p className="text-xs md:text-sm text-gray-600 mt-1 line-clamp-2">{preview.description}</p>
+         )}
+      </div>
+    </a>
+  );
+};
+
 export default function PostCardV3({ post, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -256,26 +335,11 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         </div>
       );
     } else {
-      try {
-        const domain = new URL(firstUrl).hostname;
-        return (
-          <a href={firstUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mb-4 flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition block">
-            <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Link2 className="w-5 h-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-gray-900 truncate">{domain}</p>
-              <p className="text-xs text-gray-500 truncate">{firstUrl}</p>
-            </div>
-          </a>
-        );
-      } catch (e) {
-        return null;
-      }
+      // ✅ เรียกใช้ LinkPreview สำหรับ URL ทั่วไปที่ไม่ใช่ YouTube
+      return <LinkPreview url={firstUrl} />;
     }
   };
 
-  // ✅ ปรับปรุงให้รองรับ Hashtag สีฟ้า (#ข้อความ)
   const renderTextWithTags = (text: string) => {
     if (!text) return null;
     
