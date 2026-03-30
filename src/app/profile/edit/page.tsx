@@ -62,7 +62,6 @@ export default function EditProfilePage() {
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   
-  // Modal states
   const [showFamilyDeleteConfirm, setShowFamilyDeleteConfirm] = useState(false);
   const [familyToDelete, setFamilyToDelete] = useState<string | null>(null);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
@@ -77,7 +76,6 @@ export default function EditProfilePage() {
       const timer = setTimeout(() => {
         searchUser();
       }, 500);
-
       return () => clearTimeout(timer);
     } else {
       setSearchResults([]);
@@ -126,7 +124,6 @@ export default function EditProfilePage() {
         .from('family_members')
         .select('*, member:member_user_id(*)')
         .eq('user_id', userId);
-
       setFamilyMembers(data || []);
     } catch (error) {
       console.error('Error loading family members:', error);
@@ -138,7 +135,6 @@ export default function EditProfilePage() {
       setSearchResults([]);
       return;
     }
-    
     setIsSearching(true);
     try {
       const { data } = await supabase
@@ -151,7 +147,6 @@ export default function EditProfilePage() {
         u.id !== currentUser?.id && 
         !familyMembers.find(fm => fm.member_user_id === u.id)
       );
-
       setSearchResults(filtered);
     } catch (error) {
       console.error('Error searching users:', error);
@@ -162,16 +157,13 @@ export default function EditProfilePage() {
 
   const addFamilyMemberById = async (memberId: string, relationship: string) => {
     if (!currentUser) return;
-
     try {
       const { error } = await supabase.from('family_members').insert({
         user_id: currentUser.id,
         member_user_id: memberId,
         relationship_label: relationship
       });
-
       if (error) throw error;
-
       await loadFamilyMembers(currentUser.id);
       setSearchResults([]);
       setSearchUsername('');
@@ -182,15 +174,9 @@ export default function EditProfilePage() {
 
   const handleRemoveFamilyMember = async () => {
     if (!familyToDelete) return;
-
     try {
-      const { error } = await supabase
-        .from('family_members')
-        .delete()
-        .eq('id', familyToDelete);
-
+      const { error } = await supabase.from('family_members').delete().eq('id', familyToDelete);
       if (error) throw error;
-
       if (currentUser) await loadFamilyMembers(currentUser.id);
       setFamilyToDelete(null);
     } catch (error) {
@@ -201,9 +187,7 @@ export default function EditProfilePage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
-
     setIsSaving(true);
-
     try {
       const { error } = await supabase
         .from('users')
@@ -227,7 +211,6 @@ export default function EditProfilePage() {
         .eq('id', currentUser.id);
 
       if (error) throw error;
-
       setShowSaveSuccess(true);
       setTimeout(() => {
         router.push(`/profile/${currentUser.username}`);
@@ -251,7 +234,6 @@ export default function EditProfilePage() {
 
   const addCustomHobby = () => {
     if (!newHobby.trim()) return;
-    
     addHobby({ name: newHobby.trim(), emoji: '' });
     setNewHobby('');
   };
@@ -271,7 +253,6 @@ export default function EditProfilePage() {
         <h1 className="text-3xl font-bold mb-6">แก้ไขโปรไฟล์</h1>
 
         <form onSubmit={handleSave} className="space-y-6">
-          {/* Basic Info */}
           <div className="card-minimal">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <UserIcon className="w-5 h-5" />
@@ -291,13 +272,20 @@ export default function EditProfilePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Bio</label>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-medium">Bio (แนะนำตัว)</label>
+                  <span className={`text-[10px] font-bold ${formData.bio.length > 140 ? 'text-red-500' : 'text-gray-400'}`}>
+                    {formData.bio.length} / 150
+                  </span>
+                </div>
+                {/* ✅ Bio: รองรับหลายบรรทัด และจำกัด 150 ตัวอักษร */}
                 <textarea
                   value={formData.bio}
-                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                  className="input-minimal resize-none"
-                  rows={3}
+                  onChange={(e) => setFormData({ ...formData, bio: e.target.value.slice(0, 150) })}
+                  className="input-minimal min-h-[100px] resize-none leading-relaxed"
+                  rows={4}
                   placeholder="เกี่ยวกับคุณ..."
+                  maxLength={150}
                 />
               </div>
 
@@ -314,7 +302,7 @@ export default function EditProfilePage() {
                   <img 
                     src={formData.profile_img_url} 
                     alt="Preview" 
-                    className="mt-2 w-20 h-20 rounded-full object-cover"
+                    className="mt-2 w-20 h-20 rounded-full object-cover border-2 border-gray-100"
                   />
                 )}
               </div>
@@ -349,7 +337,6 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* Work & Location */}
           <div className="card-minimal">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Briefcase className="w-5 h-5" />
@@ -392,7 +379,6 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* Relationship Status */}
           <div className="card-minimal">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Users className="w-5 h-5" />
@@ -432,14 +418,12 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* Family Members & Close Friends */}
           <div className="card-minimal">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Users className="w-5 h-5" />
               ครอบครัวและเพื่อนสนิท
             </h2>
 
-            {/* รายชื่อที่มีอยู่แล้ว */}
             {familyMembers.length > 0 && (
               <div className="space-y-2 mb-4">
                 {familyMembers.map((fm) => (
@@ -468,7 +452,6 @@ export default function EditProfilePage() {
               </div>
             )}
 
-            {/* ค้นหาและเพิ่มสมาชิก */}
             <div className="p-4 bg-gray-50 rounded-xl">
               <p className="text-sm font-medium mb-3">🔍 ค้นหาและเพิ่มสมาชิกครอบครัว</p>
               
@@ -477,7 +460,7 @@ export default function EditProfilePage() {
                   type="text"
                   value={searchUsername}
                   onChange={(e) => setSearchUsername(e.target.value)}
-                  placeholder="พิมพ์ username หรือชื่อ (อย่างน้อย 2 ตัวอักษร)..."
+                  placeholder="พิมพ์ username หรือชื่อ..."
                   className="input-minimal w-full pr-20"
                 />
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -499,19 +482,12 @@ export default function EditProfilePage() {
                 </div>
               </div>
 
-              {searchUsername.trim().length > 0 && searchUsername.trim().length < 2 && (
-                <p className="text-xs text-gray-500 mt-2">พิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นหา</p>
-              )}
-
-              {/* ผลการค้นหา */}
               {searchResults.length > 0 && (
                 <div className="space-y-2 mt-3">
-                  <p className="text-xs text-gray-500 mb-2">พบ {searchResults.length} คน</p>
                   {searchResults.map((user) => (
-                    <div key={user.id} className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-200 hover:border-frog-300 transition">
+                    <div key={user.id} className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-200">
                       <img 
                         src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'}
-                        alt={user.display_name}
                         className="w-8 h-8 rounded-full object-cover"
                       />
                       <div className="flex-1 min-w-0">
@@ -521,28 +497,20 @@ export default function EditProfilePage() {
                       <button
                         type="button"
                         onClick={() => {
-                          const relationship = prompt('ความสัมพันธ์ (เช่น พี่ชาย, แม่, เพื่อนสนิท):');
-                          if (relationship && relationship.trim()) {
-                            addFamilyMemberById(user.id, relationship.trim());
-                          }
+                          const rel = prompt('ความสัมพันธ์ (เช่น พี่ชาย, แม่):');
+                          if (rel) addFamilyMemberById(user.id, rel.trim());
                         }}
-                        className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1"
+                        className="btn-primary text-xs px-3 py-1.5"
                       >
-                        <Plus className="w-3 h-3" />
-                        เพิ่ม
+                        <Plus size={12} className="inline mr-1" /> เพิ่ม
                       </button>
                     </div>
                   ))}
                 </div>
               )}
-
-              {searchUsername.trim().length >= 2 && searchResults.length === 0 && !isSearching && (
-                <p className="text-sm text-gray-500 text-center py-4">ไม่พบผู้ใช้</p>
-              )}
             </div>
           </div>
 
-          {/* Hobbies */}
           <div className="card-minimal">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Heart className="w-5 h-5" />
@@ -558,171 +526,50 @@ export default function EditProfilePage() {
                       className="flex items-center gap-2 px-3 py-2 bg-frog-100 text-frog-700 rounded-xl"
                     >
                       <span>{hobby.emoji} {hobby.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeHobby(index)}
-                        className="text-red-500 hover:text-red-700 font-bold"
-                      >
-                        ×
-                      </button>
+                      <button type="button" onClick={() => removeHobby(index)} className="text-red-500 font-bold">×</button>
                     </div>
                   ))}
                 </div>
               )}
 
-              <div>
-                <p className="text-sm text-gray-600 mb-2">เลือกจากรายการ:</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {POPULAR_HOBBIES.map((hobby, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => addHobby(hobby)}
-                      className="p-2 text-left text-sm bg-gray-50 hover:bg-frog-50 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={formData.hobbies.some(h => h.name === hobby.name)}
-                    >
-                      {hobby.emoji} {hobby.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm text-gray-600 mb-2">หรือพิมพ์เอง:</p>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newHobby}
-                    onChange={(e) => setNewHobby(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomHobby())}
-                    className="input-minimal flex-1"
-                    placeholder="งานอดิเรกของคุณ"
-                  />
+              <div className="grid grid-cols-2 gap-2">
+                {POPULAR_HOBBIES.map((hobby, index) => (
                   <button
+                    key={index}
                     type="button"
-                    onClick={addCustomHobby}
-                    className="btn-secondary flex items-center gap-2"
+                    onClick={() => addHobby(hobby)}
+                    className="p-2 text-left text-sm bg-gray-50 hover:bg-frog-50 rounded-xl transition"
+                    disabled={formData.hobbies.some(h => h.name === hobby.name)}
                   >
-                    <Plus className="w-4 h-4" />
-                    เพิ่ม
+                    {hobby.emoji} {hobby.name}
                   </button>
-                </div>
+                ))}
               </div>
             </div>
           </div>
 
-          {/* Theme & Music */}
-          <div className="card-minimal">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <Palette className="w-5 h-5" />
-              ธีม & เพลง
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">สีธีม</label>
-                <div className="flex gap-3 items-center">
-                  <input
-                    type="color"
-                    value={formData.theme_color}
-                    onChange={(e) => setFormData({ ...formData, theme_color: e.target.value })}
-                    className="w-20 h-12 rounded-xl cursor-pointer"
-                  />
-                  <div className="flex-1">
-                    <div 
-                      className="h-12 rounded-xl border-2"
-                      style={{ 
-                        backgroundColor: formData.theme_color,
-                        borderColor: `${formData.theme_color}80`
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2 flex items-center gap-2">
-                  <Music className="w-4 h-4" />
-                  ชื่อเพลงประจำโปรไฟล์
-                </label>
-                <input
-                  type="text"
-                  value={formData.music_name}
-                  onChange={(e) => setFormData({ ...formData, music_name: e.target.value })}
-                  className="input-minimal"
-                  placeholder="เช่น Never Gonna Give You Up - Rick Astley"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">ลิงก์เพลง (YouTube URL)</label>
-                <input
-                  type="url"
-                  value={formData.music_url}
-                  onChange={(e) => setFormData({ ...formData, music_url: e.target.value })}
-                  className="input-minimal"
-                  placeholder="https://youtube.com/watch?v=..."
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  แสดงเป็นลิงก์บนโปรไฟล์ของคุณ คลิกเพื่อฟังบน YouTube
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Save Button */}
           <div className="flex gap-3 sticky bottom-4 bg-white/80 backdrop-blur-sm p-4 -mx-4 rounded-xl">
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="btn-primary flex-1 disabled:opacity-50 shadow-lg"
-            >
+            <button type="submit" disabled={isSaving} className="btn-primary flex-1 shadow-lg">
               <Save className="w-4 h-4 inline mr-2" />
               {isSaving ? 'กำลังบันทึก...' : 'บันทึก'}
             </button>
-            <button
-              type="button"
-              onClick={() => router.push(`/profile/${currentUser.username}`)}
-              className="btn-secondary shadow-lg"
-            >
-              ยกเลิก
-            </button>
+            <button type="button" onClick={() => router.back()} className="btn-secondary">ยกเลิก</button>
           </div>
         </form>
       </div>
 
-      {/* Modals */}
       <ConfirmModal
         isOpen={showFamilyDeleteConfirm}
-        onClose={() => {
-          setShowFamilyDeleteConfirm(false);
-          setFamilyToDelete(null);
-        }}
+        onClose={() => setShowFamilyDeleteConfirm(false)}
         onConfirm={handleRemoveFamilyMember}
-        title="ต้องการลบสมาชิกครอบครัว?"
+        title="ต้องการลบความสัมพันธ์?"
         message="การลบจะถูกบันทึกทันที"
         confirmText="ลบ"
         cancelText="ยกเลิก"
         variant="danger"
       />
-
-      <AlertModal
-        isOpen={showSaveSuccess}
-        onClose={() => setShowSaveSuccess(false)}
-        title="บันทึกสำเร็จ!"
-        message="ข้อมูลโปรไฟล์ของคุณถูกอัพเดทแล้ว"
-        buttonText="ตกลง"
-        variant="success"
-      />
-
-      <AlertModal
-        isOpen={showSaveError}
-        onClose={() => setShowSaveError(false)}
-        title="เกิดข้อผิดพลาด"
-        message="ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง"
-        buttonText="ตกลง"
-        variant="error"
-      />
+      <AlertModal isOpen={showSaveSuccess} onClose={() => setShowSaveSuccess(false)} title="บันทึกสำเร็จ!" message="ข้อมูลถูกอัพเดทแล้ว" buttonText="ตกลง" variant="success" />
+      <AlertModal isOpen={showSaveError} onClose={() => setShowSaveError(false)} title="เกิดข้อผิดพลาด" message="กรุณาลองใหม่อีกครั้ง" buttonText="ตกลง" variant="error" />
     </NavLayout>
   );
 }
