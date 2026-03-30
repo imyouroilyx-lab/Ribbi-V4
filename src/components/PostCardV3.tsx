@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase, Post, User } from '@/lib/supabase';
 import { 
   Heart, 
@@ -149,7 +149,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (node) likeObserver.current.observe(node);
   }, [isLoadingLikes, hasMoreLikes]);
 
-  // ✅ แก้ไข: เอา supabase.channel ออก เพื่อป้องกัน Disk IO Overload ในหน้าจอที่มีโพสต์เยอะๆ
   useEffect(() => {
     loadLikeCount();
     checkIfLiked();
@@ -369,13 +368,13 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
 
   const insertMention = (user: any) => {
     const { type, cursor } = mentionConfig;
-    const content = type === 'comment' ? newComment : replyContent;
-    const textBeforeCursor = content.slice(0, cursor);
-    const textAfterCursor = content.slice(cursor);
+    const contentText = type === 'comment' ? newComment : replyContent;
+    const textBeforeCursor = contentText.slice(0, cursor);
+    const textAfterCursor = contentText.slice(cursor);
     const lastAtPos = textBeforeCursor.lastIndexOf('@');
     
     if (lastAtPos !== -1) {
-      const textBeforeMention = content.slice(0, lastAtPos);
+      const textBeforeMention = contentText.slice(0, lastAtPos);
       const safeDisplayName = user.display_name.replace(/[\[\]\(\)]/g, ''); 
       const newText = textBeforeMention + `@[${safeDisplayName}](${user.username}) ` + textAfterCursor;
       if (type === 'comment') { setNewComment(newText); } else { setReplyContent(newText); }
@@ -383,7 +382,8 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     setMentionConfig({ show: false, query: '', type: null, cursor: 0 });
   };
 
-  const renderTextWithTags = (text: string) => {
+  // ✅ Optimization: ใช้ useMemo เพื่อประหยัด CPU ในการประมวลผล Regex
+  const renderTextWithTags = useCallback((text: string) => {
     if (!text) return null;
     const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|#[a-zA-Z0-9_ก-๙]+|https?:\/\/[^\s]+)/g;
     return text.split(regex).map((part, i) => {
@@ -395,7 +395,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       if (part.startsWith('http')) return <a key={i} href={part} target="_blank" className="text-blue-500 hover:underline">{part}</a>;
       return <span key={i}>{part}</span>;
     });
-  };
+  }, []);
 
   const renderComment = (c: Comment, isReply: boolean = false) => {
     const isEditing = editingCommentId === c.id;
@@ -411,7 +411,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               <div className="bg-gray-100 rounded-2xl px-3 py-2 relative group border border-transparent hover:border-gray-200 transition-colors">
                 <div className="flex justify-between items-start gap-2"><p className="font-bold text-xs text-gray-900">{c.author?.display_name}</p>{canManageComment && (<div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">{c.author_id === currentUserId && (<button onClick={() => { setEditingCommentId(c.id); setEditCommentContent(c.content); setEditCommentImageUrl(c.image_url || ''); }} className="text-gray-400 hover:text-frog-600"><Edit2 size={12} /></button>)}<button onClick={() => handleDeleteComment(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={12} /></button></div>)}</div>
                 <p className="text-sm text-gray-800 leading-relaxed">{renderTextWithTags(c.content)}</p>
-                {c.image_url && <img src={c.image_url} className="mt-2 rounded-xl max-h-60 object-cover cursor-pointer shadow-sm" onClick={() => setSelectedImage(c.image_url!)} alt="" />}
+                {c.image_url && <img src={c.image_url} loading="lazy" className="mt-2 rounded-xl max-h-60 object-cover cursor-pointer shadow-sm" onClick={() => setSelectedImage(c.image_url!)} alt="" />}
                 {(commentLikes[c.id] || 0) > 0 && (
                   <div onClick={() => openCommentLikeModal(c.id)} className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1 cursor-pointer hover:bg-gray-50 transition hover:scale-110 active:scale-95">
                     <Heart size={10} className="fill-red-500 text-red-500" />
@@ -513,10 +513,20 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </>
       )}
 
+      {/* ✅ รูปภาพ Layout: 3 ภาพสวยขึ้น (2 บน 1 ล่างเต็มกว้าง) */}
       {post.images && post.images.length > 0 && (
-        <div className={`grid gap-2 mb-4 ${post.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        <div className={`grid gap-2 mb-4 ${
+          post.images.length === 1 ? 'grid-cols-1' : 
+          post.images.length === 2 ? 'grid-cols-2' : 
+          'grid-cols-2'
+        }`}>
           {post.images.map((img, i) => (
-            <div key={i} className="relative overflow-hidden rounded-2xl bg-gray-50 aspect-[4/3] border border-gray-100">
+            <div 
+              key={i} 
+              className={`relative overflow-hidden rounded-2xl bg-gray-50 border border-gray-100 ${
+                post.images!.length === 3 && i === 2 ? 'col-span-2 aspect-[16/9]' : 'aspect-[4/3]'
+              }`}
+            >
               <img src={img} className="w-full h-full object-cover cursor-pointer hover:scale-105 transition duration-500" onClick={() => setSelectedImage(img)} loading="lazy" alt="" />
             </div>
           ))}
