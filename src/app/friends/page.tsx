@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase, User } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import NavLayout from '@/components/NavLayout';
@@ -17,8 +17,6 @@ import {
   Send
 } from 'lucide-react';
 import Link from 'next/link';
-
-// นำเข้าฟังก์ชันแจ้งเตือน
 import { notifyFriendAccept } from '@/lib/notifications';
 
 interface Friendship {
@@ -43,7 +41,7 @@ export default function FriendsPage() {
   const [totalFriends, setTotalFriends] = useState(0);
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState(''); // ✅ State สำหรับการหน่วงเวลาค้นหา
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [selectedFriendshipId, setSelectedFriendshipId] = useState<string | null>(null);
@@ -52,15 +50,11 @@ export default function FriendsPage() {
     loadInitialData();
   }, []);
 
-  // ✅ หน่วงเวลาการค้นหา 0.5 วินาที เพื่อไม่ให้ยิง Database ถี่เกินไป (ลดภาระ Disk IO)
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 500);
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // โหลดข้อมูลเมื่อเปลี่ยนหน้า, พิมพ์ค้นหาเสร็จ หรือข้อมูล User พร้อม
   useEffect(() => {
     if (currentUser?.id) loadFriendsData();
   }, [currentPage, debouncedSearch, currentUser?.id]);
@@ -68,22 +62,28 @@ export default function FriendsPage() {
   const loadInitialData = async () => {
     setIsLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/login'); return; }
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) { router.push('/login'); return; }
 
-      const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single();
+      // ✅ Optimize: ดึงเฉพาะข้อมูลที่ต้องใช้
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id, username, display_name, profile_img_url')
+        .eq('id', authUser.id)
+        .single();
+      
       setCurrentUser(userData);
 
-      // โหลดคำขอเข้า-ออก
+      // โหลดคำขอพร้อมกัน
       const [pending, sent] = await Promise.all([
         supabase.from('friendships')
           .select('*, sender:sender_id(id, username, display_name, profile_img_url)')
-          .eq('receiver_id', user.id)
+          .eq('receiver_id', authUser.id)
           .eq('status', 'pending')
           .order('created_at', { ascending: false }),
         supabase.from('friendships')
           .select('*, receiver:receiver_id(id, username, display_name, profile_img_url)')
-          .eq('sender_id', user.id)
+          .eq('sender_id', authUser.id)
           .eq('status', 'pending')
           .order('created_at', { ascending: false })
       ]);
@@ -103,6 +103,7 @@ export default function FriendsPage() {
     const to = from + FRIENDS_PER_PAGE - 1;
 
     try {
+      // ✅ Optimize: ปรับการ Select ให้เบาที่สุด
       let query = supabase
         .from('friendships')
         .select(`
@@ -113,36 +114,28 @@ export default function FriendsPage() {
         .eq('status', 'accepted')
         .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`);
 
-      // ใช้คำค้นหาที่ถูกหน่วงเวลาแล้ว
       if (debouncedSearch) {
-        query = query.or(`sender.display_name.ilike.%${debouncedSearch}%,receiver.display_name.ilike.%${debouncedSearch}%`);
+        // ค้นหาเฉพาะชื่อที่ขึ้นต้นด้วย (ใช้ Index ได้ดีกว่า %...%)
+        query = query.or(`sender.display_name.ilike.${debouncedSearch}%,receiver.display_name.ilike.${debouncedSearch}%`);
       }
 
       const { data, count } = await query
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }) // เรียงตามวันที่เป็นเพื่อนกัน (แนะนำ)
         .range(from, to);
 
       setTotalFriends(count || 0);
       
       const friendsList = (data || []).map((f: any) => {
         const friendData = f.sender_id === currentUser.id ? f.receiver : f.sender;
-        if (friendData) {
-          return { ...friendData, friendshipId: f.id };
-        }
-        return null;
-      }).filter(u => u !== null);
+        return friendData ? { ...friendData, friendshipId: f.id } : null;
+      }).filter(Boolean);
 
-      const sortedFriends = friendsList.sort((a, b) => 
-        a.display_name.localeCompare(b.display_name, 'th')
-      );
-
-      setFriends(sortedFriends);
+      setFriends(friendsList);
     } catch (error) {
       console.error(error);
     }
   };
 
-  // ✅ ปรับปรุง: อัปเดตหน้าจอทันที ไม่ต้องสั่งโหลด DB ใหม่ทั้งหมด
   const handleAcceptRequest = async (id: string, senderId: string) => {
     if (!currentUser) return;
     try {
@@ -151,16 +144,11 @@ export default function FriendsPage() {
       
       await notifyFriendAccept(senderId, currentUser.id);
       
-      // ลบคำขอออกจากกล่อง Pending
       const acceptedUser = pendingRequests.find(r => r.id === id);
       setPendingRequests(prev => prev.filter(r => r.id !== id));
       
-      // เพิ่มเข้าในรายชื่อเพื่อนทันที
-      if (acceptedUser && acceptedUser.sender) {
-        setFriends(prev => {
-          const newFriends = [...prev, { ...acceptedUser.sender, friendshipId: id }];
-          return newFriends.sort((a, b) => a.display_name.localeCompare(b.display_name, 'th'));
-        });
+      if (acceptedUser?.sender) {
+        setFriends(prev => [{ ...acceptedUser.sender, friendshipId: id }, ...prev]);
         setTotalFriends(prev => prev + 1);
       }
     } catch (error) {
@@ -168,7 +156,6 @@ export default function FriendsPage() {
     }
   };
 
-  // ✅ ปรับปรุง: อัปเดตหน้าจอทันที ไม่ต้องสั่งโหลด DB ใหม่ทั้งหมด
   const handleCancelRequest = async (id: string, type: 'pending' | 'sent') => {
     try {
       await supabase.from('friendships').delete().eq('id', id);
@@ -182,7 +169,6 @@ export default function FriendsPage() {
     }
   };
 
-  // ✅ ปรับปรุง: ลบเพื่อนออกจากหน้าจอทันที
   const handleRemoveFriend = async () => {
     if (!selectedFriendshipId) return;
     try {
@@ -191,7 +177,6 @@ export default function FriendsPage() {
       
       setFriends(prev => prev.filter(f => f.friendshipId !== selectedFriendshipId));
       setTotalFriends(prev => prev - 1);
-      
       setShowRemoveConfirm(false);
       setSelectedFriendshipId(null);
     } catch (error) {
@@ -201,7 +186,7 @@ export default function FriendsPage() {
 
   const totalPages = Math.ceil(totalFriends / FRIENDS_PER_PAGE);
 
-  if (isLoading) return <NavLayout><div className="flex justify-center py-20 animate-pulse text-gray-400 font-bold uppercase tracking-widest text-xs">กำลังโหลดรายชื่อเพื่อน...</div></NavLayout>;
+  if (isLoading) return <NavLayout><div className="flex justify-center py-20 text-gray-400 font-bold uppercase tracking-widest text-xs animate-pulse">กำลังโหลด...</div></NavLayout>;
 
   return (
     <NavLayout>
