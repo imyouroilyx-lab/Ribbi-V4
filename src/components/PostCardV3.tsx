@@ -90,7 +90,6 @@ const LinkPreview = ({ url }: { url: string }) => {
 };
 
 export default function PostCardV3({ post: initialPost, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
-  // ✅ ใช้ State ภายในเพื่อความรวดเร็วในการอัปเดตหน้าจอ
   const [post, setPost] = useState(initialPost);
   const [comments, setComments] = useState<Comment[]>([]);
   const [showComments, setShowComments] = useState(false);
@@ -100,7 +99,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [isLiked, setIsLiked] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // Edit States
+  // States สำหรับแก้ไขโพสต์
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [editContent, setEditContent] = useState(post.content || '');
   const [editMood, setEditMood] = useState(post.mood || '');
@@ -203,7 +202,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     }
   };
 
-  // ✅ ฟังก์ชันบันทึกการแก้ไขที่ปรับปรุงแล้ว
   const handleUpdatePost = async () => {
     if (!editContent.trim() || isUpdatingPost) return;
     setIsUpdatingPost(true);
@@ -214,15 +212,15 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           content: editContent.trim(),
           mood: editMood.trim() || null,
           activity: editActivity.trim() || null,
-          location: editLocation.trim() || null,
-          updated_at: new Date().toISOString()
+          location: editLocation.trim() || null
+          // ✅ ลบ updated_at ออกแล้ว เพราะคอลัมน์ไม่มีใน DB ของพี่
         })
         .eq('id', post.id)
         .select()
         .single();
 
       if (error) {
-        alert("บันทึกไม่สำเร็จ: " + error.message + " (ตรวจสอบสิทธิ์ RLS ในฐานข้อมูล)");
+        alert("บันทึกไม่สำเร็จ: " + error.message);
         throw error;
       }
       
@@ -447,7 +445,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </div>
       )}
 
-      {/* Like Modal & Image Preview (คงเดิม) */}
       {showLikeModal && (
         <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowLikeModal(false)}>
           <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
