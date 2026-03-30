@@ -70,7 +70,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         const user = currentUserRef.current;
         if (!user || notif.receiver_id !== user.id) return;
         
-        // ✅ กรองออก: ถ้าเป็นการส่งคำขอเพื่อน ไม่ต้องเด้งแจ้งเตือน ไม่ต้องมีเสียง
+        // ✅ กรองออก: ถ้าเป็นการส่งคำขอเพื่อน ไม่ต้องเด้งแจ้งเตือน ไม่ต้องมีเสียงที่นี่
         if (notif.type === 'friend_request') return;
 
         if (pathnameRef.current !== '/notifications') {
@@ -99,10 +99,33 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       })
       .subscribe();
 
+    // ✅ เพิ่ม Channel สำหรับตรวจจับคำขอเป็นเพื่อนแบบ Real-time
+    const friendChannel = supabase
+      .channel('nav-friendships')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'friendships' }, (payload) => {
+        const newReq = payload.new as any;
+        const user = currentUserRef.current;
+        
+        // ตรวจสอบว่าเป็นคำขอที่ส่งมาถึงเราและมีสถานะเป็นรอยืนยันหรือไม่
+        if (!user || newReq.receiver_id !== user.id || newReq.status !== 'pending') return;
+
+        setFriendRequestCount(prev => prev + 1);
+        playNotificationSound(); // เล่นเสียงแจ้งเตือน
+      })
+      // รีเฟรชเมื่อมีการรับเพื่อนหรือลบคำขอ
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'friendships' }, () => {
+        if (currentUserRef.current) loadFriendRequests(currentUserRef.current.id);
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'friendships' }, () => {
+        if (currentUserRef.current) loadFriendRequests(currentUserRef.current.id);
+      })
+      .subscribe();
+
     return () => {
       clearInterval(interval);
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(msgChannel);
+      supabase.removeChannel(friendChannel);
     };
   }, [currentUser, pathname]);
 
@@ -123,14 +146,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       .select('*', { count: 'exact', head: true })
       .eq('receiver_id', userId)
       .eq('is_read', false)
-      .neq('type', 'friend_request'); // ✅ ตัดประเภท friend_request ออกจากการนับ Badge รูปกระดิ่ง
+      .neq('type', 'friend_request'); // ตัดประเภท friend_request ออกจากการนับ Badge รูปกระดิ่ง
       
     setUnreadNotifCount(count || 0);
   };
 
   const loadFriendRequests = async (userId: string) => {
     const { count } = await supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('status', 'pending');
-    setFriendRequestCount(count || 0); // ✅ อันนี้จะไปโชว์ที่ไอคอน "เพื่อน (Friends)" แบบปกติ
+    setFriendRequestCount(count || 0); // อันนี้จะไปโชว์ที่ไอคอน "เพื่อน (Friends)" แบบปกติ
   };
 
   const loadUnreadMessages = async (userId: string) => {
@@ -167,7 +190,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             <span>หน้าหลัก</span>
           </Link>
           
-          {/* ✅ แถบ "เพื่อน" จะโชว์แจ้งเตือนคนแอดมา (นับจาก pending status ในตาราง friendships) */}
+          {/* แถบ "เพื่อน" จะโชว์แจ้งเตือนคนแอดมา (นับจาก pending status ในตาราง friendships) */}
           <Link href="/friends" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/friends') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Users className="w-5 h-5" />
             <span>เพื่อน</span>
@@ -180,7 +203,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             {unreadMessageCount > 0 && <span className="absolute left-8 top-2 w-5 h-5 bg-frog-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm">{unreadMessageCount}</span>}
           </Link>
 
-          {/* ✅ แถบ "การแจ้งเตือน" ปกติ (ไม่รวมแอดเพื่อน) */}
+          {/* แถบ "การแจ้งเตือน" ปกติ (ไม่รวมแอดเพื่อน) */}
           <Link href="/notifications" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/notifications') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Bell className="w-5 h-5" />
             <span>แจ้งเตือน</span>
