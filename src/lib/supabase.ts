@@ -10,6 +10,7 @@ export interface User {
   id: string;
   username: string;
   display_name: string;
+  email?: string | null; // <-- เพิ่มบรรทัดนี้เข้ามาเพื่อแก้ Error
   bio?: string | null;
   profile_img_url?: string | null;
   cover_img_url?: string | null;
