@@ -19,8 +19,8 @@ import {
 const USERS_PER_PAGE = 20;
 const ALPHABETS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-// ปรับ Interface ให้ updated_at เป็น optional เพื่อป้องกัน Type Error เวลาดึงข้อมูลมาไม่ครบ
-interface UserWithFriendship extends User {
+// แก้ไข Type Error โดยการ Omit field ที่มีปัญหาออกก่อนแล้วกำหนดใหม่เป็น optional
+interface UserWithFriendship extends Omit<User, 'updated_at'> {
   isFriend?: boolean;
   updated_at?: string; 
 }
@@ -29,7 +29,7 @@ export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<UserWithFriendship[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actionId, setActionId] = useState<string | null>(null); // สำหรับแสดง Loading ที่ปุ่มรายคน
+  const [actionId, setActionId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -47,6 +47,7 @@ export default function UsersPage() {
       }
       setCurrentUserId(authUser.id);
 
+      // ดึงข้อมูลพื้นฐาน
       let query = supabase
         .from('users')
         .select('id, username, display_name, profile_img_url, created_at, updated_at', { count: 'exact' });
@@ -72,7 +73,7 @@ export default function UsersPage() {
       if (userData && userData.length > 0) {
         const userIdsInPage = userData.map(u => u.id);
         
-        // ดึงสถานะเพื่อน
+        // ตรวจสอบความเป็นเพื่อน
         const { data: friendshipData, error: friendError } = await supabase
           .from('friendships')
           .select('user_id, friend_id')
@@ -96,7 +97,7 @@ export default function UsersPage() {
         setUsers([]);
       }
     } catch (err: any) {
-      console.error('Error:', err.message);
+      console.error('Fetch error:', err.message);
     } finally {
       setLoading(false);
     }
@@ -109,7 +110,6 @@ export default function UsersPage() {
     return () => clearTimeout(handler);
   }, [fetchUsers]);
 
-  // ฟังก์ชันสำหรับจัดการ เพิ่ม/ลบ เพื่อน
   const handleToggleFriend = async (e: React.MouseEvent, targetUser: UserWithFriendship) => {
     e.stopPropagation();
     if (!currentUserId || actionId) return;
@@ -138,13 +138,13 @@ export default function UsersPage() {
         if (error) throw error;
       }
 
-      // อัปเดต UI ทันทีไม่ต้องรอ fetch ใหม่
+      // Optimistic UI Update
       setUsers(prev => prev.map(u => 
         u.id === targetUser.id ? { ...u, isFriend: !u.isFriend } : u
       ));
 
     } catch (err: any) {
-      console.error('Action error:', err.message);
+      console.error('Toggle error:', err.message);
     } finally {
       setActionId(null);
     }
@@ -155,15 +155,15 @@ export default function UsersPage() {
   return (
     <NavLayout>
       <div className="min-h-screen bg-[#F8FAFC] pb-20">
-        <div className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-          <div className="max-w-5xl mx-auto px-4 py-4 md:py-6">
+        <div className="bg-white border-b border-slate-200 sticky top-0 z-10">
+          <div className="max-w-5xl mx-auto px-4 py-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h1 className="text-xl md:text-2xl font-black text-slate-900 flex items-center gap-2">
                   <Users className="text-indigo-600" size={24} />
                   สมาชิก Ribbi
                 </h1>
-                <p className="text-slate-500 text-xs mt-0.5">ค้นพบเพื่อนใหม่ ({totalCount.toLocaleString()} รายการ)</p>
+                <p className="text-slate-500 text-xs">ค้นพบเพื่อนใหม่ ({totalCount.toLocaleString()} รายการ)</p>
               </div>
 
               <div className="relative w-full md:w-72">
@@ -181,27 +181,22 @@ export default function UsersPage() {
               </div>
             </div>
 
-            <div className="mt-4 flex items-center gap-2">
-              <div className="flex-shrink-0 text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
-                <Filter size={12} /> กรอง A-Z
-              </div>
-              <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar items-center">
+            <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+              <button 
+                onClick={() => { setSelectedLetter(null); setCurrentPage(1); }}
+                className={`flex-shrink-0 px-3 py-1 rounded-lg text-[10px] font-black transition-all ${!selectedLetter ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+              >
+                ทั้งหมด
+              </button>
+              {ALPHABETS.map(letter => (
                 <button 
-                  onClick={() => { setSelectedLetter(null); setCurrentPage(1); }}
-                  className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${!selectedLetter ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                  key={letter}
+                  onClick={() => { setSelectedLetter(letter); setCurrentPage(1); }}
+                  className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all ${selectedLetter === letter ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                 >
-                  ทั้งหมด
+                  {letter}
                 </button>
-                {ALPHABETS.map(letter => (
-                  <button 
-                    key={letter}
-                    onClick={() => { setSelectedLetter(letter); setCurrentPage(1); }}
-                    className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all ${selectedLetter === letter ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                  >
-                    {letter}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
         </div>
@@ -210,11 +205,10 @@ export default function UsersPage() {
           {loading && users.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">
               <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
-              <p className="mt-4 text-slate-400 text-sm font-medium">กำลังโหลดข้อมูล...</p>
             </div>
           ) : users.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {users.map((user) => (
                   <div 
                     key={user.id}
@@ -224,7 +218,7 @@ export default function UsersPage() {
                     <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0">
                       <img 
                         src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} 
-                        alt={user.display_name || ''} 
+                        alt="" 
                         className="w-full h-full object-cover"
                         loading="lazy"
                       />
@@ -267,17 +261,17 @@ export default function UsersPage() {
                   <button 
                     disabled={currentPage === 1 || loading}
                     onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0 }); }}
-                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50 transition-colors"
+                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm"
                   >
                     <ChevronLeft size={18} />
                   </button>
                   <div className="bg-white border border-slate-200 px-4 py-1.5 rounded-xl text-xs font-bold text-slate-600">
-                    หน้า {currentPage} จาก {totalPages}
+                    หน้า {currentPage} / {totalPages}
                   </div>
                   <button 
                     disabled={currentPage === totalPages || loading}
                     onClick={() => { setCurrentPage(p => p + 1); window.scrollTo({ top: 0 }); }}
-                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50 transition-colors"
+                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm"
                   >
                     <ChevronRightIcon size={18} />
                   </button>
@@ -285,9 +279,7 @@ export default function UsersPage() {
               )}
             </>
           ) : (
-            <div className="py-20 text-center">
-              <p className="text-slate-400 text-sm">ไม่พบสมาชิกที่ตรงตามเงื่อนไข</p>
-            </div>
+            <div className="py-20 text-center text-slate-400 text-sm">ไม่พบสมาชิก</div>
           )}
         </main>
       </div>
