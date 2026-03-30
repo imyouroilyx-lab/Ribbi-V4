@@ -1,15 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Edit2, Trash2, Palette, Pencil, Globe, Play, Check, X } from 'lucide-react';
+import { Edit2, Trash2, Palette, Pencil } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-// ✅ ย้าย Regex ออกมาด้านนอกเพื่อประสิทธิภาพ
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
-
-// ✅ ระบบ Cache สำหรับเก็บข้อมูลพรีวิวลิงก์ ไม่ต้องโหลดซ้ำ
 const metadataCache: Record<string, any> = {};
 
 // --- TYPES ---
@@ -38,7 +35,6 @@ interface MessageBubbleProps {
 }
 
 // --- UTILITIES ---
-
 function getYouTubeVideoId(url: string): string | null {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
@@ -53,7 +49,7 @@ const renderContentWithLinks = (text: string | null, isOwn: boolean) => {
     if (part.match(URL_REGEX)) {
       return (
         <a
-          key={index}
+          key={`link-${index}`}
           href={part}
           target="_blank"
           rel="noopener noreferrer"
@@ -64,12 +60,12 @@ const renderContentWithLinks = (text: string | null, isOwn: boolean) => {
         </a>
       );
     }
-    return part;
+    // ✅ แก้ปัญหา Missing Key Warning ใน React
+    return <React.Fragment key={`text-${index}`}>{part}</React.Fragment>;
   });
 };
 
 // --- SUB-COMPONENTS ---
-
 function YouTubeEmbed({ videoId }: { videoId: string }) {
   return (
     <div className="mt-3 w-full max-w-md overflow-hidden rounded-2xl border-2 border-black/10 bg-black shadow-lg aspect-video relative">
@@ -90,7 +86,7 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
-    if (metadataCache[url]) return; // ถ้ามีใน Cache แล้วไม่ต้อง fetch
+    if (metadataCache[url]) return;
 
     let isMounted = true;
     const fetchMeta = async () => {
@@ -100,7 +96,7 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
         const json = await res.json();
         if (isMounted) {
           if (json.status === 'success' && json.data.title) {
-            metadataCache[url] = json.data; // เก็บลง Cache
+            metadataCache[url] = json.data;
             setMetadata(json.data);
           } else { setHasError(true); }
         }
@@ -140,7 +136,6 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
 }
 
 // --- MAIN COMPONENT ---
-// ✅ ใช้ React.memo เพื่อป้องกันการ Re-render ข้อความเดิมที่โหลดไปแล้ว
 const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = '#22c55e', showSenderName }: MessageBubbleProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message?.content || '');
@@ -152,7 +147,6 @@ const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = 
 
   if (!message) return null;
 
-  // System Events
   if (message.event === 'theme_change' || message.event === 'nickname_change') {
     return (
       <div className="flex items-center justify-center my-2 w-full">
@@ -252,7 +246,7 @@ const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = 
 
                 {links.map((link, i) => {
                   const ytId = getYouTubeVideoId(link);
-                  return ytId ? <YouTubeEmbed key={i} videoId={ytId} /> : <LinkPreview key={i} url={link} isOwn={isOwn} />;
+                  return ytId ? <YouTubeEmbed key={`yt-${i}`} videoId={ytId} /> : <LinkPreview key={`preview-${i}`} url={link} isOwn={isOwn} />;
                 })}
               </div>
 
@@ -263,13 +257,6 @@ const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = 
             </>
           )}
         </div>
-        
-        {/* สำหรับคนอื่น แสดงปุ่มลบ/แก้ไข เฉพาะ Admin (ถ้ามีระบบนั้น) แต่นี่แสดงปกติข้าง Bubble */}
-        {!isOwn && !isEditing && (
-          <div className="flex gap-1 items-start pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {/* คุณสามารถเพิ่มปุ่ม Reply หรืออื่นๆ ตรงนี้ได้ */}
-          </div>
-        )}
       </div>
     </div>
   );
