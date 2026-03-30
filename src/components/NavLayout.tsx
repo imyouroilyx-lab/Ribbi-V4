@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase'; 
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -17,12 +17,13 @@ import {
 } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
-const CACHE_KEY = 'ribbi_session_v_clear'; 
+const CACHE_KEY = 'ribbi_cache_ultimate'; // เคลียร์แคชเก่าที่พังทิ้งไป
 
 export default function NavLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   
+  // โหลดจาก Cache ทันทีเพื่อให้ตัวแปร username ไม่ว่าง
   const [currentUser, setCurrentUser] = useState<any>(() => {
     if (typeof window !== 'undefined') {
       const cached = sessionStorage.getItem(CACHE_KEY);
@@ -57,25 +58,47 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // 🚨 นี่คือจุดที่ทำให้พังในเวอร์ชันก่อน: ดึงข้อมูลผ่าน RPC
       const { data, error } = await supabase.rpc('get_user_app_data', { user_uuid: session.user.id });
 
+      let uData = null;
+      let nNotif = 0;
+      let nFriend = 0;
+      let nMsg = 0;
+
       if (!error && data) {
-        const newState = {
-          user: data.user_info,
-          notif: data.unread_notifications || 0,
-          friend: data.pending_friends || 0,
-          message: data.unread_messages || 0
-        };
+        uData = data.user_info;
+        nNotif = data.unread_notifications || 0;
+        nFriend = data.pending_friends || 0;
+        nMsg = data.unread_messages || 0;
+      } else {
+        // ✅ กู้คืนระบบสำรอง (Fallback): ดึงตรงๆ จาก Database เลยถ้า RPC พัง
+        // การันตีว่าตัวแปร username ต้องมา 100% ไม่ใช่ค่าว่าง
+        const { data: fallbackUser } = await supabase.from('users').select('*').eq('id', session.user.id).single();
+        if (fallbackUser) uData = fallbackUser;
         
-        setCurrentUser(newState.user);
-        setUnreadNotif(newState.notif);
-        setFriendReq(newState.friend);
-        setUnreadMsg(newState.message);
+        // ดึงยอดแจ้งเตือนสำรองแบบ Manual
+        const { count: cNotif } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('is_read', false).neq('type', 'friend_request');
+        const { count: cFriend } = await supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('status', 'pending');
+        const { data: cMsgData } = await supabase.from('chat_participants').select('unread_count').eq('user_id', session.user.id);
         
-        sessionStorage.setItem(CACHE_KEY, JSON.stringify(newState));
+        nNotif = cNotif || 0;
+        nFriend = cFriend || 0;
+        nMsg = cMsgData ? cMsgData.reduce((sum, p) => sum + (p.unread_count || 0), 0) : 0;
+      }
+
+      if (uData) {
+        setCurrentUser(uData);
+        setUnreadNotif(nNotif);
+        setFriendReq(nFriend);
+        setUnreadMsg(nMsg);
+        
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+          user: uData, notif: nNotif, friend: nFriend, message: nMsg
+        }));
       }
     } catch (err) {
-      console.error("Sync error:", err);
+      console.error(err);
     }
   };
 
@@ -85,20 +108,20 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
-  // ✅ เช็คสถานะการกดเมนูให้แม่นยำขึ้น
-  const checkActive = (href: string) => {
-    if (href === '#') return false;
-    if (href === '/') return pathname === '/';
-    return pathname.startsWith(href);
-  };
+  const isActive = (path: string) => pathname === path;
+  
+  // ✅ ตรวจสอบ URL อย่างแม่นยำ
+  const isProfileActive = currentUser?.username ? pathname.startsWith(`/profile/${currentUser.username}`) : false;
 
-  // ✅ ไม่มีเงื่อนไขทำปุ่มสีเทาอีกต่อไป จัดให้อยู่ในลูปปกติเหมือนเพื่อนๆ
+  // ✅ ลิงก์ตรงไปที่ /profile/[username] ชัวร์ 100%
+  const profileLink = currentUser?.username ? `/profile/${currentUser.username}` : '/';
+
   const navItems = [
     { label: 'หน้าหลัก', icon: Home, href: '/' },
     { label: 'เพื่อน', icon: Users, href: '/friends', count: friendReq },
     { label: 'แชท', icon: MessageCircle, href: '/messages', count: unreadMsg },
     { label: 'แจ้งเตือน', icon: Bell, href: '/notifications', count: unreadNotif },
-    { label: 'โปรไฟล์', icon: User, href: currentUser?.username ? `/profile/${currentUser.username}` : '#' },
+    { label: 'โปรไฟล์', icon: User, href: profileLink },
     { label: 'ตั้งค่า', icon: Settings, href: '/settings' },
   ];
 
@@ -106,28 +129,27 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
       {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex flex-col w-64 fixed inset-y-0 bg-white border-r border-gray-100 z-50 p-4">
-        <div className="mb-6 px-2">
+        <div className="mb-8 px-2 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 group">
-            <img src="https://iili.io/qbtgKBt.png" className="w-10 h-10 group-hover:scale-110 transition-all duration-300" alt="Ribbi" />
+            <img src="https://iili.io/qbtgKBt.png" className="w-10 h-10 group-hover:scale-110 transition-transform duration-300" alt="Ribbi" />
             <span className="text-2xl font-black text-frog-600 tracking-tighter">Ribbi</span>
           </Link>
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto no-scrollbar">
           {navItems.map((item) => {
-            const active = checkActive(item.href);
+            const active = item.label === 'โปรไฟล์' ? isProfileActive : isActive(item.href);
             const Icon = item.icon;
             return (
               <Link 
                 key={item.label} 
                 href={item.href}
-                onClick={(e) => { if (item.href === '#') e.preventDefault(); }}
                 className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 group ${
                   active ? 'bg-frog-500 text-white font-bold shadow-lg shadow-frog-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
                 <div className="relative">
-                  <Icon size={20} strokeWidth={active ? 3 : 2} className={active ? 'scale-110' : 'group-hover:scale-110 transition-transform'} />
+                  <Icon className={`w-5 h-5 ${active ? 'scale-110' : 'group-hover:scale-110 transition-transform'}`} />
                   {item.count && item.count > 0 ? (
                     <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full border-2 border-white font-black animate-in zoom-in">
                       {item.count > 99 ? '99+' : item.count}
@@ -140,7 +162,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        {/* Footer Sidebar */}
+        {/* Footer Sidebar: User Profile & Logout Button */}
         <div className="mt-auto pt-4 border-t border-gray-100 space-y-2">
           {currentUser && (
             <Link href={`/profile/${currentUser.username}`} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-2xl transition-all border border-transparent hover:border-gray-100 group">
@@ -152,7 +174,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             </Link>
           )}
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-red-500 hover:bg-red-50 font-black text-xs transition-all group">
-            <LogOut size={18} className="group-hover:-translate-x-1 transition-transform" /> 
+            <LogOut className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> 
             <span>ออกจากระบบ</span>
           </button>
         </div>
@@ -166,11 +188,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </Link>
         <div className="flex items-center gap-2">
           <Link href="/notifications" className="p-2 relative bg-gray-50 rounded-xl">
-            <Bell size={24} className="text-gray-700" />
+            <Bell className="w-6 h-6 text-gray-700" />
             {unreadNotif > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full font-black border border-white">{unreadNotif}</span>}
           </Link>
           <button onClick={() => setShowMobileMenu(true)} className="p-2 bg-gray-50 rounded-xl text-gray-700">
-            <Menu size={24} />
+            <Menu className="w-6 h-6" />
           </button>
         </div>
       </header>
@@ -183,15 +205,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       {/* Bottom Nav - Mobile */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 h-16 flex items-center justify-around z-40 pb-safe shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
         {navItems.slice(0, 5).map((item) => {
-          const active = checkActive(item.href);
+          const active = item.label === 'โปรไฟล์' ? isProfileActive : isActive(item.href);
           const Icon = item.icon;
+          
           return (
-            <Link 
-              key={item.label} 
-              href={item.href} 
-              onClick={(e) => { if (item.href === '#') e.preventDefault(); }}
-              className={`flex flex-col items-center gap-1 flex-1 relative transition-all ${active ? 'text-frog-600 font-bold scale-105' : 'text-gray-400 hover:text-gray-600'}`}
-            >
+            <Link key={item.label} href={item.href} className={`flex flex-col items-center gap-1 flex-1 relative transition-all ${active ? 'text-frog-600 font-bold scale-105' : 'text-gray-400'}`}>
               <div className="relative">
                 {item.label === 'โปรไฟล์' && currentUser ? (
                   <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className={`w-6 h-6 rounded-full object-cover border-2 ${active ? 'border-frog-500' : 'border-transparent'}`} alt="" />
@@ -199,7 +217,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                   <Icon size={22} strokeWidth={active ? 2.5 : 2} />
                 )}
                 {item.count && item.count > 0 ? (
-                  <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full font-black border border-white">{item.count}</span>
+                  <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full font-black border border-white">{item.count > 99 ? '99+' : item.count}</span>
                 ) : null}
               </div>
               <span className="text-[10px] uppercase font-black tracking-tighter">{item.label}</span>
@@ -213,35 +231,27 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         <>
           <div className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm animate-in fade-in" onClick={() => setShowMobileMenu(false)} />
           <aside className="fixed right-0 top-0 h-full w-80 bg-white z-50 flex flex-col animate-in slide-in-from-right duration-300 shadow-2xl">
-            <div className="p-6 flex items-center justify-between border-b border-gray-50">
-              <span className="text-xl font-black text-frog-600 uppercase tracking-widest italic">MENU</span>
-              <button onClick={() => setShowMobileMenu(false)} className="p-2 bg-gray-50 rounded-full"><X size={20}/></button>
+            <div className="p-6 flex items-center justify-between border-b border-gray-50 bg-gray-50/50">
+              <span className="text-xl font-black text-frog-600 tracking-widest uppercase italic">Ribbi Menu</span>
+              <button onClick={() => setShowMobileMenu(false)} className="p-2 bg-white rounded-full shadow-sm"><X size={20} className="text-gray-400" /></button>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-1">
               {currentUser && (
                 <Link href={`/profile/${currentUser.username}`} onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 p-5 bg-gray-50 rounded-[2.5rem] mb-6 active:scale-95 transition-all border border-gray-100 shadow-inner">
-                  <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover shadow-md border-2 border-white" alt="" />
+                  <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-16 h-16 rounded-full object-cover shadow-md border-2 border-white" alt="" />
                   <div className="min-w-0 flex-1">
-                    <p className="font-black text-gray-900 truncate text-lg">{currentUser.display_name}</p>
-                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">ดูโปรไฟล์</p>
+                    <p className="font-black text-gray-900 truncate text-xl leading-tight">{currentUser.display_name}</p>
+                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-0.5">ดูโปรไฟล์ของฉัน</p>
                   </div>
                 </Link>
               )}
 
               {navItems.map((item) => {
+                const active = item.label === 'โปรไฟล์' ? isProfileActive : isActive(item.href);
                 const Icon = item.icon;
-                const active = checkActive(item.href);
                 return (
-                  <Link 
-                    key={item.label} 
-                    href={item.href} 
-                    onClick={(e) => { 
-                      if (item.href === '#') { e.preventDefault(); return; }
-                      setShowMobileMenu(false); 
-                    }} 
-                    className={`flex items-center justify-between p-4 rounded-2xl font-black transition-all ${active ? 'bg-frog-50 text-frog-600' : 'text-gray-600 hover:bg-gray-50'}`}
-                  >
+                  <Link key={item.label} href={item.href} onClick={() => setShowMobileMenu(false)} className={`flex items-center justify-between p-4 rounded-2xl font-black transition-all ${active ? 'bg-frog-50 text-frog-600' : 'text-gray-600 hover:bg-gray-50'}`}>
                     <div className="flex items-center gap-4"><Icon size={24} className={active ? 'text-frog-600' : 'text-gray-300'} /><span>{item.label}</span></div>
                     {item.count && item.count > 0 ? <span className="bg-red-500 text-white text-xs px-2.5 py-0.5 rounded-full font-black shadow-sm">{item.count > 99 ? '99+' : item.count}</span> : null}
                   </Link>
@@ -249,8 +259,8 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               })}
             </div>
 
-            <div className="p-6 border-t border-gray-100">
-              <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 py-4 bg-white border border-red-100 text-red-500 rounded-2xl font-black text-sm active:scale-95 transition-all shadow-sm hover:bg-red-50">
+            <div className="p-6 border-t border-gray-100 bg-gray-50/50">
+              <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 py-4 bg-white border border-red-100 text-red-500 rounded-2xl font-black text-sm active:scale-95 transition-all shadow-sm">
                 <LogOut size={20}/> <span>ออกจากระบบ</span>
               </button>
             </div>
