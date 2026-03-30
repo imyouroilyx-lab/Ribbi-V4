@@ -45,6 +45,31 @@ export default function NotificationsPage() {
     }
   };
 
+  // ✅ ระบบกรองแจ้งเตือนซ้ำซ้อน (Deduplication)
+  // กรองเอาแจ้งเตือนประเภทเดียวกันจากคนเดียวกันที่เกิดขึ้นซ้ำๆ ออกไปให้เหลือแค่อันเดียว
+  const deduplicateNotifications = (notifs: any[]) => {
+    const seen = new Set();
+    return notifs.filter(n => {
+      let key = n.id; // ใช้ ID เป็นค่าเริ่มต้น
+      
+      // ถ้าเป็นคำขอเพื่อน หรือตอบรับเพื่อน ให้จำกัด 1 คนต่อ 1 แจ้งเตือน
+      if (n.type === 'friend_request' || n.type === 'friend_accept') {
+        key = `${n.type}-${n.sender_id}`;
+      } 
+      // ถ้าเป็นการกดถูกใจ ให้จำกัด 1 คนต่อ 1 โพสต์
+      else if (n.type === 'like') {
+        key = `${n.type}-${n.sender_id}-${n.post_id}`;
+      }
+
+      if (seen.has(key)) {
+        return false; // ถ้าเจอคีย์นี้แล้ว (ซ้ำ) ให้ข้ามไป
+      }
+      
+      seen.add(key);
+      return true;
+    });
+  };
+
   useEffect(() => {
     loadInitialData();
   }, []);
@@ -64,7 +89,9 @@ export default function NotificationsPage() {
 
       const { data } = await fetchNotifications(user.id, 0);
       if (data) {
-        setNotifications(data);
+        // ✅ นำข้อมูลไปกรองตัวซ้ำก่อนแสดงผล
+        const uniqueData = deduplicateNotifications(data);
+        setNotifications(uniqueData);
         setHasMore(data.length === NOTIFS_PER_PAGE);
         silentMarkAllAsRead(user.id);
       }
@@ -82,9 +109,9 @@ export default function NotificationsPage() {
       const { data } = await fetchNotifications(currentUser.id, page);
       if (data && data.length > 0) {
         setNotifications(prev => {
-          const existingIds = new Set(prev.map(n => n.id));
-          const uniqueNew = data.filter(n => !existingIds.has(n.id));
-          return [...prev, ...uniqueNew];
+          // ✅ รวมของเก่าและใหม่เข้าด้วยกัน แล้วกรองตัวซ้ำออก
+          const combined = [...prev, ...data];
+          return deduplicateNotifications(combined);
         });
         setHasMore(data.length === NOTIFS_PER_PAGE);
       } else {
@@ -113,7 +140,6 @@ export default function NotificationsPage() {
       .range(from, to);
   };
 
-  // ✅ แก้ไข: ลบแจ้งเตือนออกจากฐานข้อมูลจริงๆ
   const deleteNotification = async (id: string) => {
     if (!currentUser) return;
     try {
@@ -121,18 +147,16 @@ export default function NotificationsPage() {
         .from('notifications')
         .delete()
         .eq('id', id)
-        .eq('receiver_id', currentUser.id); // ป้องกันการลบของคนอื่น
+        .eq('receiver_id', currentUser.id);
 
       if (error) throw error;
 
-      // อัปเดต UI หลังจากลบใน DB สำเร็จ
       setNotifications(prev => prev.filter(n => n.id !== id));
     } catch (error) {
       console.error('Failed to delete notification:', error);
     }
   };
 
-  // ✅ แก้ไข: ล้างแจ้งเตือนทั้งหมดออกจากฐานข้อมูลจริงๆ
   const handleClearAll = async () => {
     if (!currentUser) return;
     try {
@@ -143,7 +167,6 @@ export default function NotificationsPage() {
 
       if (error) throw error;
 
-      // อัปเดต UI หลังจากลบใน DB สำเร็จ
       setNotifications([]);
       setShowDeleteAllModal(false);
     } catch (error) {
