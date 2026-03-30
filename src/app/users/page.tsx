@@ -33,105 +33,120 @@ export default function UsersPage() {
   const [users, setUsers] = useState<UserWithFriendship[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
+  
+  // ✅ แยก State สำหรับการพิมพ์ กับ การค้นหาจริง
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  const fetchUsers = useCallback(async () => {
-    try {
-      setLoading(true);
-      
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) {
-        router.push('/login');
-        return;
-      }
-      setCurrentUserId(authUser.id);
-
-      // 1. ดึงข้อมูล User ทั้งหมดที่เข้าเงื่อนไข
-      let query = supabase
-        .from('users')
-        .select('id, username, display_name, profile_img_url, created_at, updated_at', { count: 'exact' });
-
-      if (selectedLetter) {
-        query = query.ilike('display_name', `${selectedLetter}%`);
-      }
-
-      if (searchTerm) {
-        query = query.or(`display_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%`);
-      }
-
-      const from = (currentPage - 1) * USERS_PER_PAGE;
-      const to = from + USERS_PER_PAGE - 1;
-
-      const { data: userData, count, error: userError } = await query
-        .order('display_name', { ascending: true })
-        .range(from, to);
-
-      if (userError) throw userError;
-      setTotalCount(count || 0);
-
-      if (userData && userData.length > 0) {
-        const userIdsInPage = userData.map(u => u.id);
-        
-        // 2. ตรวจสอบสถานะความสัมพันธ์จากตาราง friendships (ใช้ sender_id/receiver_id)
-        const { data: friendshipData } = await supabase
-          .from('friendships')
-          .select('id, sender_id, receiver_id, status')
-          .or(`sender_id.in.(${userIdsInPage.join(',')}),receiver_id.in.(${userIdsInPage.join(',')})`)
-          .or(`sender_id.eq.${authUser.id},receiver_id.eq.${authUser.id}`);
-
-        // สร้างแผนผังความสัมพันธ์เพื่อความเร็วในการ Map
-        const finalUsers: UserWithFriendship[] = userData.map(u => {
-          const rel = friendshipData?.find(f => 
-            (f.sender_id === authUser.id && f.receiver_id === u.id) || 
-            (f.sender_id === u.id && f.receiver_id === authUser.id)
-          );
-
-          let status: 'none' | 'pending' | 'accepted' | 'sent' = 'none';
-          if (rel) {
-            if (rel.status === 'accepted') {
-              status = 'accepted';
-            } else if (rel.sender_id === authUser.id) {
-              status = 'sent'; // เราส่งไปหาเขา
-            } else {
-              status = 'pending'; // เขาส่งมาหาเรา
-            }
-          }
-
-          return {
-            ...u,
-            friendshipStatus: status,
-            friendshipId: rel?.id || null
-          };
-        });
-
-        setUsers(finalUsers);
-      } else {
-        setUsers([]);
-      }
-    } catch (err: any) {
-      console.error('Fetch error:', err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentPage, searchTerm, selectedLetter, router]);
-
+  // ✅ 1. โหลดข้อมูล Auth แค่ "ครั้งเดียว" ตอนเปิดหน้าเว็บ
   useEffect(() => {
-    const handler = setTimeout(() => {
-      fetchUsers();
-    }, 400);
-    return () => clearTimeout(handler);
-  }, [fetchUsers]);
+    const initAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      } else {
+        router.push('/login');
+      }
+    };
+    initAuth();
+  }, [router]);
 
-  // ✅ แก้ไขฟังก์ชันจัดการเพิ่มเพื่อน: ดึง ID ที่เพิ่งสร้างมาใช้งานต่อทันที
+  // ✅ 2. ระบบหน่วงเวลาตอนพิมพ์ (Debounce) ไม่ให้ยิง Database รัวเกินไป
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 400); // รอ 0.4 วินาทีหลังพิมพ์เสร็จค่อยเริ่มค้นหา
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // ✅ 3. โหลดข้อมูล Users เมื่อมีการเปลี่ยนหน้า, เปลี่ยนตัวอักษร, หรือพิมพ์ค้นหาเสร็จ
+  useEffect(() => {
+    if (!currentUserId) return; // รอให้ดึง Auth เสร็จก่อนค่อยทำงาน
+
+    const fetchUsers = async () => {
+      try {
+        setLoading(true);
+        
+        let query = supabase
+          .from('users')
+          .select('id, username, display_name, profile_img_url, created_at, updated_at', { count: 'exact' });
+
+        if (selectedLetter) {
+          query = query.ilike('display_name', `${selectedLetter}%`);
+        }
+
+        if (debouncedSearch) {
+          query = query.or(`display_name.ilike.%${debouncedSearch}%,username.ilike.%${debouncedSearch}%`);
+        }
+
+        const from = (currentPage - 1) * USERS_PER_PAGE;
+        const to = from + USERS_PER_PAGE - 1;
+
+        const { data: userData, count, error: userError } = await query
+          .order('display_name', { ascending: true })
+          .range(from, to);
+
+        if (userError) throw userError;
+        setTotalCount(count || 0);
+
+        if (userData && userData.length > 0) {
+          const userIdsInPage = userData.map(u => u.id);
+          
+          // ตรวจสอบสถานะความสัมพันธ์จากตาราง friendships (ใช้ sender_id/receiver_id)
+          const { data: friendshipData } = await supabase
+            .from('friendships')
+            .select('id, sender_id, receiver_id, status')
+            .or(`sender_id.in.(${userIdsInPage.join(',')}),receiver_id.in.(${userIdsInPage.join(',')})`)
+            .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
+
+          // สร้างแผนผังความสัมพันธ์
+          const finalUsers: UserWithFriendship[] = userData.map(u => {
+            const rel = friendshipData?.find(f => 
+              (f.sender_id === currentUserId && f.receiver_id === u.id) || 
+              (f.sender_id === u.id && f.receiver_id === currentUserId)
+            );
+
+            let status: 'none' | 'pending' | 'accepted' | 'sent' = 'none';
+            if (rel) {
+              if (rel.status === 'accepted') {
+                status = 'accepted';
+              } else if (rel.sender_id === currentUserId) {
+                status = 'sent'; // เราส่งไปหาเขา
+              } else {
+                status = 'pending'; // เขาส่งมาหาเรา
+              }
+            }
+
+            return {
+              ...u,
+              friendshipStatus: status,
+              friendshipId: rel?.id || null
+            };
+          });
+
+          setUsers(finalUsers);
+        } else {
+          setUsers([]);
+        }
+      } catch (err: any) {
+        console.error('Fetch error:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, [currentPage, debouncedSearch, selectedLetter, currentUserId]);
+
   const handleAddFriend = async (targetId: string) => {
     if (!currentUserId || actionId) return;
     setActionId(targetId);
     try {
-      // 1. ส่งคำขอลงตาราง friendships เป็น pending และดึงข้อมูลที่เพิ่งสร้างกลับมา (เพื่อเอา ID)
       const { data: newFriendship, error } = await supabase
         .from('friendships')
         .insert({
@@ -144,14 +159,12 @@ export default function UsersPage() {
 
       if (error) throw error;
 
-      // 2. ส่ง Notification
       await supabase.from('notifications').insert({
         receiver_id: targetId,
         sender_id: currentUserId,
         type: 'friend_request'
       });
 
-      // Update UI ทันที พร้อมกับเซ็ต friendshipId ที่ได้มาจากฐานข้อมูล
       setUsers(prev => prev.map(u => 
         u.id === targetId ? { ...u, friendshipStatus: 'sent', friendshipId: newFriendship.id } : u
       ));
@@ -162,7 +175,6 @@ export default function UsersPage() {
     }
   };
 
-  // ฟังก์ชันลบเพื่อน หรือ ยกเลิกคำขอ
   const handleCancelOrRemove = async (targetUser: UserWithFriendship) => {
     if (!currentUserId || !targetUser.friendshipId || actionId) return;
     setActionId(targetUser.id);
@@ -208,7 +220,7 @@ export default function UsersPage() {
                   value={searchTerm}
                   onChange={(e) => {
                     setSearchTerm(e.target.value);
-                    setCurrentPage(1);
+                    setCurrentPage(1); // รีเซ็ตหน้ากลับไปหน้า 1 เสมอเมื่อพิมพ์ค้นหา
                   }}
                 />
               </div>
