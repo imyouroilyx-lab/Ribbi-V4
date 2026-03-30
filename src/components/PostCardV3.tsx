@@ -25,7 +25,7 @@ interface PostCardProps {
   profileOwnerId?: string;
 }
 
-// ✅ เพิ่ม Component ย่อยสำหรับดึงหน้าปก Link (Link Preview)
+// ✅ ปรับปรุง LinkPreview ให้ทำงาน 2 ชั้น (ป้องกันการโดน API Limit)
 const LinkPreview = ({ url }: { url: string }) => {
   const [preview, setPreview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -34,18 +34,48 @@ const LinkPreview = ({ url }: { url: string }) => {
     let isMounted = true;
     const fetchPreview = async () => {
       try {
-        // ใช้ microlink API ฟรีในการดึงข้อมูล Open Graph (รูปปก, title, description)
-        const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
-        const json = await res.json();
-        if (isMounted && json.status === 'success') {
-          setPreview(json.data);
+        // 1. ลองใช้ Dub API (ไม่มี Rate Limit กวนใจ, โหลดเร็ว)
+        const res1 = await fetch(`https://api.dub.co/metatags?url=${encodeURIComponent(url)}`);
+        if (res1.ok) {
+          const json1 = await res1.json();
+          if (isMounted && (json1.title || json1.image)) {
+            setPreview({
+              title: json1.title,
+              description: json1.description,
+              image: json1.image,
+              publisher: new URL(url).hostname
+            });
+            setLoading(false);
+            return;
+          }
         }
       } catch (error) {
-        console.error('Error fetching link preview:', error);
+        console.warn('Dub API failed, falling back to Microlink...', error);
+      }
+
+      try {
+        // 2. ถ้า API แรกพัง ลองใช้ Microlink API แทน
+        const res2 = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
+        if (res2.ok) {
+          const json2 = await res2.json();
+          if (isMounted && json2.status === 'success') {
+            setPreview({
+              title: json2.data.title,
+              description: json2.data.description,
+              image: json2.data.image?.url || json2.data.logo?.url,
+              publisher: json2.data.publisher
+            });
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Microlink API failed:', error);
       } finally {
         if (isMounted) setLoading(false);
       }
     };
+    
     fetchPreview();
     return () => { isMounted = false; };
   }, [url]);
@@ -63,41 +93,36 @@ const LinkPreview = ({ url }: { url: string }) => {
     );
   }
 
-  // ถ้าระบบดึงข้อมูลไม่ได้ หรือไม่มีรูป/Title ให้แสดงแบบเก่า
+  const domain = new URL(url).hostname;
+
+  // ถ้าระบบดึงข้อมูลไม่ได้เลย ให้แสดงแบบเก่า (Fallback)
   if (!preview || (!preview.title && !preview.image)) {
-    try {
-      const domain = new URL(url).hostname;
-      return (
-        <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mb-4 flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition block">
-          <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Link2 className="w-5 h-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-gray-900 truncate">{domain}</p>
-            <p className="text-xs text-gray-500 truncate">{url}</p>
-          </div>
-        </a>
-      );
-    } catch (e) {
-      return null;
-    }
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mb-4 flex items-center gap-3 p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition block">
+        <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+          <Link2 className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-gray-900 truncate">{domain}</p>
+          <p className="text-xs text-gray-500 truncate">{url}</p>
+        </div>
+      </a>
+    );
   }
 
-  const domain = new URL(url).hostname;
-  const imageUrl = preview.image?.url || preview.logo?.url;
-
+  // แสดงผลแบบ Facebook Share (Rich Card)
   return (
     <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mb-4 block border border-gray-200 rounded-xl hover:shadow-md transition overflow-hidden bg-gray-50 group">
-      {imageUrl && (
-        <div className="w-full h-48 md:h-64 bg-gray-200 overflow-hidden border-b border-gray-200">
-          <img src={imageUrl} alt={preview.title || 'Link preview'} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
+      {preview.image && (
+        <div className="w-full h-48 md:h-64 bg-gray-200 overflow-hidden border-b border-gray-200 relative">
+          <img src={preview.image} alt={preview.title || 'Link preview'} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
         </div>
       )}
-      <div className="p-3 md:p-4 flex flex-col justify-center min-w-0">
+      <div className="p-3 md:p-4 flex flex-col justify-center min-w-0 bg-white">
          <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider font-semibold mb-1 truncate">{preview.publisher || domain}</p>
          <p className="text-sm md:text-base font-bold text-gray-900 line-clamp-2 leading-snug group-hover:text-blue-600 transition">{preview.title || domain}</p>
          {preview.description && (
-           <p className="text-xs md:text-sm text-gray-600 mt-1 line-clamp-2">{preview.description}</p>
+           <p className="text-xs md:text-sm text-gray-600 mt-1.5 line-clamp-2">{preview.description}</p>
          )}
       </div>
     </a>
@@ -335,7 +360,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         </div>
       );
     } else {
-      // ✅ เรียกใช้ LinkPreview สำหรับ URL ทั่วไปที่ไม่ใช่ YouTube
+      // โชว์ LinkPreview ที่ดึงหน้าปกข่าว
       return <LinkPreview url={firstUrl} />;
     }
   };
