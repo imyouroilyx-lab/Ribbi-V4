@@ -52,7 +52,31 @@ export default function NotificationsPage() {
             return { ...notif, sender, post, comment };
           })
         );
-        setNotifications(fullData);
+
+        // ✅ ระบบกรองแจ้งเตือนซ้ำ (Deduplication)
+        // ป้องกันปัญหาการแจ้งเตือนเบิ้ล (เช่น Trigger ซ้อนกัน หรือคนกด Like รัวๆ)
+        const uniqueNotifications: any[] = [];
+        const seenKeys = new Set();
+
+        fullData.forEach((notif) => {
+          // สร้างคีย์เพื่อใช้เช็คความซ้ำ (ประเภท + คนส่ง + โพสต์/คอมเมนต์เป้าหมาย)
+          const key = `${notif.type}-${notif.sender_id}-${notif.post_id || 'no-post'}-${notif.comment_id || 'no-comment'}`;
+          
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            uniqueNotifications.push(notif);
+          } else if (!notif.is_read) {
+            // ถ้าข้อมูลซ้ำ แต่อันนี้ยังไม่ได้อ่าน ให้เก็บสถานะยังไม่อ่านไว้ (ลบอันเก่าใน Array ออกแล้วใส่อันใหม่ที่ยังไม่อ่านเข้าไปแทน)
+            const existingIndex = uniqueNotifications.findIndex(n => 
+              `${n.type}-${n.sender_id}-${n.post_id || 'no-post'}-${n.comment_id || 'no-comment'}` === key
+            );
+            if (existingIndex !== -1 && uniqueNotifications[existingIndex].is_read) {
+              uniqueNotifications[existingIndex] = notif;
+            }
+          }
+        });
+
+        setNotifications(uniqueNotifications);
       }
     } catch (error) {
       console.error(error);
