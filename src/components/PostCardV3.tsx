@@ -2,7 +2,20 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, Post, User } from '@/lib/supabase';
-import { Heart, MessageCircle, Trash2, Image as ImageIcon, X, Edit2, Send, Loader2, ChevronRight } from 'lucide-react';
+import { 
+  Heart, 
+  MessageCircle, 
+  Trash2, 
+  Image as ImageIcon, 
+  X, 
+  Edit2, 
+  Send, 
+  Loader2, 
+  ChevronRight, 
+  Smile, 
+  Activity as ActivityIcon,
+  MapPin
+} from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -76,7 +89,6 @@ const LinkPreview = ({ url }: { url: string }) => {
 };
 
 export default function PostCardV3({ post, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
-  // Post States
   const [comments, setComments] = useState<Comment[]>([]);
   const [showComments, setShowComments] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -86,37 +98,30 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // Like List States
   const [showLikeModal, setShowLikeModal] = useState(false);
   const [likedUsers, setLikedUsers] = useState<User[]>([]);
   const [isLoadingLikes, setIsLoadingLikes] = useState(false);
   const [likePage, setLikePage] = useState(0);
   const [hasMoreLikes, setHasMoreLikes] = useState(true);
 
-  // Comment States
   const [newComment, setNewComment] = useState('');
   const [commentImageUrl, setCommentImageUrl] = useState('');
   const [showCommentImageInput, setShowCommentImageInput] = useState(false);
-
-  // Reply States
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
   const [replyImageUrl, setReplyImageUrl] = useState('');
   const [showReplyImageInput, setShowReplyImageInput] = useState(false);
 
-  // Edit Comment States
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentContent, setEditCommentContent] = useState('');
   const [editCommentImageUrl, setEditCommentImageUrl] = useState('');
 
-  // Comment Interaction States
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
   const canDeletePost = post.author_id === currentUserId || profileOwnerId === currentUserId;
   const canEditPost = post.author_id === currentUserId;
 
-  // Like List Infinite Scroll Observer
   const likeObserver = useRef<IntersectionObserver | null>(null);
   const lastLikeRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoadingLikes) return;
@@ -203,8 +208,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     const to = from + LIKES_PER_PAGE - 1;
 
     try {
-      // ✅ แก้ไข Type Error: ใช้ unknown casting เพื่อหลีกเลี่ยง Type Overlap
-      const { data, error: fetchError } = await supabase
+      const { data } = await supabase
         .from('likes')
         .select(`
           users (
@@ -219,16 +223,13 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         .eq('post_id', post.id)
         .range(from, to);
 
-      if (fetchError) throw fetchError;
-
       if (data) {
-        // กรองและ Map ข้อมูลออกมาเป็น User[]
         const users = (data as any[]).map(item => item.users).filter(Boolean) as unknown as User[];
         setLikedUsers(prev => reset ? users : [...prev, ...users]);
         setHasMoreLikes(users.length === LIKES_PER_PAGE);
       }
     } catch (error) {
-      console.error('Error fetching liked users:', error);
+      console.error(error);
     } finally {
       setIsLoadingLikes(false);
     }
@@ -484,11 +485,41 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
           </Link>
         )}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            {post.author && <Link href={`/profile/${post.author.username}`} className="font-black text-sm md:text-base hover:text-frog-600 transition-colors">{post.author.display_name}</Link>}
-            {post.author_id !== post.target_id && post.target && <><span className="text-gray-300">→</span><Link href={`/profile/${post.target.username}`} className="font-bold text-sm text-frog-600">{post.target.display_name}</Link></>}
+          <div className="flex items-center gap-1 md:gap-2 flex-wrap">
+            {post.author && <Link href={`/profile/${post.author.username}`} className="font-black text-sm md:text-base hover:text-frog-600 transition-colors whitespace-nowrap">{post.author.display_name}</Link>}
+            
+            {/* ✅ แสดงอารมณ์ */}
+            {post.mood && (
+              <span className="text-xs md:text-sm text-gray-600 flex items-center gap-1 whitespace-nowrap">
+                <span className="text-gray-400 text-[10px] uppercase font-bold px-1">รู้สึก</span>
+                <span className="font-medium bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full border border-yellow-100">{post.mood}</span>
+              </span>
+            )}
+
+            {/* ✅ แสดงกิจกรรม */}
+            {post.activity && (
+              <span className="text-xs md:text-sm text-gray-600 flex items-center gap-1 whitespace-nowrap">
+                <span className="text-gray-400 text-[10px] uppercase font-bold px-1">กำลัง</span>
+                <span className="font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-100">{post.activity}</span>
+              </span>
+            )}
+
+            {post.author_id !== post.target_id && post.target && (
+              <div className="flex items-center gap-1 whitespace-nowrap">
+                <span className="text-gray-300">→</span>
+                <Link href={`/profile/${post.target.username}`} className="font-bold text-sm text-frog-600">{post.target.display_name}</Link>
+              </div>
+            )}
           </div>
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{getRelativeTime(post.created_at)} {post.location && `· ${post.location}`}</p>
+          
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{getRelativeTime(post.created_at)}</p>
+            {post.location && (
+              <span className="text-[10px] text-red-500 font-bold flex items-center gap-0.5 uppercase tracking-tight">
+                <MapPin size={10} /> {post.location}
+              </span>
+            )}
+          </div>
         </div>
         {(canEditPost || canDeletePost) && (
           <div className="flex gap-1">
@@ -585,14 +616,14 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
           <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
             <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
               <h3 className="font-black text-gray-900 flex items-center gap-2 uppercase tracking-widest text-[10px]">
-                <Heart size={14} className="text-red-500 fill-current" /> People who liked
+                <Heart size={14} className="text-red-500 fill-current" /> คนที่กดถูกใจ
               </h3>
               <button onClick={() => setShowLikeModal(false)} className="p-1.5 hover:bg-white rounded-full transition shadow-sm"><X size={18} /></button>
             </div>
             
             <div className="flex-1 overflow-y-auto no-scrollbar p-2">
               {likedUsers.length === 0 && !isLoadingLikes ? (
-                <div className="py-10 text-center text-gray-400 italic text-sm">No likes yet.</div>
+                <div className="py-10 text-center text-gray-400 italic text-sm">ยังไม่มีคนกดถูกใจ</div>
               ) : (
                 <div className="space-y-1">
                   {likedUsers.map((user, idx) => (
