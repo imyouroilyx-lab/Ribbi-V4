@@ -13,7 +13,8 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
-  Filter
+  Filter,
+  Loader2
 } from 'lucide-react';
 
 const USERS_PER_PAGE = 20;
@@ -55,7 +56,7 @@ export default function UsersPage() {
       const { data, error: supabaseError } = await supabase
         .from('users')
         .select('id, username, display_name, profile_img_url, created_at')
-        .order('display_name', { ascending: true }); // เรียง A-Z จากฐานข้อมูล
+        .order('display_name', { ascending: true });
 
       if (supabaseError) throw supabaseError;
       setUsers((data as any) || []);
@@ -115,7 +116,7 @@ export default function UsersPage() {
   return (
     <NavLayout>
       <div className="min-h-screen bg-[#F8FAFC] pb-20">
-        {/* Header Section - ปรับให้กระชับขึ้น */}
+        {/* Header Section */}
         <div className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
           <div className="max-w-5xl mx-auto px-4 py-4 md:py-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -139,7 +140,7 @@ export default function UsersPage() {
               </div>
             </div>
 
-            {/* Alphabet Filter Bar - ปรับให้เล็กลงและเลื่อนได้ */}
+            {/* Alphabet Filter Bar */}
             <div className="mt-4 flex items-center gap-2">
               <div className="flex-shrink-0 text-[10px] font-bold text-slate-400 uppercase tracking-tighter flex items-center gap-1">
                 <Filter size={12} /> A-Z
