@@ -5,7 +5,7 @@ import { supabase, User } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import NavLayout from '@/components/NavLayout';
 import ConfirmModal from '@/components/ConfirmModal';
-import { Bell, Clock, Trash2, Loader2 } from 'lucide-react';
+import { Bell, Clock, Trash2, Loader2, UserCheck, Heart, MessageCircle, AtSign } from 'lucide-react';
 import Link from 'next/link';
 import { getRelativeTime } from '@/lib/utils';
 
@@ -21,7 +21,6 @@ export default function NotificationsPage() {
   const [page, setPage] = useState(0);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
 
-  // Infinite Scroll Observer
   const observer = useRef<IntersectionObserver | null>(null);
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoading || isLoadingMore) return;
@@ -34,7 +33,6 @@ export default function NotificationsPage() {
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
 
-  // ล้างสถานะใน Database (Background)
   const silentMarkAllAsRead = async (userId: string) => {
     try {
       await supabase
@@ -66,10 +64,9 @@ export default function NotificationsPage() {
 
       const { data } = await fetchNotifications(user.id, 0);
       if (data) {
+        // ✅ ป้องกันการแสดงผลซ้ำ (Unique by ID)
         setNotifications(data);
         setHasMore(data.length === NOTIFS_PER_PAGE);
-        
-        // สั่งล้างแจ้งเตือนใน DB ทันที (แต่ไม่เปลี่ยน State หน้าจอเพื่อให้ผู้ใช้เห็นว่าอันไหนใหม่)
         silentMarkAllAsRead(user.id);
       }
     } catch (error) {
@@ -85,7 +82,12 @@ export default function NotificationsPage() {
     try {
       const { data } = await fetchNotifications(currentUser.id, page);
       if (data && data.length > 0) {
-        setNotifications(prev => [...prev, ...data]);
+        setNotifications(prev => {
+          // กรองตัวที่ซ้ำกันออกก่อนรวมร่าง
+          const existingIds = new Set(prev.map(n => n.id));
+          const uniqueNew = data.filter(n => !existingIds.has(n.id));
+          return [...prev, ...uniqueNew];
+        });
         setHasMore(data.length === NOTIFS_PER_PAGE);
       } else {
         setHasMore(false);
@@ -144,10 +146,21 @@ export default function NotificationsPage() {
     );
   }
 
+  const getNotifIcon = (type: string) => {
+    switch (type) {
+      case 'like': return <Heart size={12} className="fill-red-500 text-red-500" />;
+      case 'comment': 
+      case 'reply': return <MessageCircle size={12} className="fill-blue-500 text-blue-500" />;
+      case 'friend_accept': return <UserCheck size={12} className="text-frog-600" />;
+      case 'tag_post':
+      case 'tag_comment': return <AtSign size={12} className="text-purple-500" />;
+      default: return <Bell size={12} className="text-gray-400" />;
+    }
+  };
+
   return (
     <NavLayout>
       <div className="max-w-2xl mx-auto px-4">
-        {/* Header - Simplified */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl md:text-3xl font-black text-gray-900 tracking-tight">การแจ้งเตือน</h1>
@@ -165,8 +178,7 @@ export default function NotificationsPage() {
           )}
         </div>
 
-        {/* Notifications List */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           {notifications.map((n, index) => {
             const isLast = notifications.length === index + 1;
             return (
@@ -175,40 +187,49 @@ export default function NotificationsPage() {
                   href={n.post_id ? `/post/${n.post_id}` : `/profile/${n.sender?.username}`} 
                   className={`flex items-start gap-4 p-4 rounded-[1.5rem] border transition-all duration-300 ${
                     !n.is_read 
-                    ? 'bg-indigo-50/40 border-indigo-100 ring-1 ring-indigo-100/50 shadow-sm' 
-                    : 'bg-white border-gray-100 hover:border-gray-200'
+                    ? 'bg-white border-indigo-200 shadow-md ring-1 ring-indigo-50' 
+                    : 'bg-white/50 border-gray-100 hover:bg-white hover:border-gray-200'
                   }`}
                 >
                   <div className="relative shrink-0">
                     <img 
                       src={n.sender?.profile_img_url || 'https://iili.io/qbtgKBt.png'} 
-                      className="w-11 h-11 rounded-full object-cover border border-gray-100" 
+                      className="w-12 h-12 rounded-2xl object-cover border border-gray-50 shadow-sm" 
                       alt=""
                     />
-                    {!n.is_read && (
-                      <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-indigo-500 rounded-full border-2 border-white shadow-sm animate-pulse"></div>
-                    )}
+                    <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-white rounded-lg shadow-sm border border-gray-50 flex items-center justify-center">
+                      {getNotifIcon(n.type)}
+                    </div>
                   </div>
 
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-900 leading-snug">
-                      <span className="font-black">{n.sender?.display_name || 'ใครบางคน'}</span> {getNotificationText(n.type)}
+                      <span className="font-black text-gray-900">{n.sender?.display_name || 'ใครบางคน'}</span>{' '}
+                      <span className="text-gray-600">{getNotificationText(n.type)}</span>
                     </p>
+                    
                     {n.post && (
-                      <p className="text-xs text-gray-400 mt-1.5 line-clamp-1 italic border-l-2 border-gray-200 pl-2">
-                        "{n.post.content}"
-                      </p>
+                      <div className="mt-2 p-2 bg-gray-50 rounded-xl border border-gray-100/50">
+                        <p className="text-xs text-gray-400 line-clamp-1 italic">
+                          "{n.post.content}"
+                        </p>
+                      </div>
                     )}
-                    <p className="text-[10px] text-gray-400 mt-2 font-bold uppercase tracking-tighter flex items-center gap-1 opacity-70">
-                      <Clock size={10} /> {getRelativeTime(n.created_at)}
-                    </p>
+                    
+                    <div className="flex items-center gap-3 mt-2">
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter flex items-center gap-1 opacity-70">
+                        <Clock size={10} /> {getRelativeTime(n.created_at)}
+                      </p>
+                      {!n.is_read && (
+                        <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></span>
+                      )}
+                    </div>
                   </div>
                 </Link>
 
-                {/* Individual Delete Button */}
                 <button 
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteNotification(n.id); }}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white shadow-xl rounded-xl border border-gray-100 text-gray-300 hover:text-red-500 lg:opacity-0 group-hover:opacity-100 transition-all scale-90"
+                  className="absolute -right-2 top-2 p-2 bg-white shadow-xl rounded-xl border border-gray-100 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0"
                 >
                   <Trash2 size={14} />
                 </button>
@@ -218,7 +239,7 @@ export default function NotificationsPage() {
           
           {isLoadingMore && (
             <div className="flex justify-center py-8">
-              <Loader2 className="w-6 h-6 text-gray-300 animate-spin" />
+              <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
             </div>
           )}
           
@@ -231,7 +252,6 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      {/* Confirm Modal for Delete All */}
       <ConfirmModal
         isOpen={showDeleteAllModal}
         onClose={() => setShowDeleteAllModal(false)}
