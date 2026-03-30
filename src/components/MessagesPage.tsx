@@ -270,8 +270,8 @@ export default function MessagesPage() {
   if (!currentUser) return null;
 
   return (
-    // ✅ แก้ไขตรงนี้: ปรับความสูงให้รองรับมือถือ (100dvh) และลบส่วน Navbar ออกไป (120px คือ Navbar บน + ล่างโดยประมาณ)
-    <div className="h-[calc(100dvh-120px)] md:h-[calc(100vh-64px)] w-full flex overflow-hidden bg-white">
+    // ✅ แก้ไขความสูงตรงนี้: ปรับจาก -120px เป็น -64px (หรือ -60px) เพื่อให้แนบชิดพอดีกับแถบ Navigation ด้านล่าง
+    <div className="h-[calc(100dvh-64px)] md:h-[calc(100vh-64px)] w-full flex overflow-hidden bg-white">
       <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r border-gray-200 h-full flex-col`}>
         <ChatList
           chats={chats}
