@@ -64,7 +64,6 @@ export default function NotificationsPage() {
 
       const { data } = await fetchNotifications(user.id, 0);
       if (data) {
-        // ✅ ป้องกันการแสดงผลซ้ำ (Unique by ID)
         setNotifications(data);
         setHasMore(data.length === NOTIFS_PER_PAGE);
         silentMarkAllAsRead(user.id);
@@ -83,7 +82,6 @@ export default function NotificationsPage() {
       const { data } = await fetchNotifications(currentUser.id, page);
       if (data && data.length > 0) {
         setNotifications(prev => {
-          // กรองตัวที่ซ้ำกันออกก่อนรวมร่าง
           const existingIds = new Set(prev.map(n => n.id));
           const uniqueNew = data.filter(n => !existingIds.has(n.id));
           return [...prev, ...uniqueNew];
@@ -115,23 +113,41 @@ export default function NotificationsPage() {
       .range(from, to);
   };
 
+  // ✅ แก้ไข: ลบแจ้งเตือนออกจากฐานข้อมูลจริงๆ
   const deleteNotification = async (id: string) => {
+    if (!currentUser) return;
     try {
-      await supabase.from('notifications').delete().eq('id', id);
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('id', id)
+        .eq('receiver_id', currentUser.id); // ป้องกันการลบของคนอื่น
+
+      if (error) throw error;
+
+      // อัปเดต UI หลังจากลบใน DB สำเร็จ
       setNotifications(prev => prev.filter(n => n.id !== id));
     } catch (error) {
-      console.error(error);
+      console.error('Failed to delete notification:', error);
     }
   };
 
+  // ✅ แก้ไข: ล้างแจ้งเตือนทั้งหมดออกจากฐานข้อมูลจริงๆ
   const handleClearAll = async () => {
     if (!currentUser) return;
     try {
-      await supabase.from('notifications').delete().eq('receiver_id', currentUser.id);
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('receiver_id', currentUser.id);
+
+      if (error) throw error;
+
+      // อัปเดต UI หลังจากลบใน DB สำเร็จ
       setNotifications([]);
       setShowDeleteAllModal(false);
     } catch (error) {
-      console.error(error);
+      console.error('Failed to clear notifications:', error);
     }
   };
 
