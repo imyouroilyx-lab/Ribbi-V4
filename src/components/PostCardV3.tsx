@@ -14,7 +14,9 @@ import {
   ChevronRight, 
   Smile, 
   Activity as ActivityIcon,
-  MapPin
+  MapPin,
+  Check,
+  Type
 } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
 import Link from 'next/link';
@@ -88,15 +90,23 @@ const LinkPreview = ({ url }: { url: string }) => {
   );
 };
 
-export default function PostCardV3({ post, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
+export default function PostCardV3({ post: initialPost, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
+  const [post, setPost] = useState(initialPost);
   const [comments, setComments] = useState<Comment[]>([]);
   const [showComments, setShowComments] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [commentCount, setCommentCount] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
-  const [isEditingPost, setIsEditingPost] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  // States สำหรับแก้ไขโพสต์
+  const [isEditingPost, setIsEditingPost] = useState(false);
+  const [editContent, setEditContent] = useState(post.content || '');
+  const [editMood, setEditMood] = useState(post.mood || '');
+  const [editActivity, setEditActivity] = useState(post.activity || '');
+  const [editLocation, setEditLocation] = useState(post.location || '');
+  const [isUpdatingPost, setIsUpdatingPost] = useState(false);
 
   const [showLikeModal, setShowLikeModal] = useState(false);
   const [likedUsers, setLikedUsers] = useState<User[]>([]);
@@ -190,6 +200,35 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     } else {
       setIsLiked(true); setLikeCount(prev => prev + 1);
       await supabase.from('likes').insert({ post_id: post.id, user_id: currentUserId });
+    }
+  };
+
+  const handleUpdatePost = async () => {
+    if (!editContent.trim() || isUpdatingPost) return;
+    setIsUpdatingPost(true);
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .update({
+          content: editContent.trim(),
+          mood: editMood.trim() || null,
+          activity: editActivity.trim() || null,
+          location: editLocation.trim() || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', post.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      // อัปเดต State หน้าจอ
+      setPost({ ...post, ...data });
+      setIsEditingPost(false);
+    } catch (error) {
+      console.error('Error updating post:', error);
+    } finally {
+      setIsUpdatingPost(false);
     }
   };
 
@@ -488,7 +527,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
           <div className="flex items-center gap-1 md:gap-2 flex-wrap">
             {post.author && <Link href={`/profile/${post.author.username}`} className="font-black text-sm md:text-base hover:text-frog-600 transition-colors whitespace-nowrap">{post.author.display_name}</Link>}
             
-            {/* ✅ แสดงอารมณ์ */}
             {post.mood && (
               <span className="text-xs md:text-sm text-gray-600 flex items-center gap-1 whitespace-nowrap">
                 <span className="text-gray-400 text-[10px] uppercase font-bold px-1">รู้สึก</span>
@@ -496,7 +534,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
               </span>
             )}
 
-            {/* ✅ แสดงกิจกรรม */}
             {post.activity && (
               <span className="text-xs md:text-sm text-gray-600 flex items-center gap-1 whitespace-nowrap">
                 <span className="text-gray-400 text-[10px] uppercase font-bold px-1">กำลัง</span>
@@ -523,16 +560,78 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         </div>
         {(canEditPost || canDeletePost) && (
           <div className="flex gap-1">
-            {canEditPost && <button onClick={() => setIsEditingPost(!isEditingPost)} className="p-2 text-gray-300 hover:text-frog-600 transition-colors"><Edit2 size={16} /></button>}
+            {canEditPost && (
+              <button 
+                onClick={() => {
+                  setIsEditingPost(!isEditingPost);
+                  setEditContent(post.content || '');
+                  setEditMood(post.mood || '');
+                  setEditActivity(post.activity || '');
+                  setEditLocation(post.location || '');
+                }} 
+                className={`p-2 transition-colors ${isEditingPost ? 'text-frog-600 bg-frog-50 rounded-xl' : 'text-gray-300 hover:text-frog-600'}`}
+              >
+                <Edit2 size={16} />
+              </button>
+            )}
             {canDeletePost && <button onClick={() => onDelete?.(post.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>}
           </div>
         )}
       </div>
 
-      <div className="text-sm md:text-base text-gray-800 mb-4 whitespace-pre-wrap break-words leading-relaxed">
-        {renderTextWithTags(post.content || '')}
-      </div>
-      {renderEmbeds(post.content || '')}
+      {/* ✅ ส่วนเนื้อหาโพสต์: ปกติ หรือ โหมดแก้ไข */}
+      {isEditingPost ? (
+        <div className="mb-4 space-y-3 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-gray-50 rounded-2xl p-3 border border-gray-100 space-y-3 shadow-inner">
+            <textarea 
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              className="w-full bg-transparent border-none focus:ring-0 text-sm md:text-base text-gray-800 placeholder-gray-400 resize-none min-h-[100px]"
+              placeholder="คุณกำลังคิดอะไรอยู่..."
+              autoFocus
+            />
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+               <div className="relative">
+                 <Smile size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                 <input type="text" value={editMood} onChange={(e) => setEditMood(e.target.value)} placeholder="อารมณ์..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" />
+               </div>
+               <div className="relative">
+                 <ActivityIcon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                 <input type="text" value={editActivity} onChange={(e) => setEditActivity(e.target.value)} placeholder="กิจกรรม..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" />
+               </div>
+               <div className="relative">
+                 <MapPin size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                 <input type="text" value={editLocation} onChange={(e) => setEditLocation(e.target.value)} placeholder="สถานที่..." className="w-full pl-8 pr-2 py-1.5 bg-white border border-gray-100 rounded-xl text-[10px] outline-none focus:border-frog-300" />
+               </div>
+            </div>
+          </div>
+          
+          <div className="flex gap-2">
+            <button 
+              onClick={handleUpdatePost} 
+              disabled={!editContent.trim() || isUpdatingPost}
+              className="flex-1 bg-frog-600 text-white font-black py-2.5 rounded-xl shadow-lg hover:bg-frog-700 transition active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 text-xs uppercase"
+            >
+              {isUpdatingPost ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              บันทึกการแก้ไข
+            </button>
+            <button 
+              onClick={() => setIsEditingPost(false)} 
+              className="px-4 py-2.5 bg-gray-100 text-gray-500 font-black rounded-xl hover:bg-gray-200 transition text-xs uppercase"
+            >
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="text-sm md:text-base text-gray-800 mb-4 whitespace-pre-wrap break-words leading-relaxed">
+            {renderTextWithTags(post.content || '')}
+          </div>
+          {renderEmbeds(post.content || '')}
+        </>
+      )}
 
       {post.images && post.images.length > 0 && (
         <div className={`grid gap-2 mb-4 ${post.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
@@ -636,7 +735,6 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
                       <ChevronRight size={14} className="text-gray-300 group-hover:text-indigo-500 transition-colors" />
                     </Link>
                   ))}
-                  
                   <div ref={lastLikeRef} className="h-4 w-full flex justify-center py-6">
                     {isLoadingLikes && <Loader2 size={20} className="animate-spin text-frog-500" />}
                   </div>
