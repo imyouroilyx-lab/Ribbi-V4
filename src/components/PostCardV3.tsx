@@ -213,7 +213,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     else await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: currentUserId });
   };
 
-  // ✅ เพิ่มระบบ Debounce และแก้ไข Query ให้มีประสิทธิภาพ
+  // ✅ เพิ่มระบบ Debounce และแก้ไข Query ให้มีประสิทธิภาพ (ค้นหาแบบขึ้นต้นด้วย)
   const checkMention = (val: string, cursor: number, type: 'comment' | 'reply', replyId?: string) => {
     const textBeforeCursor = val.slice(0, cursor);
     const mentionMatch = textBeforeCursor.match(/(?:\s|^)@([a-zA-Z0-9_ก-๙]*)$/);
@@ -227,12 +227,12 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       
       // ตั้งเวลา 300ms ก่อนยิง Request (Debounce)
       debounceTimerRef.current = setTimeout(async () => {
-        // ใช้ ilike `${query}%` ค้นหาแค่ตัวที่ขึ้นต้นด้วย แทนที่จะเป็น `%...%` เพื่อใช้ประโยชน์จาก Index
+        // ใช้ ilike เพื่อให้ตรงกับ Index ที่ทำไว้ (ลบ % ตัวหน้าออก)
         const { data } = await supabase
           .from('users')
           .select('id, username, display_name, profile_img_url')
           .neq('id', currentUserId)
-          .ilike('display_name', `${query}%`) // ✅ เปลี่ยนตรงนี้
+          .or(`username.ilike.${query}%,display_name.ilike.${query}%`) // ✅ เปลี่ยนตรงนี้
           .limit(5);
         setMentionResults(data || []);
       }, 300);
