@@ -120,7 +120,7 @@ export default function ProfilePage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/login'); return; }
 
-      // ✅ 1. ดึงข้อมูล User ทั้ง 2 คนพร้อมกัน (ไม่รอคิว)
+      // ดึงข้อมูล User ทั้ง 2 คนพร้อมกัน (ไม่รอคิว)
       const [currentUserRes, profileUserRes] = await Promise.all([
         supabase.from('users').select('*').eq('id', user.id).single(),
         supabase.from('users').select('*').eq('username', username).single()
@@ -134,22 +134,21 @@ export default function ProfilePage() {
       setCurrentUser(currentUserData);
       setProfileUser(profileUserData);
 
-      // ✅ 2. ดึงข้อมูลอื่นๆ ทั้งหมดพร้อมกันทันที (Posts, Friends, Family ฯลฯ) ช่วยลดความหน่วงได้ 70%
-      const fetchPromises: Promise<any>[] = [
+      // ✅ แก้ไข: กำหนดประเภทเป็น any[] เพื่อให้ TypeScript หยุดฟ้อง error เรื่อง PromiseLike
+      const fetchPromises: any[] = [
         supabase.from('posts')
           .select('*, author:author_id(id, username, display_name, profile_img_url), target:target_id(id, username, display_name, profile_img_url)')
           .eq('target_id', profileUserData.id)
           .order('created_at', { ascending: false })
           .range(0, POSTS_PER_PAGE - 1)
           .then(res => {
-            setPosts(res.data || []);
+            setPosts(res.data as any || []);
             setHasMore((res.data?.length || 0) === POSTS_PER_PAGE);
           }),
         loadFamilyMembers(profileUserData.id),
         loadFriends(profileUserData.id)
       ];
 
-      // ถ้าไม่ใช่โปรไฟล์ตัวเอง ดึงข้อมูลสถานะความสัมพันธ์ร่วมด้วย
       if (currentUserData.id !== profileUserData.id) {
         fetchPromises.push(
           checkFriendshipStatus(currentUserData.id, profileUserData.id),
