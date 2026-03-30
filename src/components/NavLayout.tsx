@@ -7,29 +7,42 @@ import Link from 'next/link';
 import { Home, Users, User, Settings, LogOut, Menu, X, MessageCircle, Bell, Loader2 } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
+// ✅ 1. สร้าง Global Cache ไว้นอก Component เพื่อให้ข้อมูลไม่หายเวลาสลับหน้า
+let globalUserData: any = null;
+let globalCounts = {
+  notif: 0,
+  friend: 0,
+  message: 0
+};
+let isInitialFetched = false;
+
 const playNotificationSound = () => {
   try {
     const audio = new Audio('/sounds/ribbi.wav');
     audio.volume = 0.5;
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(() => {});
-    }
+    audio.play().catch(() => {});
   } catch (err) {}
 };
 
 export default function NavLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
   
-  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
-  const [friendRequestCount, setFriendRequestCount] = useState(0);
-  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  // ✅ ใช้ Cache จาก Global ทันทีถ้ามีอยู่แล้ว (ทำให้หน้าเว็บไม่ขาวตอนสลับหน้า)
+  const [currentUser, setCurrentUser] = useState<any>(globalUserData);
+  const [isInitialLoading, setIsInitialLoading] = useState(!isInitialFetched);
+  
+  const [unreadNotifCount, setUnreadNotifCount] = useState(globalCounts.notif);
+  const [friendRequestCount, setFriendRequestCount] = useState(globalCounts.friend);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(globalCounts.message);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const pathnameRef = useRef<string | null>(pathname);
+
+  // อัปเดตตัวเลขใน Global Cache เสมอเมื่อ State เปลี่ยน
+  useEffect(() => {
+    globalCounts = { notif: unreadNotifCount, friend: friendRequestCount, message: unreadMessageCount };
+  }, [unreadNotifCount, friendRequestCount, unreadMessageCount]);
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -50,17 +63,23 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // ดึงข้อมูลรวมผ่าน RPC (Batch Fetch)
+      // ✅ 2. ถ้าเคยดึงข้อมูลแล้ว ให้ดึงใหม่เงียบๆ ข้างหลัง (Background Refresh)
+      // แต่ถ้ายังไม่เคยดึงเลย ค่อยเปิด Loading
       const { data, error } = await supabase.rpc('get_user_app_data', { user_uuid: authUser.id });
 
       if (!error && data) {
+        globalUserData = data.user_info;
+        globalCounts = {
+          notif: data.unread_notifications || 0,
+          friend: data.pending_friends || 0,
+          message: data.unread_messages || 0
+        };
+        isInitialFetched = true;
+
         setCurrentUser(data.user_info);
-        setUnreadNotifCount(data.unread_notifications || 0);
-        setFriendRequestCount(data.pending_friends || 0);
-        setUnreadMessageCount(data.unread_messages || 0);
-      } else {
-        const { data: userData } = await supabase.from('users').select('*').eq('id', authUser.id).single();
-        setCurrentUser(userData);
+        setUnreadNotifCount(globalCounts.notif);
+        setFriendRequestCount(globalCounts.friend);
+        setUnreadMessageCount(globalCounts.message);
       }
     } catch (err) {
       console.error(err);
@@ -69,13 +88,12 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // ✅ แก้ไขระบบ Real-time ป้องกันข้อมูลรั่วไหล (Privacy Fix)
+  // ✅ 3. ระบบ Real-time แบบ Singleton-like
   useEffect(() => {
     if (!currentUser) return;
 
     const channel = supabase
       .channel(`nav-private-updates-${currentUser.id}`)
-      // 1. ดักแจ้งเตือน: กรองเฉพาะของเรา
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
@@ -87,33 +105,25 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           playNotificationSound();
         }
       })
-      // 2. ดักแชท: ✅ เปลี่ยนไปฟังจาก chat_participants ของเราเอง (ป้องกันการ Leak 100%)
-      // วิธีนี้จะทำงานเมื่อแถวในตารางผู้ร่วมแชทของเรามีการอัปเดต (เช่น unread_count เพิ่ม)
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
         table: 'chat_participants',
         filter: `user_id=eq.${currentUser.id}`
-      }, (payload: any) => {
-        // อัปเดตตัวเลขรวมของข้อความที่ยังไม่ได้อ่าน
-        // เราเรียก API เล็กๆ เพื่อเอาตัวเลขรวมที่แม่นยำ (หรือคำนวณจาก payload ก็ได้)
+      }, () => {
+        // ดึงตัวเลขใหม่มาอัปเดต (Background update)
         const fetchNewCount = async () => {
           const { data } = await supabase.from('chat_participants').select('unread_count').eq('user_id', currentUser.id);
           if (data) {
             const total = data.reduce((sum, p) => sum + (p.unread_count || 0), 0);
-            
-            // ถ้าเลขเพิ่มขึ้นจากเดิม แสดงว่ามีข้อความใหม่เข้าจริงๆ
             setUnreadMessageCount(current => {
-              if (total > current) {
-                if (!pathnameRef.current?.startsWith('/messages')) playNotificationSound();
-              }
+              if (total > current && !pathnameRef.current?.startsWith('/messages')) playNotificationSound();
               return total;
             });
           }
         };
         fetchNewCount();
       })
-      // 3. ดักคำขอเพื่อน: กรองเฉพาะของเรา
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
@@ -131,15 +141,18 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   }, [currentUser?.id]);
 
   const handleLogout = async () => {
+    globalUserData = null; // เคลียร์ Cache
+    isInitialFetched = false;
     await supabase.auth.signOut();
     router.push('/login');
   };
 
   const isActive = (path: string) => pathname === path;
 
+  // ✅ 4. ออกแบบ UI ให้ไม่บล็อก Children (แสดงเนื้อหาหน้าทันที)
   return (
     <div className="min-h-screen bg-gray-50">
-      <aside className="hidden lg:block w-64 fixed left-0 top-0 h-screen bg-white border-r border-gray-200 p-4">
+      <aside className="hidden lg:block w-64 fixed left-0 top-0 h-screen bg-white border-r border-gray-200 p-4 z-50">
         <div className="mb-8">
           <Link href="/" className="flex items-center gap-2 group">
             <img src="https://iili.io/qbtgKBt.png" alt="Ribbi" className="w-10 h-10 group-hover:scale-110 transition-transform" />
@@ -149,19 +162,19 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
         <nav className="space-y-1">
           <Link href="/" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}><Home className="w-5 h-5" /> <span>หน้าหลัก</span></Link>
-          <Link href="/friends" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/friends') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}><Users className="w-5 h-5" /> <span>เพื่อน</span>{friendRequestCount > 0 && <span className="absolute left-8 top-2 min-w-[20px] h-5 px-1.5 bg-frog-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm animate-in zoom-in">{friendRequestCount}</span>}</Link>
-          <Link href="/messages" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/messages') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}><MessageCircle className="w-5 h-5" /> <span>แชท</span>{unreadMessageCount > 0 && <span className="absolute left-8 top-2 min-w-[20px] h-5 px-1.5 bg-frog-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm animate-in zoom-in">{unreadMessageCount}</span>}</Link>
-          <Link href="/notifications" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/notifications') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}><Bell className="w-5 h-5" /> <span>แจ้งเตือน</span>{unreadNotifCount > 0 && <span className="absolute left-8 top-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-black shadow-sm animate-in zoom-in">{unreadNotifCount}</span>}</Link>
+          <Link href="/friends" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/friends') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}><Users className="w-5 h-5" /> <span>เพื่อน</span>{friendRequestCount > 0 && <span className="absolute left-8 top-2 min-w-[20px] h-5 px-1.5 bg-frog-500 text-white text-[10px] rounded-full flex items-center justify-center font-black">{friendRequestCount}</span>}</Link>
+          <Link href="/messages" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/messages') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}><MessageCircle className="w-5 h-5" /> <span>แชท</span>{unreadMessageCount > 0 && <span className="absolute left-8 top-2 min-w-[20px] h-5 px-1.5 bg-frog-500 text-white text-[10px] rounded-full flex items-center justify-center font-black">{unreadMessageCount}</span>}</Link>
+          <Link href="/notifications" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/notifications') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}><Bell className="w-5 h-5" /> <span>แจ้งเตือน</span>{unreadNotifCount > 0 && <span className="absolute left-8 top-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-black">{unreadNotifCount}</span>}</Link>
           <Link href="/settings" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition ${isActive('/settings') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}><Settings className="w-5 h-5" /> <span>ตั้งค่า</span></Link>
         </nav>
 
         <div className="absolute bottom-4 left-4 right-4 space-y-2">
-          {isInitialLoading ? (
+          {isInitialLoading && !currentUser ? (
              <div className="p-4 flex justify-center"><Loader2 className="animate-spin text-gray-200" /></div>
           ) : currentUser && (
             <>
               <Link href={`/profile/${currentUser.username}`} className={`flex items-center gap-3 p-3 transition-all rounded-2xl border ${isActive(`/profile/${currentUser.username}`) ? 'bg-frog-50 border-frog-100' : 'bg-gray-50 border-gray-100 hover:bg-gray-100'}`}>
-                <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" alt="" />
+                <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border-2 border-white" alt="" />
                 <div className="min-w-0 flex-1"><p className="font-bold text-sm truncate">{currentUser.display_name}</p><p className="text-[10px] text-gray-400 font-bold uppercase">โปรไฟล์</p></div>
               </Link>
               <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 text-red-500 font-bold text-sm transition-colors"><LogOut className="w-5 h-5" /> ออกจากระบบ</button>
@@ -179,7 +192,9 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       </header>
 
       <main className="lg:ml-64 pt-16 lg:pt-0 pb-20 lg:pb-0 min-h-screen">
-        <div className="max-w-7xl mx-auto p-4 lg:p-6">{children}</div>
+        <div className="max-w-7xl mx-auto p-4 lg:p-6">
+          {children}
+        </div>
       </main>
 
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 h-16 flex items-center justify-around z-40">
@@ -193,11 +208,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         <>
           <div className="fixed inset-0 bg-black/50 z-50 animate-in fade-in" onClick={() => setShowMobileMenu(false)} />
           <aside className="fixed right-0 top-0 h-screen w-72 bg-white z-50 p-6 flex flex-col animate-in slide-in-from-right shadow-2xl">
-             <div className="flex items-center justify-between mb-8"><span className="text-2xl font-black text-frog-600">MENU</span><button onClick={() => setShowMobileMenu(false)}><X size={28} /></button></div>
+             <div className="flex items-center justify-between mb-8"><span className="text-2xl font-black text-frog-600 tracking-tight">MENU</span><button onClick={() => setShowMobileMenu(false)}><X size={28} /></button></div>
              {currentUser && (
                <Link href={`/profile/${currentUser.username}`} onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 p-4 bg-gray-50 rounded-3xl mb-6">
-                 <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover" alt="" />
-                 <div className="min-w-0 flex-1"><p className="font-black text-gray-900 truncate">{currentUser.display_name}</p><p className="text-xs text-gray-400 font-bold uppercase">ดูโปรไฟล์</p></div>
+                 <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover shadow-md" alt="" />
+                 <div className="min-w-0 flex-1"><p className="font-black text-gray-900 truncate">{currentUser.display_name}</p><p className="text-xs text-gray-400 font-bold uppercase tracking-widest">ดูโปรไฟล์</p></div>
                </Link>
              )}
              <nav className="space-y-2 flex-1">
