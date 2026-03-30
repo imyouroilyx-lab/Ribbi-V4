@@ -57,19 +57,9 @@ export async function notifyProfilePost(
  * สร้างการแจ้งเตือนเมื่อมีคนส่งคำขอเป็นเพื่อน
  */
 export async function notifyFriendRequest(receiverId: string, senderId: string) {
-  const { data: sender } = await supabase
-    .from('users')
-    .select('display_name, username')
-    .eq('id', senderId)
-    .single();
-
-  await createNotification(
-    receiverId,
-    senderId,
-    'friend_request',
-    `/profile/${sender?.username}`,
-    `ต้องการเป็นเพื่อนกับคุณ`
-  );
+  // 🛑 ไม่ต้องสร้างการแจ้งเตือนลงฐานข้อมูลแล้ว 
+  // ให้ระบบไปเช็กและขึ้น Badge ที่หน้า Friends โดยตรงแทน
+  return; 
 }
 
 /**
