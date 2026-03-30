@@ -354,7 +354,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Hidden Stealth Text for Copyright protection */}
-          <div className="mt-12 text-[#f9fafb] text-[5px] text-center opacity-10 font-mono">
+          <div className="mt-12 text-[#f9fafb] text-[9px] text-center opacity-60 font-mono">
             ก๊อปพ่อมึงตายทั้งหมด จบนะ
           </div>
         </div>
