@@ -144,7 +144,7 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
         setHasMore(messagesData.length === MESSAGE_LIMIT);
         
         // ✅ Optimize 2: ยุบรวม Filter, Map, Reverse ใน Loop เดียวกันเพื่อความเร็ว
-        const formattedMessages = [];
+        const formattedMessages: Message[] = [];
         for (let i = messagesData.length - 1; i >= 0; i--) {
           const msg = messagesData[i];
           if (!(msg.deleted_by || []).includes(currentUser.id)) {
@@ -183,7 +183,7 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
         setHasMore(olderMessages.length === MESSAGE_LIMIT);
         
         // ✅ นำ Optimize 2 มาใช้กับการ Load More ด้วย
-        const formattedOlder = [];
+        const formattedOlder: Message[] = [];
         for (let i = olderMessages.length - 1; i >= 0; i--) {
           const msg = olderMessages[i];
           if (!(msg.deleted_by || []).includes(currentUser.id)) {
