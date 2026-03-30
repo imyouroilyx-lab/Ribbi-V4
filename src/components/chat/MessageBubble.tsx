@@ -1,10 +1,16 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { Edit2, Trash2, Palette, Pencil, Globe, Play, Check, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+
+// ✅ ย้าย Regex ออกมาด้านนอกเพื่อประสิทธิภาพ
+const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+
+// ✅ ระบบ Cache สำหรับเก็บข้อมูลพรีวิวลิงก์ ไม่ต้องโหลดซ้ำ
+const metadataCache: Record<string, any> = {};
 
 // --- TYPES ---
 interface Message {
@@ -33,21 +39,18 @@ interface MessageBubbleProps {
 
 // --- UTILITIES ---
 
-// ดึง Youtube Video ID
 function getYouTubeVideoId(url: string): string | null {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
   const match = url.match(regExp);
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
-// แปลงข้อความที่มี URL ให้กดได้
 const renderContentWithLinks = (text: string | null, isOwn: boolean) => {
   if (!text) return null;
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const parts = text.split(urlRegex);
+  const parts = text.split(URL_REGEX);
 
   return parts.map((part, index) => {
-    if (part.match(urlRegex)) {
+    if (part.match(URL_REGEX)) {
       return (
         <a
           key={index}
@@ -82,11 +85,13 @@ function YouTubeEmbed({ videoId }: { videoId: string }) {
 }
 
 function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
-  const [metadata, setMetadata] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [metadata, setMetadata] = useState<any>(metadataCache[url] || null);
+  const [loading, setLoading] = useState(!metadataCache[url]);
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
+    if (metadataCache[url]) return; // ถ้ามีใน Cache แล้วไม่ต้อง fetch
+
     let isMounted = true;
     const fetchMeta = async () => {
       try {
@@ -95,6 +100,7 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
         const json = await res.json();
         if (isMounted) {
           if (json.status === 'success' && json.data.title) {
+            metadataCache[url] = json.data; // เก็บลง Cache
             setMetadata(json.data);
           } else { setHasError(true); }
         }
@@ -134,14 +140,14 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
 }
 
 // --- MAIN COMPONENT ---
-export default function MessageBubble({ message, isOwn, currentUserId, themeColor = '#22c55e', showSenderName }: MessageBubbleProps) {
+// ✅ ใช้ React.memo เพื่อป้องกันการ Re-render ข้อความเดิมที่โหลดไปแล้ว
+const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = '#22c55e', showSenderName }: MessageBubbleProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message?.content || '');
 
   const links = useMemo(() => {
     if (!message.content) return [];
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return Array.from(new Set(message.content.match(urlRegex) || []));
+    return Array.from(new Set(message.content.match(URL_REGEX) || []));
   }, [message.content]);
 
   if (!message) return null;
@@ -178,14 +184,11 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
     if (error) {
       alert('ไม่สามารถแก้ไขได้');
       setEditContent(message.content || '');
-    } else {
-      message.content = editContent.trim();
-      message.updated_at = now;
     }
   };
 
   return (
-    <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} mb-3`}>
+    <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} mb-3 w-full animate-in fade-in duration-300`}>
       {!isOwn && showSenderName && (
         <span className="text-[10px] font-black text-gray-400 mb-1 ml-11 uppercase tracking-tighter">
           {message.sender.display_name}
@@ -193,16 +196,14 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
       )}
 
       <div className={`flex gap-2 w-full ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
-        {/* Avatar คนอื่น */}
         {!isOwn && (
           <a href={`/profile/${message.sender.username}`} className="flex-shrink-0 self-end mb-1">
-            <img src={message.sender.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover shadow-sm border border-gray-100" />
+            <img src={message.sender.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover shadow-sm border border-gray-100" alt="" />
           </a>
         )}
 
-        {/* ปุ่มลบ/แก้ไข (จะแสดงข้างๆ Bubble สำหรับข้อความตัวเอง) */}
         {isOwn && !isEditing && (
-          <div className="flex gap-1 items-start pt-1">
+          <div className="flex gap-1 items-start pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button onClick={() => setIsEditing(true)} className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full transition shadow-sm group">
               <Edit2 size={12} className="text-gray-500 group-hover:text-indigo-600" />
             </button>
@@ -212,13 +213,13 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
           </div>
         )}
 
-        <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[75%]`}>
+        <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[75%] group`}>
           {isEditing ? (
             <div className="bg-white rounded-2xl p-3 shadow-xl border-2 min-w-[260px]" style={{ borderColor: themeColor }}>
               <textarea 
                 value={editContent} 
                 onChange={(e) => setEditContent(e.target.value)}
-                className="w-full p-0 border-0 focus:ring-0 text-sm bg-transparent resize-none font-medium"
+                className="w-full p-0 border-0 focus:ring-0 text-sm bg-transparent resize-none font-medium outline-none"
                 rows={3} autoFocus
               />
               <div className="flex justify-end gap-2 mt-2">
@@ -235,23 +236,20 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
                   borderRadius: isOwn ? '1.25rem 1.25rem 0.25rem 1.25rem' : '1.25rem 1.25rem 1.25rem 0.25rem',
                 }}
               >
-                {/* Image Attachments */}
                 {message.images && message.images.length > 0 && (
                   <div className="grid gap-2 mb-2">
                     {message.images.map((img, i) => (
-                      <img key={i} src={img} className="rounded-xl max-w-full h-auto max-h-[300px] object-contain cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(img, '_blank')} />
+                      <img key={i} src={img} className="rounded-xl max-w-full h-auto max-h-[300px] object-contain cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(img, '_blank')} alt="" />
                     ))}
                   </div>
                 )}
                 
-                {/* Clickable Content */}
                 {message.content && (
                   <p className="text-sm md:text-base whitespace-pre-wrap break-words leading-relaxed font-medium">
                     {renderContentWithLinks(message.content, isOwn)}
                   </p>
                 )}
 
-                {/* Embeds */}
                 {links.map((link, i) => {
                   const ytId = getYouTubeVideoId(link);
                   return ytId ? <YouTubeEmbed key={i} videoId={ytId} /> : <LinkPreview key={i} url={link} isOwn={isOwn} />;
@@ -265,7 +263,16 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
             </>
           )}
         </div>
+        
+        {/* สำหรับคนอื่น แสดงปุ่มลบ/แก้ไข เฉพาะ Admin (ถ้ามีระบบนั้น) แต่นี่แสดงปกติข้าง Bubble */}
+        {!isOwn && !isEditing && (
+          <div className="flex gap-1 items-start pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {/* คุณสามารถเพิ่มปุ่ม Reply หรืออื่นๆ ตรงนี้ได้ */}
+          </div>
+        )}
       </div>
     </div>
   );
-}
+});
+
+export default MessageBubble;
