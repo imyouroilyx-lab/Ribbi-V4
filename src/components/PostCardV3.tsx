@@ -113,6 +113,11 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [likePage, setLikePage] = useState(0);
   const [hasMoreLikes, setHasMoreLikes] = useState(true);
 
+  // ✅ States สำหรับคนกดไลก์คอมเมนต์
+  const [showCommentLikeModal, setShowCommentLikeModal] = useState(false);
+  const [commentLikedUsers, setCommentLikedUsers] = useState<User[]>([]);
+  const [isLoadingCommentLikes, setIsLoadingCommentLikes] = useState(false);
+
   const [newComment, setNewComment] = useState('');
   const [commentImageUrl, setCommentImageUrl] = useState('');
   const [showCommentImageInput, setShowCommentImageInput] = useState(false);
@@ -128,7 +133,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
-  // ✅ States สำหรับระบบ Mention (@)
+  // States สำหรับระบบ Mention (@)
   const [mentionConfig, setMentionConfig] = useState<{
     show: boolean;
     query: string;
@@ -265,6 +270,28 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     } catch (error) { console.error(error); } finally { setIsLoadingLikes(false); }
   };
 
+  // ✅ ฟังก์ชันดึงข้อมูลคนกดไลก์คอมเมนต์
+  const openCommentLikeModal = async (commentId: string) => {
+    setCommentLikedUsers([]);
+    setShowCommentLikeModal(true);
+    setIsLoadingCommentLikes(true);
+    try {
+      const { data } = await supabase
+        .from('comment_likes')
+        .select(`users (id, username, display_name, profile_img_url)` as any)
+        .eq('comment_id', commentId);
+        
+      if (data) {
+        const users = (data as any[]).map(item => item.users).filter(Boolean);
+        setCommentLikedUsers(users);
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsLoadingCommentLikes(false);
+    }
+  };
+
   const loadComments = async () => {
     try {
       const { data } = await supabase.from('comments').select('*, author:users(id, username, display_name, profile_img_url)').eq('post_id', post.id).order('created_at', { ascending: true });
@@ -305,7 +332,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     } catch (error) { console.error(error); loadCommentLikes(); }
   };
 
-  // ✅ ฟังก์ชันแจ้งเตือนคนที่ถูกแท็กในคอมเมนต์
   const notifyTaggedUsers = async (text: string, commentId: string) => {
     const markdownMatches = Array.from(text.matchAll(/@\[.*?\]\((.*?)\)/g)).map(m => m[1]);
     const plainMatches = Array.from(text.matchAll(/(?:\s|^)@([a-zA-Z0-9_]+)/g)).map(m => m[1]);
@@ -348,7 +374,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       
       if (error) throw error;
 
-      if (data) await notifyTaggedUsers(data.content, data.id); // แจ้งเตือนแท็ก
+      if (data) await notifyTaggedUsers(data.content, data.id); 
 
       setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); loadComments();
       setMentionConfig({ show: false, query: '', type: null, cursor: 0 });
@@ -369,7 +395,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
 
       if (error) throw error;
 
-      if (data) await notifyTaggedUsers(data.content, data.id); // แจ้งเตือนแท็ก
+      if (data) await notifyTaggedUsers(data.content, data.id);
 
       setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false); loadComments();
       setMentionConfig({ show: false, query: '', type: null, cursor: 0 });
@@ -387,7 +413,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     try { await supabase.from('comments').update({ content: editCommentContent.trim(), image_url: editCommentImageUrl.trim() || null }).eq('id', id); setEditingCommentId(null); loadComments(); } catch (error) { console.error(error); } finally { setIsSubmitting(false); }
   };
 
-  // ✅ ระบบค้นหาชื่อ Mention สำหรับคอมเมนต์
   const checkMention = async (val: string, cursor: number, type: 'comment' | 'reply', replyId?: string) => {
     const textBeforeCursor = val.slice(0, cursor);
     const mentionMatch = textBeforeCursor.match(/(?:\s|^)@([a-zA-Z0-9_ก-๙]*)$/);
@@ -464,7 +489,17 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                 <div className="flex justify-between items-start gap-2"><p className="font-bold text-xs text-gray-900">{c.author?.display_name}</p>{canManageComment && (<div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">{c.author_id === currentUserId && (<button onClick={() => { setEditingCommentId(c.id); setEditCommentContent(c.content); setEditCommentImageUrl(c.image_url || ''); }} className="text-gray-400 hover:text-frog-600"><Edit2 size={12} /></button>)}<button onClick={() => handleDeleteComment(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={12} /></button></div>)}</div>
                 <p className="text-sm text-gray-800 leading-relaxed">{renderTextWithTags(c.content)}</p>
                 {c.image_url && <img src={c.image_url} className="mt-2 rounded-xl max-h-60 object-cover cursor-pointer shadow-sm" onClick={() => setSelectedImage(c.image_url!)} alt="" />}
-                {(commentLikes[c.id] || 0) > 0 && <div className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1"><Heart size={10} className="fill-red-500 text-red-500" /><span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span></div>}
+                
+                {/* ✅ ตัวเลขถูกใจคอมเมนต์ - กดเพื่อดูคนไลก์ได้ */}
+                {(commentLikes[c.id] || 0) > 0 && (
+                  <div 
+                    onClick={() => openCommentLikeModal(c.id)}
+                    className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1 cursor-pointer hover:bg-gray-50 transition hover:scale-110 active:scale-95"
+                  >
+                    <Heart size={10} className="fill-red-500 text-red-500" />
+                    <span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span>
+                  </div>
+                )}
               </div>
             )}
             <div className="flex items-center gap-4 mt-1 ml-2">
@@ -478,7 +513,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                     setReplyContent('');
                   } else {
                     setReplyTo(c.id);
-                    // ✅ เติมชื่อผู้ใช้ให้ในช่องเมื่อกดตอบกลับ
                     setReplyContent(`@[${c.author?.display_name}](${c.author?.username}) `); 
                   }
                   setReplyImageUrl(''); 
@@ -487,7 +521,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               )}
             </div>
 
-            {/* ✅ ส่วนพิมพ์ตอบกลับ */}
             {replyTo === c.id && (
               <div className="mt-3 animate-in slide-in-from-left-2 relative">
                 <div className="flex gap-2 relative">
@@ -502,7 +535,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                       onKeyUp={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'reply', c.id)}
                       onClick={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'reply', c.id)}
                       onKeyDown={(e) => {
-                        // ✅ ถ้าโชว์ Dropdown อยู่ อย่าเพิ่งส่งข้อความ
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           if (!mentionConfig.show) {
@@ -515,7 +547,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                       autoFocus 
                     />
                     
-                    {/* ✅ Dropdown สำหรับ @ ชื่อตอนพิมพ์ตอบกลับ */}
                     {mentionConfig.show && mentionConfig.type === 'reply' && mentionConfig.replyId === c.id && mentionResults.length > 0 && (
                       <div className="absolute z-20 left-0 bottom-full mb-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
                         {mentionResults.map(user => (
@@ -622,7 +653,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         <div className="mt-4 pt-4 border-t border-gray-50 space-y-4 animate-in fade-in duration-300">
           <form onSubmit={handleComment} className="space-y-2">
             <div className="flex gap-2 relative">
-              {/* ✅ ช่องพิมพ์คอมเมนต์หลัก พร้อมระบบแท็ก @ */}
               <div className="relative flex-1">
                 <input 
                   type="text" 
@@ -634,14 +664,13 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                   onKeyUp={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'comment')}
                   onClick={(e) => checkMention(e.currentTarget.value, e.currentTarget.selectionStart || 0, 'comment')}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && mentionConfig.show) e.preventDefault(); // ไม่ให้ส่งถ้ากำลังเลือกชื่อ
+                    if (e.key === 'Enter' && mentionConfig.show) e.preventDefault(); 
                   }}
                   placeholder="เขียนความคิดเห็น (พิมพ์ @ เพื่อแท็ก)..." 
                   className="input-minimal w-full text-sm py-2 px-4 shadow-inner" 
                   disabled={isSubmitting} 
                 />
                 
-                {/* ✅ Dropdown เลือกชื่อ (แสดงด้านบนช่องพิมพ์เพื่อไม่ให้โดนบัง) */}
                 {mentionConfig.show && mentionConfig.type === 'comment' && mentionResults.length > 0 && (
                   <div className="absolute z-20 left-0 bottom-full mb-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
                     {mentionResults.map(user => (
@@ -681,6 +710,40 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                 <div className="space-y-1">
                   {likedUsers.map((user, idx) => (<Link key={`${user.id}-${idx}`} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors group"><img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" /><div className="flex-1 min-w-0"><p className="font-bold text-sm text-gray-900 truncate">{user.display_name}</p><p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{user.username}</p></div><ChevronRight size={14} className="text-gray-300 group-hover:text-indigo-500 transition-colors" /></Link>))}
                   <div ref={lastLikeRef} className="h-4 w-full flex justify-center py-6">{isLoadingLikes && <Loader2 size={20} className="animate-spin text-frog-500" />}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ Modal สำหรับดูคนกดไลก์คอมเมนต์ */}
+      {showCommentLikeModal && (
+        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowCommentLikeModal(false)}>
+          <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <h3 className="font-black text-gray-900 flex items-center gap-2 uppercase tracking-widest text-[10px]">
+                <Heart size={14} className="text-red-500 fill-current" /> คนที่ถูกใจคอมเมนต์นี้
+              </h3>
+              <button onClick={() => setShowCommentLikeModal(false)} className="p-1.5 hover:bg-white rounded-full transition shadow-sm"><X size={18} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto no-scrollbar p-2">
+              {isLoadingCommentLikes ? (
+                <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-frog-500" /></div>
+              ) : commentLikedUsers.length === 0 ? (
+                <div className="py-10 text-center text-gray-400 italic text-sm">ยังไม่มีคนกดถูกใจ</div>
+              ) : (
+                <div className="space-y-1">
+                  {commentLikedUsers.map((user, idx) => (
+                    <Link key={`${user.id}-${idx}`} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors group">
+                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm text-gray-900 truncate">{user.display_name}</p>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{user.username}</p>
+                      </div>
+                      <ChevronRight size={14} className="text-gray-300 group-hover:text-indigo-500 transition-colors" />
+                    </Link>
+                  ))}
                 </div>
               )}
             </div>
