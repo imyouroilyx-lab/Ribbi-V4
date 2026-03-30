@@ -69,8 +69,7 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
     const timer = setTimeout(async () => {
       try {
         if (mentionSearchQuery.length > 0) {
-          // ✅ แก้ไข Performance: เปลี่ยนจากการค้นหาตรงกลาง (%..%) เป็นขึ้นต้นด้วย (..%)
-          // เพื่อให้ Database สามารถใช้ Index ได้ และลดอาการ CPU 100% ตอนคนใช้เยอะๆ
+          // ✅ แก้ไข Performance: เอา % ข้างหน้าออก เพื่อให้ Database สามารถใช้ Index ได้
           const { data } = await supabase
             .from('users')
             .select('id, username, display_name, profile_img_url')
