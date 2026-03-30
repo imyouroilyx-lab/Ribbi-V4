@@ -371,6 +371,7 @@ export default function SettingsPage() {
               <p className="text-[10px] md:text-[11px] text-slate-400 leading-relaxed font-medium">
                 สงวนลิขสิทธิ์เนื้อหาและซอฟต์แวร์ตามกฎหมาย <br className="hidden md:block" />
                 <span className="text-indigo-400/80">ไม่อนุญาตให้คัดลอก ดัดแปลง หรือละเมิดสิทธิ์ในทุกกรณีโดยไม่ได้รับอนุญาต</span>
+                <span className="text-white-400">ก๊อปพ่อมึงตายทั้งหมดจบนะ</span>
               </p>
             </div>
           </div>
