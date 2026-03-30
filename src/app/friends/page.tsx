@@ -18,6 +18,9 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+// ✅ นำเข้าฟังก์ชันแจ้งเตือนที่ถูกต้องจาก lib ของพี่
+import { notifyFriendAccept } from '@/lib/notifications';
+
 interface Friendship {
   id: string;
   sender_id: string;
@@ -125,8 +128,9 @@ export default function FriendsPage() {
     }
   };
 
-  const handleAcceptRequest = async (id: string) => {
-    // ✅ แก้ไข: ลบบรรทัดการ insert notification ออก เพราะจะซ้ำซ้อนกับระบบ Database Trigger
+  // ✅ แก้ไข: ลบโค้ดแจ้งเตือนซ้ำซ้อนออก และใช้จาก lib ของพี่แทนที่เดียว
+  const handleAcceptRequest = async (id: string, senderId: string) => {
+    if (!currentUser) return;
     try {
       const { error } = await supabase
         .from('friendships')
@@ -134,6 +138,9 @@ export default function FriendsPage() {
         .eq('id', id);
         
       if (error) throw error;
+      
+      // เรียกใช้ไฟล์ lib/notifications.ts ที่พี่เขียนไว้ (จะได้แจ้งเตือนแค่อันเดียว)
+      await notifyFriendAccept(senderId, currentUser.id);
       
       loadInitialData();
       loadFriendsData();
@@ -193,7 +200,7 @@ export default function FriendsPage() {
                    </div>
                    <div className="flex gap-1.5">
                       <button 
-                        onClick={() => handleAcceptRequest(r.id)} 
+                        onClick={() => handleAcceptRequest(r.id, r.sender_id)} 
                         className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-sm"
                         title="รับเป็นเพื่อน"
                       >
