@@ -72,21 +72,37 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         nFriend = data.pending_friends || 0;
         nMsg = data.unread_messages || 0;
       } else {
-        // ✅ แก้ไขความหน่วง: คืนค่าเป็น Sequential Await เพื่อไม่ให้ DB Connection เต็ม
-        // แต่เปลี่ยนจากการใช้ select('*') เป็นการเจาะจงเฉพาะคอลัมน์ที่จำเป็น เพื่อให้ Query เบาที่สุด
-        const { data: fallbackUser } = await supabase
-          .from('users')
-          .select('id, username, display_name, profile_img_url') // ดึงแค่นี้พอ ไม่ต้องเอาขยะมา
-          .eq('id', session.user.id)
-          .single();
-          
+        // ✅ Ultimate Fix: รันพร้อมกันด้วย Promise.all แต่เจาะจงเฉพาะข้อมูลที่เบาที่สุด
+        // วิธีนี้จะเร็วมาก และไม่ทำให้ Database พังถ้ามีการทำ Index ที่ถูกต้องแล้ว
+        const [
+          { data: fallbackUser },
+          { count: cNotif },
+          { count: cFriend },
+          { data: cMsgData }
+        ] = await Promise.all([
+          supabase
+            .from('users')
+            .select('id, username, display_name, profile_img_url')
+            .eq('id', session.user.id)
+            .single(),
+          supabase
+            .from('notifications')
+            .select('id', { count: 'exact', head: true })
+            .eq('receiver_id', session.user.id)
+            .eq('is_read', false)
+            .neq('type', 'friend_request'),
+          supabase
+            .from('friendships')
+            .select('id', { count: 'exact', head: true })
+            .eq('receiver_id', session.user.id)
+            .eq('status', 'pending'),
+          supabase
+            .from('chat_participants')
+            .select('unread_count')
+            .eq('user_id', session.user.id)
+        ]);
+
         if (fallbackUser) uData = fallbackUser;
-        
-        // พวก count ใช้ head: true ถูกต้องแล้ว เพราะมันจะไม่ส่งข้อมูลกลับมา ส่งมาแค่ตัวเลข
-        const { count: cNotif } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('is_read', false).neq('type', 'friend_request');
-        const { count: cFriend } = await supabase.from('friendships').select('id', { count: 'exact', head: true }).eq('receiver_id', session.user.id).eq('status', 'pending');
-        const { data: cMsgData } = await supabase.from('chat_participants').select('unread_count').eq('user_id', session.user.id);
-        
         nNotif = cNotif || 0;
         nFriend = cFriend || 0;
         nMsg = cMsgData ? cMsgData.reduce((sum, p) => sum + (p.unread_count || 0), 0) : 0;
