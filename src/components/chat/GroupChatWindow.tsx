@@ -152,7 +152,7 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
       if (messagesData) {
         setHasMore(messagesData.length === MESSAGE_LIMIT);
         
-        const formattedMessages = [];
+        const formattedMessages: Message[] = [];
         for (let i = messagesData.length - 1; i >= 0; i--) {
           const msg = messagesData[i];
           // กรองข้อมูลที่โดนลบที่ฝั่ง Client ช่วยลดภาระ Seq Scan ที่ฝั่ง DB
@@ -192,7 +192,7 @@ export default function GroupChatWindow({ chatId, currentUser, onBack, onRefresh
         setHasMore(olderMessages.length === MESSAGE_LIMIT);
         
         // ✅ นำ Optimization มาใช้กับการ Load More ด้วย
-        const formattedOlder = [];
+        const formattedOlder: Message[] = [];
         for (let i = olderMessages.length - 1; i >= 0; i--) {
           const msg = olderMessages[i];
           if (!(msg.deleted_by || []).includes(currentUser.id)) {
