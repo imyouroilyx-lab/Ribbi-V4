@@ -411,7 +411,7 @@ export default function ProfilePage() {
 
   const themeColor = profileUser.theme_color || '#9de5a8';
 
-  // ✅ แก้ปัญหา Focus หลุด: ใช้การ Inline โค้ดแทนการนิยาม Function component ข้างใน
+  // ✅ แก้ไขปัญหาปุ่มสีขาว และ Focus หลุด
   const relationshipContent = (
     <div className="card-minimal bg-white shadow-sm border border-gray-100">
       <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
@@ -482,10 +482,11 @@ export default function ProfilePage() {
                     placeholder="เช่น พี่ชาย, เพื่อนสนิท..." 
                     className="w-full px-3 py-2 bg-white border border-frog-200 rounded-xl text-xs focus:ring-2 focus:ring-frog-500 outline-none mb-2" 
                   />
+                  {/* ✅ ปรับปรุงปุ่มบันทึกให้สีเด่นชัดขึ้น (ไม่เป็นสีขาว) */}
                   <button 
                     onClick={handleAddFamilyMember} 
                     disabled={!newRelationship.trim()}
-                    className="w-full py-2 bg-frog-600 text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50"
+                    className="w-full py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black shadow-lg hover:bg-black transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-widest"
                   >
                     บันทึกความสัมพันธ์
                   </button>
@@ -518,7 +519,6 @@ export default function ProfilePage() {
 
               <div className="p-4 md:p-6 bg-white">
                 <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6 -mt-20 mb-6">
-                  {/* ✅ รูปโปรไฟล์: วงกลม (rounded-full) */}
                   <div 
                     className="w-24 h-24 md:w-36 md:h-36 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0"
                     style={{ borderColor: themeColor, borderWidth: '4px' }}
@@ -723,7 +723,6 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* ✅ Relationship Widget Mobile */}
               { (profileUser.relationship_status || familyMembers.length > 0 || friendshipStatus === 'accepted') && relationshipContent }
             </div>
 
@@ -799,7 +798,6 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* ✅ Relationship Widget Desktop */}
               { (profileUser.relationship_status || familyMembers.length > 0 || friendshipStatus === 'accepted') && relationshipContent }
 
               <div className="text-center opacity-40 hover:opacity-100 transition">
