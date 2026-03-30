@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-// ✅ นำเข้าฟังก์ชันแจ้งเตือนที่ถูกต้องจาก lib ของพี่
+// ✅ นำเข้าฟังก์ชันแจ้งเตือน
 import { notifyFriendAccept } from '@/lib/notifications';
 
 interface Friendship {
@@ -37,7 +37,7 @@ const ALPHABETS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 export default function FriendsPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [friends, setFriends] = useState<User[]>([]);
+  const [friends, setFriends] = useState<any[]>([]); // ✅ ใช้ any[] เพื่อรองรับการยัด friendship_id เข้าไป
   const [pendingRequests, setPendingRequests] = useState<Friendship[]>([]);
   const [sentRequests, setSentRequests] = useState<Friendship[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -118,17 +118,21 @@ export default function FriendsPage() {
 
       setTotalFriends(count || 0);
       
+      // ✅ แก้ไข: แนบ friendship_id เข้าไปใน Object ของเพื่อนด้วย เพื่อเอาไว้ใช้ตอนกดลบ
       const friendsList = (data || []).map((f: any) => {
-        return f.sender_id === currentUser.id ? f.receiver : f.sender;
+        const friendData = f.sender_id === currentUser.id ? f.receiver : f.sender;
+        if (friendData) {
+          return { ...friendData, friendship_id: f.id };
+        }
+        return null;
       }).filter(u => u !== null);
 
-      setFriends(friendsList as any);
+      setFriends(friendsList);
     } catch (error) {
       console.error(error);
     }
   };
 
-  // ✅ แก้ไข: ลบโค้ดแจ้งเตือนซ้ำซ้อนออก และใช้จาก lib ของพี่แทนที่เดียว
   const handleAcceptRequest = async (id: string, senderId: string) => {
     if (!currentUser) return;
     try {
@@ -139,7 +143,6 @@ export default function FriendsPage() {
         
       if (error) throw error;
       
-      // เรียกใช้ไฟล์ lib/notifications.ts ที่พี่เขียนไว้ (จะได้แจ้งเตือนแค่อันเดียว)
       await notifyFriendAccept(senderId, currentUser.id);
       
       loadInitialData();
@@ -156,9 +159,18 @@ export default function FriendsPage() {
 
   const handleRemoveFriend = async () => {
     if (!selectedFriendshipId) return;
-    await supabase.from('friendships').delete().eq('id', selectedFriendshipId);
-    setShowRemoveConfirm(false);
-    loadFriendsData();
+    
+    try {
+      // ✅ ลบด้วย Friendship ID จริงๆ แล้ว
+      const { error } = await supabase.from('friendships').delete().eq('id', selectedFriendshipId);
+      if (error) throw error;
+      
+      setShowRemoveConfirm(false);
+      setSelectedFriendshipId(null);
+      loadFriendsData();
+    } catch (error) {
+      console.error('Error removing friend:', error);
+    }
   };
 
   const totalPages = Math.ceil(totalFriends / FRIENDS_PER_PAGE);
@@ -274,7 +286,8 @@ export default function FriendsPage() {
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
-                      onClick={() => { setSelectedFriendshipId(f.id); setShowRemoveConfirm(true); }} 
+                      // ✅ แก้ไข: ใช้ f.friendship_id ในการอ้างอิงแทนที่จะใช้ f.id (ซึ่งเป็น User ID)
+                      onClick={() => { setSelectedFriendshipId(f.friendship_id); setShowRemoveConfirm(true); }} 
                       className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                       title="ลบเพื่อน"
                     >
