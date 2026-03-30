@@ -109,7 +109,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
 
   const loadChatData = async () => {
     try {
-      // ✅ Optimize 1: ใช้ Foreign Key Join ดึงข้อมูล user ใน Query เดียว
       const [chatRes, participantRes, nicknamesRes, messagesRes] = await Promise.all([
         supabase.from('chats').select('theme_color, is_group').eq('id', chatId).single(),
         supabase.from('chat_participants').select('user_id, users(id, username, display_name, profile_img_url, is_online)').eq('chat_id', chatId).neq('user_id', currentUser.id).maybeSingle(),
@@ -132,7 +131,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
         setNicknames(map);
       }
 
-      // ดึงข้อมูล Target User ออกมาจาก Join Result
       if (participantRes.data?.users) {
         const userData = participantRes.data.users;
         setTargetUser(userData);
@@ -143,18 +141,18 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
       if (messagesData) {
         setHasMore(messagesData.length === MESSAGE_LIMIT);
         
-        // ✅ Optimize 2: ยุบรวม Filter, Map, Reverse ใน Loop เดียวกันเพื่อความเร็ว
+        // ✅ ระบุ Type เพื่อป้องกัน Error บน Vercel
         const formattedMessages: Message[] = [];
         for (let i = messagesData.length - 1; i >= 0; i--) {
           const msg = messagesData[i];
           if (!(msg.deleted_by || []).includes(currentUser.id)) {
             formattedMessages.push({
-              ...msg,
+              ...(msg as any),
               sender: msg.sender_id === currentUser.id ? currentUser : otherUserRef.current
             });
           }
         }
-        setMessages(formattedMessages as any);
+        setMessages(formattedMessages);
       }
     } catch (error) {
       console.error('Error loading chat:', error);
@@ -182,19 +180,19 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
       if (olderMessages && olderMessages.length > 0) {
         setHasMore(olderMessages.length === MESSAGE_LIMIT);
         
-        // ✅ นำ Optimize 2 มาใช้กับการ Load More ด้วย
+        // ✅ ระบุ Type เพื่อป้องกัน Error บน Vercel
         const formattedOlder: Message[] = [];
         for (let i = olderMessages.length - 1; i >= 0; i--) {
           const msg = olderMessages[i];
           if (!(msg.deleted_by || []).includes(currentUser.id)) {
             formattedOlder.push({
-              ...msg,
+              ...(msg as any),
               sender: msg.sender_id === currentUser.id ? currentUser : otherUserRef.current
             });
           }
         }
 
-        setMessages(prev => [...formattedOlder as any, ...prev]);
+        setMessages(prev => [...formattedOlder, ...prev]);
 
         setTimeout(() => {
           if (scrollContainer) {
