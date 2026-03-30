@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Send, Image as ImageIcon, X, Loader2 } from 'lucide-react';
 
@@ -12,7 +12,14 @@ interface MessageInputProps {
   themeColor?: string;
 }
 
-export default function MessageInput({ chatId, currentUserId, onMessageSent, onTyping, themeColor = '#22c55e' }: MessageInputProps) {
+// ✅ ใช้ React.memo เพื่อป้องกันช่องพิมพ์ Re-render ตอนมีข้อความใหม่เด้งเข้ามาในหน้าแชท
+const MessageInput = React.memo(({ 
+  chatId, 
+  currentUserId, 
+  onMessageSent, 
+  onTyping, 
+  themeColor = '#22c55e' 
+}: MessageInputProps) => {
   const [content, setContent] = useState('');
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [showImageInput, setShowImageInput] = useState(false);
@@ -20,25 +27,31 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
   const [isSending, setIsSending] = useState(false);
   
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastTypingTimeRef = useRef<number>(0); // ✅ จำเวลาที่ส่ง typing ล่าสุด
+  const lastTypingTimeRef = useRef<number>(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // ✅ ปรับความสูงช่องพิมพ์อัตโนมัติแบบลื่นไหล
+  // ปรับความสูงช่องพิมพ์อัตโนมัติ
   useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {
-      textarea.style.height = '40px'; // Reset height
+      textarea.style.height = '40px';
       const scrollHeight = textarea.scrollHeight;
       textarea.style.height = Math.min(scrollHeight, 128) + 'px';
     }
   }, [content]);
 
-  // ✅ ระบบแจ้งเตือนการพิมพ์แบบประหยัดทรัพยากร (Throttle)
-  const handleTyping = () => {
+  // ✅ เคลียร์ Timeout เมื่อปิด Component
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, []);
+
+  // ระบบแจ้งเตือนการพิมพ์ (Throttle)
+  const handleTyping = useCallback(() => {
     if (!onTyping) return;
 
     const now = Date.now();
-    // ส่งสถานะ "กำลังพิมพ์" แค่ครั้งเดียวในทุกๆ 3 วินาที (ป้องกันการรันรัวๆ)
     if (now - lastTypingTimeRef.current > 3000) {
       onTyping(true);
       lastTypingTimeRef.current = now;
@@ -48,17 +61,17 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
     
     typingTimeoutRef.current = setTimeout(() => {
       onTyping(false);
-      lastTypingTimeRef.current = 0; // รีเซ็ตเพื่อให้พิมพ์ครั้งต่อไปส่งสัญญาณใหม่ได้ทันที
+      lastTypingTimeRef.current = 0;
     }, 2500);
-  };
+  }, [onTyping]);
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if ((!content.trim() && imageUrls.length === 0) || isSending) return;
 
     setIsSending(true);
     
-    // หยุด typing ทันทีเมื่อกดส่ง
+    // หยุด typing ทันที
     if (onTyping) onTyping(false);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     lastTypingTimeRef.current = 0;
@@ -83,7 +96,7 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
       setTempImageUrl('');
       onMessageSent();
 
-      // คืนค่าความสูงและ Focus กลับมา
+      // คืนค่า Focus และ Reset ความสูง
       setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.focus();
@@ -96,19 +109,19 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
     } finally {
       setIsSending(false);
     }
-  };
+  }, [chatId, currentUserId, content, imageUrls, onMessageSent, onTyping, isSending]);
 
-  const handleAddImage = () => {
+  const handleAddImage = useCallback(() => {
     if (tempImageUrl.trim()) {
       setImageUrls(prev => [...prev, tempImageUrl.trim()]);
       setTempImageUrl('');
       setShowImageInput(false);
     }
-  };
+  }, [tempImageUrl]);
 
-  const handleRemoveImage = (index: number) => {
+  const handleRemoveImage = useCallback((index: number) => {
     setImageUrls(prev => prev.filter((_, i) => i !== index));
-  };
+  }, []);
 
   return (
     <div className="p-4 border-t border-gray-100 bg-white">
@@ -198,4 +211,6 @@ export default function MessageInput({ chatId, currentUserId, onMessageSent, onT
       </div>
     </div>
   );
-}
+});
+
+export default MessageInput;
