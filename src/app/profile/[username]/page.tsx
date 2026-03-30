@@ -525,13 +525,13 @@ export default function ProfilePage() {
               <div className="p-4 md:p-6 bg-white">
                 <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6 -mt-20 mb-6">
                   <div 
-                    className="w-24 h-24 md:w-36 md:h-36 rounded-3xl p-1.5 shadow-xl bg-white flex-shrink-0"
+                    className="w-24 h-24 md:w-36 md:h-36 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0"
                     style={{ borderColor: themeColor, borderWidth: '4px' }}
                   >
                     <img 
                       src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
                       alt={profileUser.display_name}
-                      className="w-full h-full rounded-2xl object-cover"
+                      className="w-full h-full rounded-full object-cover"
                     />
                   </div>
 
@@ -683,7 +683,7 @@ export default function ProfilePage() {
                     )}
                   </div>
 
-                  {/* ✅ ส่วนแสดงงานอดิเรก (Hobbies) กลับมาแล้วครับ */}
+                  {/* ส่วนแสดงงานอดิเรก (Hobbies) */}
                   {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
                     <div className="flex flex-wrap gap-2 pt-2">
                       {profileUser.hobbies.map((hobby: any, index: number) => (
