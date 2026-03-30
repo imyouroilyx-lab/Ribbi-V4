@@ -402,7 +402,7 @@ export default function ProfilePage() {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-16 h-16 mx-auto mb-4 animate-bounce" />
-            <p className="text-gray-600 font-bold uppercase tracking-widest text-xs">Loading profile...</p>
+            <p className="text-gray-600 font-bold uppercase tracking-widest text-xs">กำลังโหลดข้อมูลโปรไฟล์...</p>
           </div>
         </div>
       </NavLayout>
