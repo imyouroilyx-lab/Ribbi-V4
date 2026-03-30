@@ -101,6 +101,7 @@ export default function ProfilePage() {
   const [friendshipId, setFriendshipId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [myFamilyMembers, setMyFamilyMembers] = useState<any[]>([]); // ✅ เก็บลิสต์ความสัมพันธ์ของตัวเราเอง
   const [showAddFamily, setShowAddFamily] = useState(false);
   const [newRelationship, setNewRelationship] = useState('');
   const [isSaved, setIsSaved] = useState(false);
@@ -204,7 +205,8 @@ export default function ProfilePage() {
         await Promise.all([
           checkFriendshipStatus(currentUserData.id, profileUserData.id),
           checkBlockStatus(currentUserData.id, profileUserData.id),
-          supabase.from('profile_views').insert({ profile_id: profileUserData.id, visitor_id: currentUserData.id })
+          supabase.from('profile_views').insert({ profile_id: profileUserData.id, visitor_id: currentUserData.id }),
+          loadMyFamilyMembers(currentUserData.id) // ✅ โหลดความสัมพันธ์ของตัวเราเอง
         ]);
       }
 
@@ -218,6 +220,14 @@ export default function ProfilePage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // ✅ ฟังก์ชันโหลดรายชื่อความสัมพันธ์ที่ตัวเราเคยตั้งไว้
+  const loadMyFamilyMembers = async (myUserId: string) => {
+    try {
+      const { data } = await supabase.from('family_members').select('member_user_id').eq('user_id', myUserId);
+      setMyFamilyMembers(data || []);
+    } catch (error) { console.error(error); }
   };
 
   const loadMorePosts = async () => {
@@ -346,6 +356,8 @@ export default function ProfilePage() {
         await loadFamilyMembers(currentUser.id);
       } else {
         setIsSaved(true);
+        // อัปเดตลิสต์ "ความสัมพันธ์ของฉัน" ทันที เพื่อให้ส่วน Input หายไป
+        setMyFamilyMembers(prev => [...prev, { member_user_id: profileUser.id }]);
         setTimeout(() => {
           setIsSaved(false);
           setShowAddFamily(false);
@@ -411,7 +423,9 @@ export default function ProfilePage() {
 
   const themeColor = profileUser.theme_color || '#9de5a8';
 
-  // ✅ แก้ไขปัญหาปุ่มสีขาว และ Focus หลุด
+  // ✅ Logic: ตรวจสอบว่าคนนี้อยู่ในลิสต์ความสัมพันธ์ของเราหรือยัง
+  const isAlreadyInMyFamily = myFamilyMembers.some(m => m.member_user_id === profileUser.id);
+
   const relationshipContent = (
     <div className="card-minimal bg-white shadow-sm border border-gray-100">
       <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
@@ -455,7 +469,8 @@ export default function ProfilePage() {
         <p className="text-[10px] text-gray-400 italic px-1">ยังไม่มีรายชื่อคนใกล้ชิด</p>
       )}
 
-      {!isOwnProfile && friendshipStatus === 'accepted' && (
+      {/* ✅ เงื่อนไขใหม่: ต้องยังไม่มีความสัมพันธ์กัน ถึงจะขึ้นให้เพิ่มได้ */}
+      {!isOwnProfile && friendshipStatus === 'accepted' && !isAlreadyInMyFamily && (
         <div className="mt-4">
           {!showAddFamily ? (
             <button onClick={() => setShowAddFamily(true)} className="w-full py-2.5 text-[10px] font-black uppercase text-frog-600 hover:bg-frog-50 rounded-xl transition border border-dashed border-frog-200 flex items-center justify-center gap-2">
@@ -482,7 +497,6 @@ export default function ProfilePage() {
                     placeholder="เช่น พี่ชาย, เพื่อนสนิท..." 
                     className="w-full px-3 py-2 bg-white border border-frog-200 rounded-xl text-xs focus:ring-2 focus:ring-frog-500 outline-none mb-2" 
                   />
-                  {/* ✅ ปรับปรุงปุ่มบันทึกให้สีเด่นชัดขึ้น (ไม่เป็นสีขาว) */}
                   <button 
                     onClick={handleAddFamilyMember} 
                     disabled={!newRelationship.trim()}
@@ -496,6 +510,14 @@ export default function ProfilePage() {
           )}
         </div>
       )}
+      
+      {/* ✅ แสดง Badge เล็กๆ ถ้าเป็นความสัมพันธ์กันแล้ว */}
+      {isAlreadyInMyFamily && !isOwnProfile && (
+        <div className="mt-4 p-2 bg-frog-50 rounded-xl border border-frog-100 flex items-center justify-center gap-2">
+          <CheckCircle2 size={14} className="text-frog-600" />
+          <span className="text-[10px] font-black text-frog-600 uppercase tracking-widest">อยู่ในรายชื่อความสัมพันธ์แล้ว</span>
+        </div>
+      )}
     </div>
   );
 
@@ -504,7 +526,6 @@ export default function ProfilePage() {
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="flex-1 min-w-0 space-y-6">
-            {/* Profile Header */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm">
               <div 
                 className="h-32 md:h-56"
@@ -723,7 +744,7 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              { (profileUser.relationship_status || familyMembers.length > 0 || friendshipStatus === 'accepted') && relationshipContent }
+              { (profileUser.relationship_status || familyMembers.length > 0 || (friendshipStatus === 'accepted' && !isAlreadyInMyFamily)) && relationshipContent }
             </div>
 
             {(friendshipStatus === 'accepted' || isOwnProfile) && blockStatus === 'none' && (
@@ -798,7 +819,8 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              { (profileUser.relationship_status || familyMembers.length > 0 || friendshipStatus === 'accepted') && relationshipContent }
+              {/* ✅ Relationship Widget Desktop - ซ่อนส่วนเพิ่มถ้าเป็นความสัมพันธ์กันแล้ว */}
+              { (profileUser.relationship_status || familyMembers.length > 0 || (friendshipStatus === 'accepted' && !isAlreadyInMyFamily)) && relationshipContent }
 
               <div className="text-center opacity-40 hover:opacity-100 transition">
                 <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">Ribbi Community</p>
