@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import { supabase, User } from '@/lib/supabase';
 import { Image, Smile, MapPin, X, Activity } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 
 const EmojiPicker = dynamic(() => import('emoji-picker-react'), { ssr: false });
 
@@ -207,14 +208,21 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
     <div className="card-minimal">
       <form onSubmit={handleSubmit}>
         <div className="flex gap-2 md:gap-3 mb-3">
-          <img
-            src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
-            alt={currentUser.display_name}
-            className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover flex-shrink-0"
-          />
+          <Link href={`/profile/${currentUser.username}`} className="flex-shrink-0">
+            <img
+              src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
+              alt={currentUser.display_name}
+              className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover hover:opacity-80 transition"
+            />
+          </Link>
 
           <div className="flex-1 min-w-0">
-            <p className="font-bold text-sm md:text-base">{currentUser.display_name}</p>
+            <Link 
+              href={`/profile/${currentUser.username}`} 
+              className="font-bold text-sm md:text-base hover:underline text-gray-900 transition-colors block truncate"
+            >
+              {currentUser.display_name}
+            </Link>
             
             {(mood || activity || location) && (
               <div className="flex flex-wrap items-center gap-1 text-sm text-gray-600 mt-1">
