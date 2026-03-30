@@ -348,13 +348,13 @@ export default function SettingsPage() {
             <div className="max-w-md mx-auto px-6">
               <p className="text-[11px] md:text-xs text-slate-400 font-bold leading-relaxed">
                 © สงวนลิขสิทธิ์เนื้อหาและซอฟต์แวร์ตามกฎหมายคุ้มครองลิขสิทธิ์ <br/>
-                <span className="text-slate-500/60">ห้ามมิให้ผู้ใดคัดลอก ดัดแปลง หรือละเมิดสิทธิ์โดยไม่ได้รับอนุญาตเป็นลายลักษณ์อักษร</span>
+                <span className="text-slate-500/60">ห้ามมิให้ผู้ใดคัดลอก ดัดแปลง หรือละเมิดสิทธิ์โดยไม่ได้รับอนุญาต</span>
               </p>
             </div>
           </div>
 
           {/* Hidden Stealth Text for Copyright protection */}
-          <div className="mt-12 text-[#f9fafb] select-none text-[2px] text-center opacity-10 font-mono">
+          <div className="mt-12 text-[#f9fafb] text-[5px] text-center opacity-10 font-mono">
             ก๊อปพ่อมึงตายทั้งหมด จบนะ
           </div>
         </div>
