@@ -6,10 +6,7 @@ import { th } from 'date-fns/locale';
 import { Edit2, Trash2, Palette, Pencil } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-// ✅ Regex สำหรับดึง URL
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
-
-// ✅ Cache สำหรับเก็บข้อมูล Metadata ของลิงก์ (ป้องกันการโหลดซ้ำเมื่อเลื่อนหน้าจอ)
 const metadataCache: Record<string, any> = {};
 
 // --- TYPES ---
@@ -100,15 +97,10 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
           if (json.status === 'success' && json.data.title) {
             metadataCache[url] = json.data;
             setMetadata(json.data);
-          } else {
-            setHasError(true);
-          }
+          } else { setHasError(true); }
         }
-      } catch (err) {
-        if (isMounted) setHasError(true);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
+      } catch (err) { if (isMounted) setHasError(true); } 
+      finally { if (isMounted) setLoading(false); }
     };
     fetchMeta();
     return () => { isMounted = false; };
@@ -143,12 +135,10 @@ function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
 }
 
 // --- MAIN COMPONENT ---
-// ✅ ใช้ React.memo เพื่อให้การเลื่อนแชทที่มีข้อความเยอะๆ ลื่นไหล ไม่ Re-render โดยไม่จำเป็น
 const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = '#22c55e', showSenderName }: MessageBubbleProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message?.content || '');
 
-  // ดึงลิงก์จากเนื้อหา (ใช้ useMemo เพื่อไม่ให้คำนวณใหม่ทุกครั้ง)
   const links = useMemo(() => {
     if (!message.content) return [];
     return Array.from(new Set(message.content.match(URL_REGEX) || []));
@@ -156,7 +146,6 @@ const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = 
 
   if (!message) return null;
 
-  // ส่วนแสดง System Events (เปลี่ยนธีม, เปลี่ยนชื่อเล่น)
   if (message.event === 'theme_change' || message.event === 'nickname_change') {
     return (
       <div className="flex items-center justify-center my-2 w-full">
@@ -199,7 +188,8 @@ const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = 
         </span>
       )}
 
-      <div className={`flex gap-2 w-full ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+      {/* ✅ แก้ไข: ย้าย Class 'group' มาไว้ที่นี่ เพื่อให้ปุ่มและข้อความทำงานร่วมกันได้ */}
+      <div className={`flex gap-2 w-full group ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
         {!isOwn && (
           <a href={`/profile/${message.sender.username}`} className="flex-shrink-0 self-end mb-1">
             <img src={message.sender.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover shadow-sm border border-gray-100" alt="" />
@@ -212,12 +202,12 @@ const MessageBubble = React.memo(({ message, isOwn, currentUserId, themeColor = 
               <Edit2 size={12} className="text-gray-500 hover:text-indigo-600" />
             </button>
             <button onClick={handleDelete} className="p-1.5 bg-red-50 hover:bg-red-100 rounded-full transition shadow-sm">
-              <Trash2 size={12} className="text-red-400 hover:text-red-600" />
+              <Trash2 size={12} className="text-red-400 group-hover:text-red-600" />
             </button>
           </div>
         )}
 
-        <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[75%] group`}>
+        <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[75%]`}>
           {isEditing ? (
             <div className="bg-white rounded-2xl p-3 shadow-xl border-2 min-w-[260px]" style={{ borderColor: themeColor }}>
               <textarea 
