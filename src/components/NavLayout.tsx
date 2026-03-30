@@ -189,7 +189,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt="" className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm group-hover:scale-105 transition-transform" />
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-sm truncate text-gray-900">{currentUser.display_name}</p>
-                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">My Profile</p>
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">โปรไฟล์ของฉัน</p>
               </div>
             </Link>
             <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 text-red-500 transition-colors text-sm font-bold">
