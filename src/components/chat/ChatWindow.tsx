@@ -67,6 +67,13 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
   const isInitialLoad = useRef(true);
 
   useEffect(() => {
+    // ✅ บังคับรีเซ็ต State เพื่อเปิดหน้า Loading ทันที ป้องกันปัญหา "ธีมเปลี่ยนก่อนข้อความมา"
+    setIsLoading(true);
+    setTargetUser(null);
+    setMessages([]);
+    setHasMore(true);
+    isInitialLoad.current = true;
+
     loadChatData();
     markAsRead();
     const cleanup = setupRealtimeSubscription();
@@ -393,7 +400,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
 
   if (isLoading || isGroup === null) {
     return (
-      // ✅ แก้ไขตรงนี้: ใช้ h-full แทนความสูงตายตัว
       <div className="flex flex-1 items-center justify-center bg-white md:rounded-2xl md:shadow-sm md:border md:border-gray-200 h-full w-full">
         <img src="https://iili.io/qbtgKBt.png" alt="Loading" className="w-16 h-16 animate-bounce" />
       </div>
@@ -413,7 +419,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
 
   if (!otherUser) {
     return (
-      // ✅ แก้ไขตรงนี้: ใช้ h-full แทนความสูงตายตัว
       <div className="flex flex-1 items-center justify-center text-gray-400 bg-white md:rounded-2xl md:shadow-sm md:border md:border-gray-200 h-full w-full">
         <p>ไม่พบแชทนี้</p>
       </div>
@@ -423,7 +428,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
   const displayOtherName = nicknames[otherUser.id] || otherUser.display_name;
 
   return (
-    // ✅ แก้ไขตรงนี้: ใช้ h-full flex-1 ลบความสูงขอบเขตตายตัวออก เพื่อให้ยืด 100% เสมอ
     <div className="flex flex-col flex-1 bg-white md:rounded-2xl md:shadow-sm md:border md:border-gray-200 overflow-hidden h-full min-h-0 w-full">
       
       {/* Header */}
@@ -484,7 +488,6 @@ export default function ChatWindow({ chatId, currentUser, onBack, onRefreshChats
                   <div className="flex-1">
                     <p className="text-xs text-gray-500 mb-1">เลือกสีเอง</p>
                     
-                    {/* ✅ เพิ่มปุ่มกดยืนยัน ตรงนี้ */}
                     <div className="flex items-center gap-2">
                       <input ref={colorInputRef} type="color" value={themeColor}
                         onChange={(e) => setThemeColor(e.target.value)}
