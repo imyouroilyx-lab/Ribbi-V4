@@ -33,9 +33,9 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const currentUserRef = useRef<any>(null);
   const myChatIdsRef = useRef<string[]>([]);
   
-  // ใช้ Ref เก็บค่าจำนวนคำขอเพื่อนก่อนหน้า เพื่อเช็กว่ามันเพิ่มขึ้นหรือไม่
   const prevFriendReqCountRef = useRef(-1); 
 
+  // ซิงค์ pathname กับ ref เพื่อไม่ต้องใส่ใน dependency ของ useEffect หลัก ป้องกันการ Re-subscribe
   useEffect(() => {
     pathnameRef.current = pathname;
     if (pathname === '/notifications') {
@@ -56,27 +56,38 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loadUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single();
+      setCurrentUser(userData);
+    }
+  };
+
+  // ✅ รวม WebSockets ไว้ตรงนี้ และถอด pathname ออก เพื่อไม่ต้องรื้อสร้างใหม่ตอนเปลี่ยนหน้า
   useEffect(() => {
     if (!currentUser) return;
     currentUserRef.current = currentUser;
-    loadUnreadMessages(currentUser.id);
 
-    const interval = setInterval(() => {
-      if (pathnameRef.current !== '/notifications') {
-        loadNotifications(currentUser.id);
-      }
-      loadFriendRequests(currentUser.id);
-      loadUnreadMessages(currentUser.id);
-    }, 45 * 1000);
+    // ✅ ดึงข้อมูลแบบ Parallel (ขนาน) ลดเวลาโหลดเริ่มต้น
+    Promise.all([
+      pathnameRef.current !== '/notifications' ? loadNotifications(currentUser.id) : Promise.resolve(),
+      loadFriendRequests(currentUser.id),
+      loadUnreadMessages(currentUser.id)
+    ]);
 
+    // ❌ เอา setInterval ทุก 45 วินาทีที่กินโควต้าฐานข้อมูลทิ้งไป ใช้แค่ Realtime เพียวๆ 
+
+    // ✅ 1. Notif Channel: เพิ่ม filter ให้ดักเฉพาะของตัวเองเท่านั้น
     const notifChannel = supabase
       .channel('nav-notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: `receiver_id=eq.${currentUser.id}` // ✅ กรองให้รับแค่แจ้งเตือนของเรา
+      }, (payload) => {
         const notif = payload.new as any;
-        const user = currentUserRef.current;
-        if (!user || notif.receiver_id !== user.id) return;
-        
-        // กรองออก: ถ้าเป็นการส่งคำขอเพื่อน ไม่ต้องเด้งแจ้งเตือน ไม่ต้องมีเสียงที่นี่
         if (notif.type === 'friend_request') return;
 
         if (pathnameRef.current !== '/notifications') {
@@ -86,76 +97,73 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       })
       .subscribe();
 
+    // ✅ 2. Msg Channel
     const msgChannel = supabase
       .channel('nav-messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
         const newMsg = payload.new as any;
-        const user = currentUserRef.current;
-        if (!user || newMsg.event) return;
+        if (newMsg.event) return;
 
         const isMyChat = myChatIdsRef.current.includes(newMsg.chat_id);
-        const isNotFromMe = newMsg.sender_id !== user.id;
+        const isNotFromMe = newMsg.sender_id !== currentUser.id;
 
         if (isMyChat && isNotFromMe) {
           if (!pathnameRef.current?.startsWith('/messages')) {
             playNotificationSound();
-            loadUnreadMessages(user.id);
+            loadUnreadMessages(currentUser.id);
           }
         }
       })
       .subscribe();
 
-    // ✅ ปรับปรุง Channel สำหรับตรวจจับคำขอเป็นเพื่อนแบบ Real-time ให้ชัวร์ 100% ว่าจะเล่นเสียง
+    // ✅ 3. Friend Channel: เพิ่ม filter `receiver_id` เพื่อหยุดอาการโหลดกระตุกเมื่อคนอื่นรับเพื่อนกัน
     const friendChannel = supabase
       .channel('nav-friendships')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'friendships' }, (payload) => {
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'friendships',
+        filter: `receiver_id=eq.${currentUser.id}`
+      }, (payload) => {
         const newReq = payload.new as any;
-        const user = currentUserRef.current;
-        
-        // ตรวจสอบว่าเป็นคำขอที่ส่งมาถึงเราและมีสถานะเป็นรอยืนยันหรือไม่
-        if (!user || newReq.receiver_id !== user.id || newReq.status !== 'pending') return;
+        if (newReq.status !== 'pending') return;
 
-        playNotificationSound(); // ✅ เล่นเสียงแจ้งเตือน
+        playNotificationSound(); 
         setFriendRequestCount(prev => {
           const nextCount = prev + 1;
           prevFriendReqCountRef.current = nextCount;
           return nextCount;
         });
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'friendships' }, (payload) => {
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'friendships',
+        filter: `receiver_id=eq.${currentUser.id}`
+      }, (payload) => {
         const newReq = payload.new as any;
         const oldReq = payload.old as any;
-        const user = currentUserRef.current;
-        
-        // ถ้าสถานะเปลี่ยนเป็น pending (เผื่อกรณีระบบใช้วิธีอัปเดต)
-        if (user && newReq.receiver_id === user.id && newReq.status === 'pending' && oldReq.status !== 'pending') {
+        if (newReq.status === 'pending' && oldReq.status !== 'pending') {
           playNotificationSound();
         }
-        if (user) loadFriendRequests(user.id);
+        loadFriendRequests(currentUser.id);
       })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'friendships' }, () => {
-        if (currentUserRef.current) loadFriendRequests(currentUserRef.current.id);
+      .on('postgres_changes', { 
+        event: 'DELETE', 
+        schema: 'public', 
+        table: 'friendships',
+        filter: `receiver_id=eq.${currentUser.id}`
+      }, () => {
+        loadFriendRequests(currentUser.id);
       })
       .subscribe();
 
     return () => {
-      clearInterval(interval);
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(msgChannel);
       supabase.removeChannel(friendChannel);
     };
-  }, [currentUser, pathname]);
-
-  const loadUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single();
-      setCurrentUser(userData);
-      if (pathname !== '/notifications') loadNotifications(user.id);
-      loadFriendRequests(user.id);
-      loadUnreadMessages(user.id);
-    }
-  };
+  }, [currentUser]); // ✅ ถอด pathname ออกจากการพ่วง dependencies
 
   const loadNotifications = async (userId: string) => {
     const { count } = await supabase
@@ -172,7 +180,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     const { count } = await supabase.from('friendships').select('*', { count: 'exact', head: true }).eq('receiver_id', userId).eq('status', 'pending');
     const newCount = count || 0;
 
-    // ✅ ถ้าโหลดครั้งแรกเสร็จแล้ว และมีจำนวนคำขอใหม่เพิ่มขึ้นจากรอบก่อนหน้า ให้เล่นเสียง
     if (prevFriendReqCountRef.current !== -1 && newCount > prevFriendReqCountRef.current) {
       playNotificationSound();
     }
@@ -215,7 +222,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             <span>หน้าหลัก</span>
           </Link>
           
-          {/* ✅ แถบ "เพื่อน" พร้อม Badge และระบบแจ้งเตือนเสียง */}
           <Link href="/friends" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition relative ${isActive('/friends') ? 'bg-frog-100 text-frog-600 font-bold' : 'hover:bg-gray-100 text-gray-700 font-medium'}`}>
             <Users className="w-5 h-5" />
             <span>เพื่อน</span>
