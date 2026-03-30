@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { Edit2, Trash2, Check, X, Palette, Pencil } from 'lucide-react';
+import { Edit2, Trash2, Check, X, Palette, Pencil, ExternalLink, Globe } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 interface Message {
@@ -30,9 +30,84 @@ interface MessageBubbleProps {
   showSenderName?: boolean;
 }
 
+// --- Component สำหรับดึงข้อมูลและแสดงผล Link Preview ---
+function LinkPreview({ url, isOwn }: { url: string; isOwn: boolean }) {
+  const [metadata, setMetadata] = useState<{
+    title?: string;
+    description?: string;
+    image?: string;
+    siteName?: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchMetadata = async () => {
+      try {
+        setLoading(true);
+        // ใช้ microlink API (ฟรี) ในการดึง metadata เพื่อเลี่ยงปัญหา CORS
+        const response = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
+        const json = await response.json();
+        
+        if (json.status === 'success') {
+          setMetadata({
+            title: json.data.title,
+            description: json.data.description,
+            image: json.data.image?.url,
+            siteName: json.data.publisher
+          });
+        }
+      } catch (err) {
+        console.error('Link preview error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMetadata();
+  }, [url]);
+
+  if (loading) return null; // หรือจะใส่ Shimmer เล็กๆ ก็ได้
+  if (!metadata?.title) return null;
+
+  return (
+    <a 
+      href={url} 
+      target="_blank" 
+      rel="noopener noreferrer"
+      className={`block mt-2 overflow-hidden rounded-xl border transition-all hover:opacity-95 ${
+        isOwn 
+          ? 'bg-white/10 border-white/20 text-white' 
+          : 'bg-white border-gray-200 text-gray-800 shadow-sm'
+      }`}
+    >
+      {metadata.image && (
+        <img src={metadata.image} alt="Preview" className="w-full h-32 object-cover border-b border-inherit" />
+      )}
+      <div className="p-3">
+        <p className="text-[10px] font-bold uppercase tracking-wider opacity-60 flex items-center gap-1 mb-1">
+          <Globe size={10} /> {metadata.siteName || new URL(url).hostname}
+        </p>
+        <h4 className="text-xs font-bold line-clamp-1">{metadata.title}</h4>
+        {metadata.description && (
+          <p className="text-[11px] mt-1 line-clamp-2 opacity-80 leading-relaxed">
+            {metadata.description}
+          </p>
+        )}
+      </div>
+    </a>
+  );
+}
+
 export default function MessageBubble({ message, isOwn, currentUserId, themeColor = '#22c55e', showSenderName }: MessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message?.content || '');
+
+  // ตรวจหาลิงก์ในข้อความ
+  const detectedLinks = useMemo(() => {
+    if (!message.content) return [];
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    return message.content.match(urlRegex) || [];
+  }, [message.content]);
 
   if (!message) return null;
 
@@ -85,7 +160,7 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
 
   return (
     <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} mb-2`}>
-      {/* ชื่อผู้ส่งในแชทกลุ่ม */}
+      {/* ชื่อผู้ส่ง */}
       {!isOwn && showSenderName && message.sender && (
         <span className="text-[10px] text-gray-500 mb-1 ml-11">
           {message.sender.display_name}
@@ -94,7 +169,7 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
 
       <div className={`flex gap-2 w-full ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
 
-        {/* Avatar (คนอื่น) — คลิกไปโปรไฟล์ */}
+        {/* Avatar */}
         {!isOwn && (
           <a
             href={`/profile/${message.sender!.username}`}
@@ -109,84 +184,78 @@ export default function MessageBubble({ message, isOwn, currentUserId, themeColo
           </a>
         )}
 
-        {/* ปุ่ม Action (ข้อความตัวเอง) */}
+        {/* Action Buttons */}
         {isOwn && !isEditing && (
-          <div className="flex gap-1 items-start pt-1">
-            <button onClick={() => setIsEditing(true)} className="p-1.5 bg-gray-200 hover:bg-gray-300 rounded-full transition" title="แก้ไขข้อความ">
-              <Edit2 className="w-3.5 h-3.5 text-gray-700" />
+          <div className="flex gap-1 items-start pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => setIsEditing(true)} className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full transition">
+              <Edit2 className="w-3 h-3 text-gray-600" />
             </button>
-            <button onClick={handleDelete} className="p-1.5 bg-red-100 hover:bg-red-200 rounded-full transition" title="ลบข้อความ">
-              <Trash2 className="w-3.5 h-3.5 text-red-600" />
+            <button onClick={handleDelete} className="p-1.5 bg-red-50 hover:bg-red-100 rounded-full transition">
+              <Trash2 className="w-3 h-3 text-red-500" />
             </button>
           </div>
         )}
 
-        {/* Message Content */}
-        <div className={`flex flex-col relative group ${isOwn ? 'items-end' : 'items-start'} max-w-[70%]`}>
-
-          {/* Edit Mode */}
+        {/* Message Container */}
+        <div className={`flex flex-col group ${isOwn ? 'items-end' : 'items-start'} max-w-[75%]`}>
+          
           {isEditing ? (
-            <div className="w-full min-w-[250px] bg-white rounded-xl p-3 shadow-lg" style={{ border: `2px solid ${themeColor}` }}>
+            <div className="w-full min-w-[250px] bg-white rounded-xl p-3 shadow-lg border-2" style={{ borderColor: themeColor }}>
               <textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 className="w-full px-0 py-0 border-0 focus:ring-0 resize-none text-sm"
                 rows={3}
                 autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEdit(); }
-                  if (e.key === 'Escape') { setIsEditing(false); setEditContent(message.content || ''); }
-                }}
               />
               <div className="flex gap-2 mt-2 justify-end">
-                <button
-                  onClick={() => { setIsEditing(false); setEditContent(message.content || ''); }}
-                  className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition flex items-center gap-1"
-                >
-                  <X className="w-4 h-4" />ยกเลิก
-                </button>
-                <button
-                  onClick={handleEdit}
-                  className="px-3 py-1.5 text-sm text-white rounded-lg transition flex items-center gap-1"
-                  style={{ backgroundColor: themeColor }}
-                >
-                  <Check className="w-4 h-4" />บันทึก
-                </button>
+                <button onClick={() => setIsEditing(false)} className="px-3 py-1 text-xs bg-gray-100 rounded-lg">ยกเลิก</button>
+                <button onClick={handleEdit} className="px-3 py-1 text-xs text-white rounded-lg" style={{ backgroundColor: themeColor }}>บันทึก</button>
               </div>
             </div>
           ) : (
             <>
               <div
-                className="rounded-2xl px-4 py-2 break-words relative"
+                className="rounded-2xl px-4 py-2.5 break-words relative shadow-sm"
                 style={{
-                  minWidth: '60px',
                   backgroundColor: isOwn ? themeColor : '#f3f4f6',
                   color: isOwn ? '#ffffff' : '#111827',
-                  borderRadius: isOwn ? '1rem 1rem 0.25rem 1rem' : '1rem 1rem 1rem 0.25rem',
+                  borderRadius: isOwn ? '1.25rem 1.25rem 0.25rem 1.25rem' : '1.25rem 1.25rem 1.25rem 0.25rem',
                 }}
               >
+                {/* รูปภาพ */}
                 {message.images && message.images.length > 0 && (
-                  <div className="space-y-2 mb-2">
+                  <div className="grid grid-cols-1 gap-2 mb-2">
                     {message.images.map((img, index) => (
                       <img
                         key={index}
                         src={img}
-                        alt="Image"
-                        className="rounded-lg max-w-full h-auto cursor-pointer hover:opacity-90 transition"
-                        style={{ maxHeight: '300px' }}
+                        alt="Shared"
+                        className="rounded-xl max-w-full h-auto cursor-pointer"
+                        style={{ maxHeight: '250px' }}
                         onClick={() => window.open(img, '_blank')}
                       />
                     ))}
                   </div>
                 )}
+
+                {/* เนื้อหาข้อความ */}
                 {message.content && (
-                  <p className="text-sm md:text-base whitespace-pre-wrap">{message.content}</p>
+                  <p className="text-sm md:text-base whitespace-pre-wrap leading-relaxed">
+                    {message.content}
+                  </p>
                 )}
+
+                {/* แสดง Link Preview (ถ้าเจอลิงก์) */}
+                {!isEditing && detectedLinks.map((url, idx) => (
+                  <LinkPreview key={idx} url={url} isOwn={isOwn} />
+                ))}
               </div>
 
-              <div className="flex items-center gap-2 mt-1 px-1">
-                <span className="text-xs text-gray-500">{formatTime(message.created_at)}</span>
-                {message.updated_at && <span className="text-xs text-gray-400 italic">(แก้ไข)</span>}
+              {/* เวลา และ สถานะแก้ไข */}
+              <div className={`flex items-center gap-2 mt-1 px-1 ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+                <span className="text-[10px] text-gray-400 font-medium">{formatTime(message.created_at)}</span>
+                {message.updated_at && <span className="text-[10px] text-gray-300 italic">แก้ไขแล้ว</span>}
               </div>
             </>
           )}
