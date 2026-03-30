@@ -20,7 +20,6 @@ export default function NotificationsPage() {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-  // Infinite Scroll Observer
   const observer = useRef<IntersectionObserver | null>(null);
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoading || isLoadingMore) return;
@@ -33,13 +32,14 @@ export default function NotificationsPage() {
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
 
-  // ล้าง Badge ทันทีที่เข้าหน้า (Mark all as read)
-  const markAllAsRead = async (userId: string) => {
-    await supabase
+  // ✅ ปรับปรุง: ไม่ต้อง await ให้เสียเวลาโหลดหน้าเว็บ
+  const markAllAsRead = (userId: string) => {
+    supabase
       .from('notifications')
       .update({ is_read: true })
       .eq('receiver_id', userId)
-      .eq('is_read', false);
+      .eq('is_read', false)
+      .then(); // ทำงานในพื้นหลัง
   };
 
   useEffect(() => {
@@ -59,16 +59,16 @@ export default function NotificationsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/login'); return; }
 
-      const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single();
-      setCurrentUser(userData);
+      const { data: userData } = await supabase.from('users').select('id, username, display_name').eq('id', user.id).single();
+      setCurrentUser(userData as any);
 
-      // ล้าง Badge
-      await markAllAsRead(user.id);
-
+      // ✅ ดึงข้อมูลก่อน แล้วค่อยสั่งล้าง Badge ทีหลัง
       const { data } = await fetchNotifications(user.id, 0);
       if (data) {
         setNotifications(data);
         setHasMore(data.length === NOTIFS_PER_PAGE);
+        // ล้าง Badge หลังจากข้อมูลขึ้นแล้ว
+        markAllAsRead(user.id);
       }
     } catch (error) {
       console.error(error);
