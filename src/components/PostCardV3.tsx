@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, Post, User } from '@/lib/supabase';
-import { Heart, MessageCircle, Trash2, Image as ImageIcon, X, Edit2, Send, Loader2, ChevronRight, User as UserIcon } from 'lucide-react';
+import { Heart, MessageCircle, Trash2, Image as ImageIcon, X, Edit2, Send, Loader2, ChevronRight } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -76,7 +76,7 @@ const LinkPreview = ({ url }: { url: string }) => {
 };
 
 export default function PostCardV3({ post, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
-  // States
+  // Post States
   const [comments, setComments] = useState<Comment[]>([]);
   const [showComments, setShowComments] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -86,34 +86,37 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // Like List
+  // Like List States
   const [showLikeModal, setShowLikeModal] = useState(false);
   const [likedUsers, setLikedUsers] = useState<User[]>([]);
   const [isLoadingLikes, setIsLoadingLikes] = useState(false);
   const [likePage, setLikePage] = useState(0);
   const [hasMoreLikes, setHasMoreLikes] = useState(true);
 
-  // Inputs
+  // Comment States
   const [newComment, setNewComment] = useState('');
   const [commentImageUrl, setCommentImageUrl] = useState('');
   const [showCommentImageInput, setShowCommentImageInput] = useState(false);
+
+  // Reply States
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
   const [replyImageUrl, setReplyImageUrl] = useState('');
   const [showReplyImageInput, setShowReplyImageInput] = useState(false);
 
-  // Edit
+  // Edit Comment States
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentContent, setEditCommentContent] = useState('');
   const [editCommentImageUrl, setEditCommentImageUrl] = useState('');
 
-  // Interactions
+  // Comment Interaction States
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
   const canDeletePost = post.author_id === currentUserId || profileOwnerId === currentUserId;
   const canEditPost = post.author_id === currentUserId;
 
+  // Like List Infinite Scroll Observer
   const likeObserver = useRef<IntersectionObserver | null>(null);
   const lastLikeRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoadingLikes) return;
@@ -200,8 +203,8 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
     const to = from + LIKES_PER_PAGE - 1;
 
     try {
-      // ✅ แก้ไข Type Error: ใช้ any casting และดึงข้อมูลจริงทั้งหมด
-      const { data } = await supabase
+      // ✅ แก้ไข Type Error: ใช้ unknown casting เพื่อหลีกเลี่ยง Type Overlap
+      const { data, error: fetchError } = await supabase
         .from('likes')
         .select(`
           users (
@@ -216,14 +219,16 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
         .eq('post_id', post.id)
         .range(from, to);
 
+      if (fetchError) throw fetchError;
+
       if (data) {
-        // Map ข้อมูลออกมาให้เป็น User object โดยตรง และใช้ unknown casting เพื่อความปลอดภัยตอน Build
-        const extractedUsers = (data as any[]).map(d => d.users).filter(Boolean) as unknown as User[];
-        setLikedUsers(prev => reset ? extractedUsers : [...prev, ...extractedUsers]);
-        setHasMoreLikes(extractedUsers.length === LIKES_PER_PAGE);
+        // กรองและ Map ข้อมูลออกมาเป็น User[]
+        const users = (data as any[]).map(item => item.users).filter(Boolean) as unknown as User[];
+        setLikedUsers(prev => reset ? users : [...prev, ...users]);
+        setHasMoreLikes(users.length === LIKES_PER_PAGE);
       }
     } catch (error) {
-      console.error(error);
+      console.error('Error fetching liked users:', error);
     } finally {
       setIsLoadingLikes(false);
     }
@@ -400,7 +405,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
                 </div>
               </div>
             ) : (
-              <div className="bg-gray-100 rounded-2xl px-3 py-2 relative group">
+              <div className="bg-gray-100 rounded-2xl px-3 py-2 relative group border border-transparent hover:border-gray-200 transition-colors">
                 <div className="flex justify-between items-start gap-2">
                   <p className="font-bold text-xs text-gray-900">{c.author?.display_name}</p>
                   {canManageComment && (
@@ -414,7 +419,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
                 </div>
                 <p className="text-sm text-gray-800 leading-relaxed">{renderTextWithTags(c.content)}</p>
                 {c.image_url && (
-                  <img src={c.image_url} className="mt-2 rounded-xl max-h-60 object-cover cursor-pointer hover:brightness-95 transition" onClick={() => setSelectedImage(c.image_url!)} alt="" />
+                  <img src={c.image_url} className="mt-2 rounded-xl max-h-60 object-cover cursor-pointer hover:brightness-95 transition shadow-sm" onClick={() => setSelectedImage(c.image_url!)} alt="" />
                 )}
                 {(commentLikes[c.id] || 0) > 0 && (
                   <div className="absolute -bottom-2 -right-1 bg-white shadow-sm border border-gray-100 rounded-full px-1.5 py-0.5 flex items-center gap-1">
@@ -475,7 +480,7 @@ export default function PostCardV3({ post, currentUserId, onDelete, profileOwner
       <div className="flex items-start gap-3 mb-4">
         {post.author && (
           <Link href={`/profile/${post.author.username}`} className="flex-shrink-0">
-            <img src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover border border-gray-50" alt="" loading="lazy" />
+            <img src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover border border-gray-50 shadow-sm" alt="" loading="lazy" />
           </Link>
         )}
         <div className="flex-1 min-w-0">
