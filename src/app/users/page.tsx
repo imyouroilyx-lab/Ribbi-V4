@@ -17,10 +17,7 @@ import {
 } from 'lucide-react';
 
 const USERS_PER_PAGE = 20;
-
-// แถบตัวอักษรสำหรับกรอง
 const ALPHABETS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-const THAI_ALPHABETS = "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ".split("");
 
 export default function UsersPage() {
   const router = useRouter();
@@ -41,12 +38,10 @@ export default function UsersPage() {
     try {
       setLoading(true);
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      
       if (!authUser) {
         router.push('/login');
         return;
       }
-      
       await fetchUsers();
     } catch (err: any) {
       setError(err.message);
@@ -57,11 +52,10 @@ export default function UsersPage() {
 
   const fetchUsers = async () => {
     try {
-      // ดึงข้อมูลแบบจำกัดคอลัมน์เพื่อความเร็ว เรียงตามชื่อ A-Z
       const { data, error: supabaseError } = await supabase
         .from('users')
         .select('id, username, display_name, profile_img_url, created_at')
-        .order('display_name', { ascending: true });
+        .order('display_name', { ascending: true }); // เรียง A-Z จากฐานข้อมูล
 
       if (supabaseError) throw supabaseError;
       setUsers((data as any) || []);
@@ -74,14 +68,12 @@ export default function UsersPage() {
   const filteredUsers = useMemo(() => {
     let result = users;
 
-    // 1. กรองตามตัวอักษรที่เลือก
     if (selectedLetter) {
       result = result.filter(user => 
         user.display_name?.toUpperCase().startsWith(selectedLetter)
       );
     }
 
-    // 2. กรองตามคำค้นหา
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
       result = result.filter(user => 
@@ -100,7 +92,6 @@ export default function UsersPage() {
     return filteredUsers.slice(start, start + USERS_PER_PAGE);
   }, [filteredUsers, currentPage]);
 
-  // รีเซ็ตหน้าไปที่ 1 เมื่อมีการค้นหาหรือเปลี่ยนตัวกรอง
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, selectedLetter]);
@@ -114,11 +105,8 @@ export default function UsersPage() {
     return (
       <NavLayout>
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
-          <div className="relative">
-            <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-            <Users className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600" size={24} />
-          </div>
-          <p className="mt-4 text-slate-500 font-medium animate-pulse">กำลังโหลดข้อมูลสมาชิก...</p>
+          <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+          <p className="mt-4 text-slate-500 font-medium">กำลังโหลดรายชื่อสมาชิก...</p>
         </div>
       </NavLayout>
     );
@@ -126,41 +114,40 @@ export default function UsersPage() {
 
   return (
     <NavLayout>
-      <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-900 pb-20">
-        {/* Header Section */}
+      <div className="min-h-screen bg-[#F8FAFC] pb-20">
+        {/* Header Section - ปรับให้กระชับขึ้น */}
         <div className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-          <div className="max-w-5xl mx-auto px-4 py-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm uppercase tracking-wider">
-                  <Sparkles size={16} />
-                  <span>Member Directory</span>
-                </div>
-                <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">ทำความรู้จักสมาชิก</h1>
-                <p className="text-slate-500 text-sm">เรียงตามลำดับตัวอักษร A-Z</p>
+          <div className="max-w-5xl mx-auto px-4 py-4 md:py-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-xl md:text-2xl font-black text-slate-900 flex items-center gap-2">
+                  <Users className="text-indigo-600" size={24} />
+                  สมาชิก Ribbi
+                </h1>
+                <p className="text-slate-500 text-xs mt-0.5">ค้นพบเพื่อนใหม่และทำความรู้จักกัน</p>
               </div>
 
-              <div className="relative w-full md:w-80">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <div className="relative w-full md:w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input 
                   type="text"
-                  placeholder="ค้นหาด้วยชื่อ หรือ username..."
-                  className="w-full pl-11 pr-4 py-3 bg-slate-100 border-transparent border focus:border-indigo-500 focus:bg-white rounded-2xl focus:outline-none transition-all text-sm"
+                  placeholder="ค้นหาชื่อ..."
+                  className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent border focus:border-indigo-500 focus:bg-white rounded-xl focus:outline-none transition-all text-sm"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
             </div>
 
-            {/* Alphabet Filter Bar */}
-            <div className="mt-6 flex flex-col gap-3">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
-                <Filter size={12} /> กรองตามตัวอักษร
+            {/* Alphabet Filter Bar - ปรับให้เล็กลงและเลื่อนได้ */}
+            <div className="mt-4 flex items-center gap-2">
+              <div className="flex-shrink-0 text-[10px] font-bold text-slate-400 uppercase tracking-tighter flex items-center gap-1">
+                <Filter size={12} /> A-Z
               </div>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar items-center">
                 <button 
                   onClick={() => setSelectedLetter(null)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${!selectedLetter ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${!selectedLetter ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                 >
                   ทั้งหมด
                 </button>
@@ -168,18 +155,7 @@ export default function UsersPage() {
                   <button 
                     key={letter}
                     onClick={() => setSelectedLetter(letter)}
-                    className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${selectedLetter === letter ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                  >
-                    {letter}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-1.5 mt-1 overflow-x-auto pb-2 no-scrollbar">
-                {THAI_ALPHABETS.map(letter => (
-                  <button 
-                    key={letter}
-                    onClick={() => setSelectedLetter(letter)}
-                    className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${selectedLetter === letter ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all ${selectedLetter === letter ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                   >
                     {letter}
                   </button>
@@ -190,91 +166,76 @@ export default function UsersPage() {
         </div>
 
         {/* Main Content */}
-        <main className="max-w-5xl mx-auto px-4 mt-8">
-          <div className="flex items-center justify-between mb-6 px-2">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <Users size={14} />
-              <span>พบสมาชิก {filteredUsers.length} คน {selectedLetter && `(ขึ้นต้นด้วย ${selectedLetter})`}</span>
-            </div>
+        <main className="max-w-5xl mx-auto px-4 mt-6">
+          <div className="mb-4 px-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              พบ {filteredUsers.length} รายการ {selectedLetter && `ที่ขึ้นต้นด้วย "${selectedLetter}"`}
+            </span>
           </div>
 
           {currentUsers.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3">
               {currentUsers.map((user) => (
                 <div 
                   key={user.id}
                   onClick={() => handleViewProfile(user.username || '')}
-                  className="group bg-white border border-slate-200 rounded-3xl p-4 flex items-center gap-4 hover:border-indigo-300 hover:shadow-xl hover:shadow-indigo-500/5 transition-all cursor-pointer active:scale-[0.98]"
+                  className="group bg-white border border-slate-200 rounded-2xl p-3 flex items-center gap-3 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer active:scale-[0.98]"
                 >
-                  <div className="relative flex-shrink-0">
-                    <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-100 border-2 border-slate-50 group-hover:border-indigo-100 transition-colors">
-                      <img 
-                        src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} 
-                        alt={user.display_name} 
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${user.display_name}&background=random`;
-                        }}
-                      />
-                    </div>
+                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0">
+                    <img 
+                      src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} 
+                      alt={user.display_name} 
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
+                    <h3 className="font-bold text-sm text-slate-900 truncate">
                       {user.display_name}
                     </h3>
-                    <div className="flex items-center gap-1 text-slate-500 text-xs mt-0.5">
-                      <AtSign size={12} className="text-indigo-400" />
-                      <span className="truncate">{user.username}</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-slate-400 text-[10px] mt-2 font-medium">
-                      <Calendar size={10} />
-                      {new Date(user.created_at).toLocaleDateString('th-TH', { month: 'short', year: 'numeric' })}
-                    </div>
+                    <p className="text-[10px] text-slate-500 truncate">@{user.username}</p>
                   </div>
 
-                  <div className="bg-slate-50 p-2 rounded-xl group-hover:bg-indigo-50 group-hover:text-indigo-600 text-slate-300 transition-all">
+                  <div className="text-slate-300 group-hover:text-indigo-600 transition-colors">
                     <ChevronRight size={18} />
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-300">
-              <Search size={32} className="text-slate-300 mx-auto mb-4" />
-              <h3 className="font-bold text-slate-800">ไม่พบสมาชิกที่คุณค้นหา</h3>
-              <button onClick={() => {setSearchTerm(''); setSelectedLetter(null);}} className="mt-4 text-indigo-600 text-sm font-bold hover:underline">ล้างการกรองทั้งหมด</button>
+            <div className="py-20 text-center">
+              <p className="text-slate-400 text-sm">ไม่พบสมาชิกที่ตรงตามเงื่อนไข</p>
+              <button onClick={() => {setSearchTerm(''); setSelectedLetter(null);}} className="mt-2 text-indigo-600 text-xs font-bold hover:underline">ล้างการกรอง</button>
             </div>
           )}
 
           {/* Pagination Controls */}
           {totalPages > 1 && (
-            <div className="mt-10 flex items-center justify-center gap-2">
+            <div className="mt-10 flex items-center justify-center gap-1.5">
               <button 
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(prev => prev - 1)}
-                className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 hover:bg-slate-50 transition-colors shadow-sm"
+                className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm"
               >
-                <ChevronLeft size={20} />
+                <ChevronLeft size={18} />
               </button>
               
               <div className="flex items-center gap-1">
                 {[...Array(totalPages)].map((_, i) => {
                   const pageNum = i + 1;
-                  // แสดงแค่หน้าแรก หน้าสุดท้าย และหน้าใกล้ๆ ปัจจุบัน
                   if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
                     return (
                       <button
                         key={pageNum}
                         onClick={() => setCurrentPage(pageNum)}
-                        className={`w-10 h-10 rounded-xl text-sm font-bold transition-all shadow-sm ${currentPage === pageNum ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                        className={`w-9 h-9 rounded-xl text-xs font-bold transition-all ${currentPage === pageNum ? 'bg-indigo-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
                       >
                         {pageNum}
                       </button>
                     );
                   } else if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
-                    return <span key={pageNum} className="px-1 text-slate-400">...</span>;
+                    return <span key={pageNum} className="text-slate-400 px-1">...</span>;
                   }
                   return null;
                 })}
@@ -283,9 +244,9 @@ export default function UsersPage() {
               <button 
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(prev => prev + 1)}
-                className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 hover:bg-slate-50 transition-colors shadow-sm"
+                className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm"
               >
-                <ChevronRightIcon size={20} />
+                <ChevronRightIcon size={18} />
               </button>
             </div>
           )}
