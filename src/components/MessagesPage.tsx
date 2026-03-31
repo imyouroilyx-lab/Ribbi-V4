@@ -66,7 +66,6 @@ export default function MessagesPage() {
 
       const chatIds = partData.map((p: any) => p.chat_id);
       
-      // ดึงสมาชิกและชื่อเล่น
       const [membersRes, nicknamesRes] = await Promise.all([
         supabase.from('chat_participants').select('chat_id, user:user_id(id, username, display_name, profile_img_url)').in('chat_id', chatIds),
         supabase.from('chat_nicknames').select('*').in('chat_id', chatIds)
@@ -77,19 +76,22 @@ export default function MessagesPage() {
         if (!c) return null;
         
         const allMembers = membersRes.data?.filter(m => m.chat_id === c.id) || [];
-        const otherMember = c.is_group ? null : allMembers.find((m: any) => m.user?.id !== userId)?.user;
+        
+        // ✅ แก้ไขตรงนี้: บังคับ Type เป็น any เพื่อเลี่ยง Error 'Property id does not exist on type ...[]'
+        const otherMemberItem: any = c.is_group ? null : allMembers.find((m: any) => m.user?.id !== userId);
+        const otherUserObj = otherMemberItem?.user;
         
         const myNickEntry = nicknamesRes.data?.find(n => n.chat_id === c.id && n.target_user_id === userId);
-        const otherNickEntry = otherMember ? nicknamesRes.data?.find(n => n.chat_id === c.id && n.target_user_id === otherMember.id) : null;
+        const otherNickEntry = otherUserObj ? nicknamesRes.data?.find(n => n.chat_id === c.id && n.target_user_id === otherUserObj.id) : null;
 
         return { 
           ...c, 
           unread_count: p.unread_count || 0, 
           my_nickname: myNickEntry?.nickname || null,
-          other_user: otherMember ? { 
-            ...otherMember, 
-            display_name: otherNickEntry?.nickname || otherMember.display_name,
-            is_online: !!onlineUsers[otherMember.id]
+          other_user: otherUserObj ? { 
+            ...otherUserObj, 
+            display_name: otherNickEntry?.nickname || otherUserObj.display_name,
+            is_online: !!onlineUsers[otherUserObj.id]
           } : undefined 
         };
       }).filter(Boolean) as Chat[];
@@ -101,7 +103,7 @@ export default function MessagesPage() {
   if (isLoading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-frog-500" /></div>;
 
   return (
-    <div className="h-[calc(100dvh-64px)] w-full flex bg-white overflow-hidden">
+    <div className="h-[calc(100dvh-64px)] w-full flex bg-white overflow-hidden text-gray-900">
       <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r flex-col`}>
         <ChatList chats={chats} currentUserId={currentUser?.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={() => loadChats(currentUser?.id)} />
       </div>
