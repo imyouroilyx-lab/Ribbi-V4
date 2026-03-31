@@ -10,7 +10,7 @@ import ConfirmModal from '../../../components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, Music, 
-  MessageCircle, Clock, Loader2, ChevronRight
+  MessageCircle, Clock, Loader2, ChevronRight, Hash
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -121,129 +121,110 @@ export default function ProfilePage() {
 
   const themeColor = profileUser.theme_color || '#9de5a8';
 
-  // --- Reusable Widgets ---
-  
+  // --- Widgets ---
+
   const MusicWidget = () => {
-    if (!profileUser.profile_song_url) return null;
-    // แปลง URL Spotify เป็น Embed URL
-    let embedUrl = profileUser.profile_song_url;
+    if (!profileUser.music_url) return null;
+    
+    // แปลง URL Spotify เป็น Embed URL ที่ถูกต้อง
+    let embedUrl = profileUser.music_url;
     if (embedUrl.includes('spotify.com/track/')) {
       embedUrl = embedUrl.replace('spotify.com/track/', 'spotify.com/embed/track/');
+    } else if (embedUrl.includes('spotify.com/playlist/')) {
+      embedUrl = embedUrl.replace('spotify.com/playlist/', 'spotify.com/embed/playlist/');
     }
 
     return (
-      <div className="card-minimal bg-white p-4 rounded-[2rem] border border-gray-100 shadow-soft overflow-hidden">
-        <h3 className="font-black text-gray-900 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] mb-3 ml-1">
-          <Music className="w-3 h-3 text-indigo-500" /> เพลงประจำตัว
-        </h3>
-        <iframe src={embedUrl} width="100%" height="80" frameBorder="0" allow="encrypted-media" className="rounded-2xl shadow-sm"></iframe>
+      <div className="card-minimal bg-white p-5 rounded-[2.5rem] border border-gray-100 shadow-soft overflow-hidden">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <h3 className="font-black text-gray-900 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em]">
+            <Music className="w-3 h-3 text-indigo-500" /> กำลังฟัง
+          </h3>
+          {profileUser.music_name && <span className="text-[9px] font-black text-gray-400 truncate max-w-[120px]">{profileUser.music_name}</span>}
+        </div>
+        <iframe src={embedUrl} width="100%" height="80" frameBorder="0" allow="encrypted-media" className="rounded-2xl shadow-sm bg-gray-50"></iframe>
       </div>
     );
   };
 
   const FriendsWidget = () => (
-    <div className="card-minimal bg-white p-5 rounded-[2rem] border border-gray-100 shadow-soft">
+    <div className="card-minimal bg-white p-5 rounded-[2.5rem] border border-gray-100 shadow-soft">
       <div className="flex items-center justify-between mb-4 px-1">
         <h3 className="font-black text-gray-900 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2">
           <Users className="w-3 h-3 text-frog-500" /> เพื่อน ({friends.length})
         </h3>
         <Link href={`/profile/${profileUser.username}/friends`} className="text-[9px] font-black text-frog-600 bg-frog-50 px-2 py-1 rounded-lg uppercase">ทั้งหมด</Link>
       </div>
-      {friends.length === 0 ? (
-        <p className="text-center py-4 text-[10px] font-bold text-gray-300 uppercase italic">ยังไม่มีเพื่อน</p>
-      ) : (
-        <div className="grid grid-cols-3 gap-2">
-          {friends.map(f => (
-            <Link key={f.id} href={`/profile/${f.username}`} className="flex flex-col items-center gap-1.5 group">
-              <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full aspect-square rounded-2xl object-cover border border-gray-50 group-hover:scale-105 transition-transform shadow-sm" alt="" />
-              <p className="text-[9px] font-black text-center truncate w-full text-gray-500 uppercase tracking-tighter">{f.display_name.split(' ')[0]}</p>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
-  const RelationshipWidget = () => (
-    <div className="card-minimal bg-white p-5 rounded-[2rem] border border-gray-100 shadow-soft space-y-4">
-      <h3 className="font-black text-gray-900 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] mb-1 ml-1"><Heart className="w-3 h-3 text-red-500" /> ความสัมพันธ์</h3>
-      {profileUser.relationship_status && (
-        <div className="p-3 bg-red-50/30 rounded-2xl border border-red-50">
-          <p className="text-[10px] font-black text-red-400 uppercase mb-1">สถานะ</p>
-          <p className="text-sm font-bold text-gray-800">
-            {profileUser.relationship_status === 'single' ? '👤 โสด' : 
-             profileUser.relationship_status === 'in_relationship' ? '❤️ มีแฟนแล้ว' : 
-             profileUser.relationship_status === 'engaged' ? '💍 หมั้นแล้ว' : '💒 แต่งงานแล้ว'}
-            {profileUser.relationship_custom_name && <span className="text-frog-600"> กับ {profileUser.relationship_custom_name}</span>}
-          </p>
-        </div>
-      )}
-      {familyMembers.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">ครอบครัว</p>
-          {familyMembers.map((fm) => (
-            <Link key={fm.id} href={`/profile/${fm.member.username}`} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-2xl transition group">
-              <img src={fm.member.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-xl object-cover shadow-sm" alt="" />
-              <div className="min-w-0 flex-1">
-                <p className="font-bold text-[11px] text-gray-800 truncate">{fm.member.display_name}</p>
-                <p className="text-[9px] text-gray-400 font-black uppercase">{fm.relationship_label}</p>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
+      <div className="grid grid-cols-3 gap-2">
+        {friends.length === 0 ? <p className="col-span-3 text-center py-4 text-[9px] font-bold text-gray-300 uppercase italic">ไม่มีเพื่อน</p> : friends.slice(0, 9).map(f => (
+          <Link key={f.id} href={`/profile/${f.username}`} className="flex flex-col items-center gap-1.5 group">
+            <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full aspect-square rounded-2xl object-cover border border-gray-50 group-hover:scale-105 transition-transform shadow-sm" alt="" />
+            <p className="text-[9px] font-black text-center truncate w-full text-gray-500 uppercase tracking-tighter">{f.display_name.split(' ')[0]}</p>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 
   return (
     <NavLayout>
-      <div className="max-w-7xl mx-auto px-2 md:px-4 pb-10 animate-in fade-in duration-500">
+      <div className="max-w-7xl mx-auto px-2 md:px-4 pb-10">
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="flex-1 min-w-0 space-y-6">
-            {/* --- Profile Header --- */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-soft bg-white rounded-[2.5rem]">
               <div className="h-40 md:h-64" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
-              <div className="p-5 md:p-8">
-                <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6 -mt-24 md:-mt-32 mb-6">
-                  <div className="w-32 h-32 md:w-44 md:h-44 rounded-full p-1.5 shadow-2xl bg-white flex-shrink-0" style={{ borderColor: themeColor, borderWidth: '6px' }}>
+              <div className="p-6 md:p-10">
+                <div className="flex flex-col md:flex-row items-start gap-4 md:gap-8 -mt-28 md:-mt-36 mb-8">
+                  <div className="w-36 h-36 md:w-52 md:h-52 rounded-full p-2 shadow-2xl bg-white flex-shrink-0" style={{ borderColor: themeColor, borderWidth: '8px' }}>
                     <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover" alt="" />
                   </div>
-                  <div className="flex-1 md:mt-32 flex flex-wrap justify-start md:justify-end gap-2 w-full">
+                  <div className="flex-1 md:mt-36 flex flex-wrap justify-start md:justify-end gap-3 w-full">
                     {currentUser.id === profileUser.id ? (
-                      <Link href="/profile/edit" className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-6 py-3 rounded-2xl flex items-center gap-2 border border-gray-200 hover:bg-slate-900 hover:text-white transition-all"><Edit size={16} /> แก้ไขโปรไฟล์</Link>
+                      <Link href="/profile/edit" className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-8 py-3.5 rounded-2xl flex items-center gap-2 border border-gray-200 hover:bg-slate-900 hover:text-white transition-all"><Edit size={18} /> แก้ไขโปรไฟล์</Link>
                     ) : (
                       <>
-                        <button onClick={handleSendMessage} className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-6 py-3 rounded-2xl flex items-center gap-2 border border-gray-200 hover:bg-slate-900 hover:text-white transition-all"><MessageCircle size={16} /> ข้อความ</button>
-                        {friendshipStatus === 'none' && <button onClick={handleAddFriend} className="flex-1 md:flex-none justify-center btn-primary font-black text-xs uppercase tracking-widest px-6 py-3 rounded-2xl flex items-center gap-2 bg-frog-500 text-white shadow-lg active:scale-95 transition-all"><UserPlus size={16} /> เพิ่มเพื่อน</button>}
-                        {friendshipStatus === 'accepted' && <button className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-6 py-3 rounded-2xl flex items-center gap-2 border border-frog-200 text-frog-600 bg-frog-50"><UserCheck size={16} /> เพื่อนกันแล้ว</button>}
-                        {friendshipStatus === 'sent' && <button className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-6 py-3 rounded-2xl flex items-center gap-2 border border-gray-200 text-gray-400 bg-gray-50" disabled>ส่งคำขอแล้ว</button>}
+                        <button onClick={handleSendMessage} className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-8 py-3.5 rounded-2xl flex items-center gap-2 border border-gray-200 hover:bg-slate-900 hover:text-white transition-all"><MessageCircle size={18} /> ข้อความ</button>
+                        {friendshipStatus === 'none' && <button onClick={handleAddFriend} className="flex-1 md:flex-none justify-center btn-primary font-black text-xs uppercase tracking-widest px-8 py-3.5 rounded-2xl flex items-center gap-2 bg-frog-500 text-white shadow-lg active:scale-95 transition-all"><UserPlus size={18} /> เพิ่มเพื่อน</button>}
+                        {friendshipStatus === 'accepted' && <button className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-8 py-3.5 rounded-2xl flex items-center gap-2 border border-frog-200 text-frog-600 bg-frog-50"><UserCheck size={18} /> เพื่อนกันแล้ว</button>}
                       </>
                     )}
                   </div>
                 </div>
                 
-                <div className="space-y-6">
+                <div className="space-y-8">
                   <div>
-                    <h1 className="text-3xl md:text-5xl font-black text-slate-900 leading-tight mb-1">{profileUser.display_name}</h1>
-                    <p className="text-gray-400 font-black uppercase text-[10px] tracking-[0.3em]">@{profileUser.username}</p>
+                    <h1 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tight mb-2">{profileUser.display_name}</h1>
+                    <p className="text-gray-400 font-black uppercase text-[11px] tracking-[0.4em]">@{profileUser.username}</p>
                   </div>
-                  {profileUser.bio && <p className="text-gray-600 font-medium leading-relaxed whitespace-pre-wrap break-words border-l-4 border-frog-100 pl-5 text-lg italic">{profileUser.bio}</p>}
+                  {profileUser.bio && <p className="text-gray-600 font-medium leading-relaxed whitespace-pre-wrap break-words border-l-4 border-frog-100 pl-6 text-xl italic">{profileUser.bio}</p>}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-sm text-gray-500 font-bold">
-                    {profileUser.birthday && <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-frog-500" /> {formatDate(profileUser.birthday)} ({calculateAge(profileUser.birthday)} ปี)</div>}
-                    {profileUser.occupation && <div className="flex items-center gap-2"><Briefcase className="w-4 h-4 text-frog-500" /> {profileUser.occupation}</div>}
-                    {profileUser.workplace && <div className="flex items-center gap-2"><HomeIcon className="w-4 h-4 text-frog-500" /> {profileUser.workplace}</div>}
-                    {profileUser.address && <div className="flex items-center gap-2"><MapPin className="w-4 h-4 text-red-400" /> {profileUser.address}</div>}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8 text-[13px] text-gray-500 font-bold uppercase tracking-tight">
+                    {profileUser.birthday && <div className="flex items-center gap-3"><Calendar className="w-4 h-4 text-frog-500" /> {formatDate(profileUser.birthday)} ({calculateAge(profileUser.birthday)} ปี)</div>}
+                    {profileUser.occupation && <div className="flex items-center gap-3"><Briefcase className="w-4 h-4 text-frog-500" /> {profileUser.occupation}</div>}
+                    {profileUser.workplace && <div className="flex items-center gap-3"><HomeIcon className="w-4 h-4 text-frog-500" /> ที่ {profileUser.workplace}</div>}
+                    {profileUser.address && <div className="flex items-center gap-3"><MapPin className="w-4 h-4 text-red-400" /> {profileUser.address}</div>}
                   </div>
+
+                  {/* --- งานอดิเรก (Hobbies) --- */}
+                  {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
+                    <div className="pt-4 border-t border-gray-50">
+                      <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] mb-3">งานอดิเรกและความสนใจ</p>
+                      <div className="flex flex-wrap gap-2">
+                        {profileUser.hobbies.map((h: any, i: number) => (
+                          <span key={i} className="px-4 py-2 rounded-2xl text-[11px] font-black border transition-all hover:scale-105 tracking-wide uppercase" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: `${themeColor}20` }}>
+                            <Hash className="w-3 h-3 inline mr-1 opacity-50" /> {typeof h === 'string' ? h : h.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* --- Mobile Only Widgets --- */}
             <div className="lg:hidden space-y-6">
               <MusicWidget />
               <FriendsWidget />
-              <RelationshipWidget />
             </div>
 
             {/* --- Posts Area --- */}
@@ -251,37 +232,21 @@ export default function ProfilePage() {
               <div className="space-y-6">
                 <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={() => setRefreshTrigger(t => t + 1)} />
                 <div className="space-y-6">
-                  {posts.length === 0 ? (
-                    <div className="card-minimal text-center py-20 bg-white/50 rounded-[2.5rem]">
-                      <p className="text-gray-300 font-black text-[10px] uppercase tracking-[0.2em]">ยังไม่มีโพสต์ในขณะนี้</p>
-                    </div>
-                  ) : (
-                    posts.map((p, i) => (
-                      <div ref={posts.length === i + 1 ? lastPostElementRef : null} key={p.id}>
-                        <PostCardV3 post={p} currentUserId={currentUser.id} profileOwnerId={profileUser.id} onDelete={(id) => { setPostToDelete(id); setShowDeletePostConfirm(true); }} />
-                      </div>
-                    ))
-                  )}
-                  {isLoadingMore && <div className="py-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-frog-500" /></div>}
+                  {posts.length === 0 ? <div className="card-minimal text-center py-20 bg-white/50 rounded-[2.5rem]"><p className="text-gray-300 font-black text-[10px] uppercase tracking-[0.2em]">ยังไม่มีโพสต์</p></div> : posts.map((p, i) => (
+                    <div ref={posts.length === i + 1 ? lastPostElementRef : null} key={p.id}><PostCardV3 post={p} currentUserId={currentUser.id} profileOwnerId={profileUser.id} onDelete={(id) => { setPostToDelete(id); setShowDeletePostConfirm(true); }} /></div>
+                  ))}
                 </div>
               </div>
-            ) : (
-              <div className="card-minimal bg-white/50 border border-dashed border-gray-200 p-20 text-center rounded-[2.5rem]">
-                <p className="text-gray-400 font-black text-[10px] uppercase tracking-[0.2em]">เพิ่มเป็นเพื่อนเพื่อดูโพสต์และไทม์ไลน์</p>
-              </div>
-            )}
+            ) : <div className="card-minimal bg-white/50 border border-dashed border-gray-200 p-20 text-center rounded-[2.5rem]"><p className="text-gray-400 font-black text-[10px] uppercase tracking-[0.2em]">เป็นเพื่อนเพื่อดูไทม์ไลน์</p></div>}
           </div>
 
-          {/* --- Desktop Sidebar --- */}
           <div className="hidden lg:block w-80 space-y-6">
             <MusicWidget />
             <FriendsWidget />
-            <RelationshipWidget />
-            <div className="text-center opacity-20"><p className="text-[10px] font-black uppercase tracking-[0.5em]">Ribbi 2026</p></div>
+            <div className="text-center opacity-20"><p className="text-[10px] font-black uppercase tracking-[0.5em]">Ribbi Community</p></div>
           </div>
         </div>
       </div>
-      
       <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => setShowDeletePostConfirm(false)} onConfirm={async () => { if(postToDelete) { await supabase.from('posts').delete().eq('id', postToDelete); setPosts(prev => prev.filter(p => p.id !== postToDelete)); setShowDeletePostConfirm(false); } }} title="ลบโพสต์?" message="ต้องการลบโพสต์นี้ถาวรใช่หรือไม่" variant="danger" />
     </NavLayout>
   );
