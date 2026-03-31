@@ -122,16 +122,17 @@ export default function ProfilePage() {
   // --- Widgets ---
 
   const MusicWidget = () => {
-    if (!profileUser.music_url) return null;
-    let embedUrl = profileUser.music_url;
+    if (!profileUser.profile_song_url) return null;
+    let embedUrl = profileUser.profile_song_url;
+    // ปรับ Logic การเปลี่ยน Spotify Link
     if (embedUrl.includes('spotify.com')) {
-      embedUrl = embedUrl.replace('spotify.com/track/', 'spotify.com/embed/track/');
+       embedUrl = embedUrl.replace('/track/', '/embed/track/');
     }
     return (
       <div className="card-minimal bg-white p-5 rounded-[2.5rem] border border-gray-100 shadow-soft">
         <div className="flex items-center justify-between mb-3 px-1">
           <h3 className="font-black text-gray-900 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em]"><Music className="w-3 h-3 text-indigo-500" /> กำลังฟัง</h3>
-          {profileUser.music_name && <span className="text-[9px] font-black text-gray-400 truncate max-w-[100px]">{profileUser.music_name}</span>}
+          {profileUser.profile_song_name && <span className="text-[9px] font-black text-gray-400 truncate max-w-[100px]">{profileUser.profile_song_name}</span>}
         </div>
         <iframe src={embedUrl} width="100%" height="80" frameBorder="0" allow="encrypted-media" className="rounded-2xl shadow-sm"></iframe>
       </div>
@@ -141,13 +142,13 @@ export default function ProfilePage() {
   const FriendsWidget = () => (
     <div className="card-minimal bg-white p-5 rounded-[2.5rem] border border-gray-100 shadow-soft">
       <div className="flex items-center justify-between mb-4 px-1">
-        <h3 className="font-black text-gray-900 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2"><Users className="w-3 h-3 text-frog-500" /> เพื่อน ({friends.length})</h3>
+        <h3 className="font-black text-gray-900 text-[10px] uppercase tracking-[0.2em] flex items-center gap-2"><Users className="w-3 h-3 text-frog-500" /> เพื่อน </h3>
         <Link href={`/profile/${profileUser.username}/friends`} className="text-[9px] font-black text-frog-600 bg-frog-50 px-2 py-1 rounded-lg uppercase">ทั้งหมด</Link>
       </div>
       <div className="grid grid-cols-3 gap-2">
         {friends.slice(0, 9).map(f => (
           <Link key={f.id} href={`/profile/${f.username}`} className="flex flex-col items-center gap-1.5 group">
-            <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full aspect-square rounded-2xl object-cover border border-gray-50 group-hover:scale-105 transition-transform shadow-sm" alt="" />
+            <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full aspect-square rounded-2xl object-cover border border-gray-100 group-hover:scale-105 transition-transform shadow-sm" alt="" />
             <p className="text-[9px] font-black text-center truncate w-full text-gray-500 uppercase tracking-tighter">{f.display_name.split(' ')[0]}</p>
           </Link>
         ))}
@@ -194,7 +195,6 @@ export default function ProfilePage() {
       <div className="max-w-7xl mx-auto px-2 md:px-4 pb-10">
         <div className="flex flex-col lg:flex-row gap-6">
           <div className="flex-1 min-w-0 space-y-6">
-            {/* --- Profile Header --- */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-soft bg-white rounded-[2.5rem]">
               <div className="h-40 md:h-64" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
               <div className="p-6 md:p-10">
@@ -209,7 +209,7 @@ export default function ProfilePage() {
                       <>
                         <button onClick={handleSendMessage} className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-8 py-3.5 rounded-2xl flex items-center gap-2 border border-gray-200 hover:bg-slate-900 hover:text-white transition-all"><MessageCircle size={18} /> ข้อความ</button>
                         {friendshipStatus === 'none' && <button onClick={handleAddFriend} className="flex-1 md:flex-none justify-center btn-primary font-black text-xs uppercase tracking-widest px-8 py-3.5 rounded-2xl flex items-center gap-2 bg-frog-500 text-white shadow-lg active:scale-95 transition-all"><UserPlus size={18} /> เพิ่มเพื่อน</button>}
-                        {friendshipStatus === 'accepted' && <button className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-8 py-3.5 rounded-2xl flex items-center gap-2 border border-frog-200 text-frog-600 bg-frog-50"><UserCheck size={18} /> เพื่อนกันแล้ว</button>}
+                        {friendshipStatus === 'accepted' && <button className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-8 py-3.5 rounded-2xl flex items-center gap-2 border border-frog-200 text-frog-600 bg-frog-50"><UserCheck size={18} /> เป็นเพื่อนแล้ว</button>}
                         {friendshipStatus === 'sent' && <button className="flex-1 md:flex-none justify-center btn-secondary font-black text-xs uppercase tracking-widest px-8 py-3.5 rounded-2xl flex items-center gap-2 border border-gray-200 text-gray-400 bg-gray-50" disabled>ส่งคำขอแล้ว</button>}
                       </>
                     )}
