@@ -130,10 +130,10 @@ export default function ProfilePage() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">กำลังฟัง</p>
-            <p className="text-sm font-black text-gray-900 truncate">{profileUser.profile_song_name || 'My Favorite Song'}</p>
+            <p className="text-sm font-black text-gray-900 truncate">{profileUser.profile_song_name || 'Song Name'}</p>
           </div>
-          <a href={profileUser.profile_song_url} target="_blank" rel="noopener noreferrer" className="p-3 text-white rounded-2xl transition-all shadow-md active:scale-95 flex items-center justify-center" style={{ backgroundColor: themeColor }}>
-            <ExternalLink size={20} />
+          <a href={profileUser.profile_song_url} target="_blank" rel="noopener noreferrer" className="p-3 text-white rounded-2xl transition-all shadow-md active:scale-95 flex items-center justify-center hover:opacity-90" style={{ backgroundColor: themeColor }}>
+            <ExternalLink size={18} />
           </a>
         </div>
       </div>
@@ -162,7 +162,7 @@ export default function ProfilePage() {
   const RelationshipWidget = () => {
     if (!profileUser.relationship_status && familyMembers.length === 0) return null;
     return (
-      <div className="card-minimal bg-white p-6 rounded-[2rem] border border-gray-100 shadow-soft space-y-5">
+      <div className="card-minimal bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-soft space-y-5">
         <h3 className="font-black text-gray-900 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em]"><Heart className="w-4 h-4 text-red-500" /> ความสัมพันธ์</h3>
         {profileUser.relationship_status && (
           <div className="p-4 rounded-3xl border" style={{ backgroundColor: `${themeColor}05`, borderColor: `${themeColor}15` }}>
@@ -177,7 +177,7 @@ export default function ProfilePage() {
         )}
         {familyMembers.length > 0 && (
           <div className="space-y-3">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">ครอบครัวและคนสำคัญ</p>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">ครอบครัว</p>
             {familyMembers.map((fm) => (
               <Link key={fm.id} href={`/profile/${fm.member.username}`} className="flex items-center gap-4 p-2.5 hover:bg-gray-50 rounded-2xl transition-all">
                 <img src={fm.member.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-xl object-cover shadow-sm" alt="" />
@@ -200,92 +200,88 @@ export default function ProfilePage() {
           
           <div className="flex-1 min-w-0 space-y-8">
             
-            {/* --- Unified Profile Header V5: รื้อโครงสร้างคอม ไม่ให้เบียด --- */}
+            {/* --- Profile Header V7: Compact & Clean --- */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-soft bg-white rounded-[3rem]">
-              {/* Cover Image */}
-              <div className="h-44 md:h-80 relative" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
+              <div className="h-40 md:h-64 relative" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
               
-              <div className="p-6 md:p-12">
-                {/* Header Layout Area */}
-                <div className="flex flex-col lg:flex-row gap-8 -mt-24 md:-mt-44 relative">
+              <div className="px-6 md:px-10 pb-8">
+                {/* Avatar & Header Info Area */}
+                <div className="flex flex-col lg:flex-row items-center lg:items-end gap-6 lg:gap-8 -mt-20 md:-mt-28 relative z-10 text-center lg:text-left">
                   
-                  {/* Left Side: Avatar */}
-                  <div className="flex-shrink-0 mx-auto lg:mx-0">
-                    <div className="w-40 h-40 md:w-64 md:h-64 rounded-full p-2.5 shadow-2xl bg-white border-[10px]" style={{ borderColor: themeColor }}>
+                  {/* Avatar: ย่อให้เล็กลงหน่อย */}
+                  <div className="shrink-0">
+                    <div className="w-36 h-36 md:w-48 md:h-48 rounded-full p-2 shadow-2xl bg-white border-[6px] md:border-[8px]" style={{ borderColor: themeColor }}>
                       <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover" alt="" />
                     </div>
                   </div>
 
-                  {/* Right Side: Name & Actions (ถ่างออกไม่ให้ทับ) */}
-                  <div className="flex-1 lg:pt-48 flex flex-col gap-6">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 w-full">
-                      <div className="space-y-1 text-center lg:text-left">
-                        <h1 className="text-4xl md:text-5xl lg:text-7xl font-black text-slate-900 leading-tight">{profileUser.display_name}</h1>
-                        <p className="text-gray-400 font-black uppercase text-[12px] tracking-[0.5em] mb-2">@{profileUser.username}</p>
-                        {/* วันที่สมัคร (Since) */}
-                        <div className="flex items-center justify-center lg:justify-start gap-2 text-[10px] font-black text-gray-300 uppercase tracking-widest">
-                          <Award size={12} className="text-frog-400" /> Member since {new Date(profileUser.created_at).getFullYear()}
+                  {/* Info Area: หดชื่อให้เล็กลง ปุ่มจะได้ไม่หาย */}
+                  <div className="flex-1 w-full lg:pb-2 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight leading-tight">{profileUser.display_name}</h1>
+                      <div className="flex items-center justify-center lg:justify-start gap-3">
+                        <p className="text-gray-400 font-black uppercase text-[10px] tracking-[0.3em]">@{profileUser.username}</p>
+                        <div className="flex items-center gap-1.5 text-[9px] font-black text-gray-300 uppercase tracking-widest border-l pl-3 border-gray-100">
+                          <Award size={10} style={{ color: themeColor }} /> Since {new Date(profileUser.created_at).getFullYear()}
                         </div>
                       </div>
+                    </div>
 
-                      {/* Action Buttons: กางออกไม่ให้ทับรู */}
-                      <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-                        {currentUser.id === profileUser.id ? (
-                          <Link href="/profile/edit" className="flex-1 justify-center font-black text-xs uppercase tracking-widest px-10 py-4 rounded-2xl flex items-center gap-2 text-white shadow-xl transition-all hover:scale-105 active:scale-95" style={{ backgroundColor: themeColor }}>
-                            <Edit size={18} /> แก้ไขโปรไฟล์
-                          </Link>
-                        ) : (
-                          <>
-                            <button onClick={handleSendMessage} className="flex-1 justify-center btn-secondary font-black text-xs uppercase tracking-widest px-10 py-4 rounded-2xl flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-900 hover:text-white transition-all shadow-md"><MessageCircle size={18} /> ข้อความ</button>
-                            {friendshipStatus === 'none' && <button onClick={handleAddFriend} className="flex-1 justify-center font-black text-xs uppercase tracking-widest px-10 py-4 rounded-2xl flex items-center gap-2 text-white shadow-lg active:scale-95 transition-all" style={{ backgroundColor: themeColor }}><UserPlus size={18} /> เพิ่มเพื่อน</button>}
-                            {friendshipStatus === 'accepted' && <button className="flex-1 justify-center font-black text-xs uppercase tracking-widest px-10 py-4 rounded-2xl flex items-center gap-2 border" style={{ backgroundColor: `${themeColor}10`, borderColor: themeColor, color: themeColor }}><UserCheck size={18} /> เพื่อนกันแล้ว</button>}
-                          </>
-                        )}
-                      </div>
+                    {/* Action Buttons: ขนาดพอดีคำ */}
+                    <div className="flex flex-row gap-2 w-full lg:w-auto">
+                      {currentUser.id === profileUser.id ? (
+                        <Link href="/profile/edit" className="flex-1 justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 text-white shadow-md transition-all hover:opacity-90" style={{ backgroundColor: themeColor }}>
+                          <Edit size={14} /> แก้ไขโปรไฟล์
+                        </Link>
+                      ) : (
+                        <>
+                          <button onClick={handleSendMessage} className="flex-1 justify-center btn-secondary font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-900 hover:text-white transition-all shadow-sm"><MessageCircle size={14} /> ข้อความ</button>
+                          {friendshipStatus === 'none' && <button onClick={handleAddFriend} className="flex-1 justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 text-white shadow-md active:scale-95 transition-all" style={{ backgroundColor: themeColor }}><UserPlus size={14} /> เพิ่มเพื่อน</button>}
+                          {friendshipStatus === 'accepted' && <button className="flex-1 justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 border" style={{ backgroundColor: `${themeColor}10`, borderColor: themeColor, color: themeColor }}><UserCheck size={14} /> เพื่อนกันแล้ว</button>}
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
+                
+                {/* Bio & Bottom Details Area */}
+                <div className="mt-8 space-y-8">
+                  {profileUser.bio && <p className="text-gray-600 font-medium leading-relaxed whitespace-pre-wrap break-words border-l-4 pl-6 text-lg italic" style={{ borderColor: `${themeColor}20` }}>{profileUser.bio}</p>}
 
-                {/* Details Section */}
-                <div className="mt-12 space-y-10">
-                  {profileUser.bio && <p className="text-gray-600 font-medium leading-relaxed whitespace-pre-wrap break-words border-l-8 pl-8 text-xl md:text-3xl italic" style={{ borderColor: `${themeColor}30` }}>{profileUser.bio}</p>}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-10 text-sm md:text-base text-gray-500 font-bold uppercase tracking-tight">
-                    {profileUser.birthday && <div className="flex items-center gap-4"><Calendar className="w-5 h-5" style={{ color: themeColor }} /> เกิด {formatDate(profileUser.birthday)} ({calculateAge(profileUser.birthday)} ปี)</div>}
-                    {profileUser.occupation && <div className="flex items-center gap-4"><Briefcase className="w-5 h-5" style={{ color: themeColor }} /> {profileUser.occupation}</div>}
-                    {profileUser.workplace && <div className="flex items-center gap-4"><HomeIcon className="w-5 h-5" style={{ color: themeColor }} /> ที่ {profileUser.workplace}</div>}
-                    {profileUser.address && <div className="flex items-center gap-4"><MapPin className="w-5 h-5 text-red-400" /> {profileUser.address}</div>}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-10 text-[12px] text-gray-500 font-bold uppercase tracking-tight">
+                    {profileUser.birthday && <div className="flex items-center gap-3"><Calendar className="w-4 h-4" style={{ color: themeColor }} /> {formatDate(profileUser.birthday)} ({calculateAge(profileUser.birthday)} ปี)</div>}
+                    {profileUser.occupation && <div className="flex items-center gap-3"><Briefcase className="w-4 h-4" style={{ color: themeColor }} /> {profileUser.occupation}</div>}
+                    {profileUser.workplace && <div className="flex items-center gap-3"><HomeIcon className="w-4 h-4" style={{ color: themeColor }} /> {profileUser.workplace}</div>}
+                    {profileUser.address && <div className="flex items-center gap-3"><MapPin className="w-4 h-4 text-red-400" /> {profileUser.address}</div>}
                   </div>
 
+                  {/* Hobbies - Bubble Style */}
                   {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
-                    <div className="pt-8 border-t border-gray-50">
-                      <p className="text-[11px] font-black text-gray-300 uppercase tracking-[0.2em] mb-5">งานอดิเรกและความสนใจ</p>
-                      <div className="flex flex-wrap gap-3">
-                        {profileUser.hobbies.map((h: any, i: number) => (
-                          <span key={i} className="px-6 py-3 rounded-full text-xs font-black border transition-all hover:translate-y-[-2px] hover:shadow-md tracking-wide uppercase shadow-sm" style={{ backgroundColor: `${themeColor}15`, color: themeColor, borderColor: `${themeColor}25` }}>
-                            {typeof h === 'string' ? h : h.name}
-                          </span>
-                        ))}
-                      </div>
+                    <div className="pt-6 border-t border-gray-50 flex flex-wrap gap-2">
+                      {profileUser.hobbies.map((h: any, i: number) => (
+                        <span key={i} className="px-4 py-2 rounded-full text-[10px] font-black border tracking-wide uppercase" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: `${themeColor}20` }}>
+                          {typeof h === 'string' ? h : h.name}
+                        </span>
+                      ))}
                     </div>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Mobile Only Widgets */}
+            {/* Mobile Widgets */}
             <div className="lg:hidden space-y-8 px-2">
               <MusicWidget />
               <FriendsWidget />
               <RelationshipWidget />
             </div>
 
-            {/* Posts Section */}
+            {/* Posts Feed */}
             {(friendshipStatus === 'accepted' || currentUser.id === profileUser.id) ? (
               <div className="space-y-8">
                 <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={() => setRefreshTrigger(t => t + 1)} />
                 <div className="space-y-8">
-                  {posts.length === 0 ? <div className="card-minimal text-center py-24 bg-white/50 rounded-[3rem] border-dashed border-gray-200 border-2"><p className="text-gray-300 font-black text-xs uppercase tracking-[0.3em]">No posts yet</p></div> : posts.map((p, i) => (
+                  {posts.length === 0 ? <div className="card-minimal text-center py-20 bg-white/50 rounded-[3rem] border-dashed border-gray-200 border-2"><p className="text-gray-300 font-black text-xs uppercase tracking-[0.3em]">No posts yet</p></div> : posts.map((p, i) => (
                     <div ref={posts.length === i + 1 ? lastPostElementRef : null} key={p.id}><PostCardV3 post={p} currentUserId={currentUser.id} profileOwnerId={profileUser.id} onDelete={(id) => { setPostToDelete(id); setShowDeletePostConfirm(true); }} /></div>
                   ))}
                 </div>
@@ -293,12 +289,12 @@ export default function ProfilePage() {
             ) : <div className="card-minimal bg-white/50 border-2 border-dashed border-gray-200 p-24 text-center rounded-[3rem]"><p className="text-gray-400 font-black text-xs uppercase tracking-[0.3em]">Become friends to see posts</p></div>}
           </div>
 
-          {/* Desktop Sidebar */}
-          <div className="hidden lg:block w-[400px] space-y-8">
+          {/* Desktop Sidebar (Sidebar 380px) */}
+          <div className="hidden lg:block w-[380px] space-y-8">
             <MusicWidget />
             <FriendsWidget />
             <RelationshipWidget />
-            <div className="text-center opacity-20 py-10"><p className="text-[10px] font-black uppercase tracking-[0.6em]">Ribbi Community 2026</p></div>
+            <div className="text-center opacity-20 py-10"><p className="text-[10px] font-black uppercase tracking-[0.6em]">Ribbi 2026</p></div>
           </div>
         </div>
       </div>
