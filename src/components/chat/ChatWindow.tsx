@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, RefreshCcw, Palette, UserPen, Eraser, MessageSquare, Users, UserMinus } from 'lucide-react';
+import { Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, RefreshCcw, Palette, UserPen, Eraser, MessageSquare, Users, UserMinus, UserPlus, Check } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ChatWindow({ chatId, chatData: initialChatData, currentUser, onBack, onRefreshChats }: any) {
@@ -18,9 +18,15 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   const [tempColor, setTempColor] = useState('');
   const lastId = useRef(chatId);
 
-  // ✅ States สำหรับจัดการกลุ่ม
+  // States สำหรับจัดการกลุ่ม
   const [participants, setParticipants] = useState<any[]>([]);
   const [myRole, setMyRole] = useState('member');
+
+  // ✅ States สำหรับเพิ่มคนเข้ากลุ่ม
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [availableFriends, setAvailableFriends] = useState<any[]>([]);
+  const [selectedNewMembers, setSelectedNewMembers] = useState<string[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
 
   useEffect(() => {
     loadMessages();
@@ -33,15 +39,22 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       setTheirNick(initialChatData.other_user?.display_name || '');
       setTempColor(initialChatData.theme_color || '#22c55e');
       lastId.current = chatId;
+      setShowAddMember(false); // ปิดหน้าเพิ่มคนเวลาเปลี่ยนห้อง
     }
   }, [initialChatData, chatId, showSettings]);
 
-  // ✅ โหลดรายชื่อสมาชิกกลุ่มเมื่อเปิดหน้าตั้งค่า
   useEffect(() => {
     if (showSettings && initialChatData.is_group) {
       loadParticipants();
     }
   }, [showSettings, chatId]);
+
+  // ✅ โหลดเพื่อนที่ยังไม่อยู่ในกลุ่ม
+  useEffect(() => {
+    if (showAddMember) {
+      loadAvailableFriends();
+    }
+  }, [showAddMember]);
 
   const loadParticipants = async () => {
     const { data } = await supabase
@@ -53,6 +66,24 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       setParticipants(data);
       const me = data.find(p => p.user_id === currentUser.id);
       setMyRole(me?.role || 'member');
+    }
+  };
+
+  const loadAvailableFriends = async () => {
+    const { data } = await supabase
+      .from('friendships')
+      .select(`
+        sender:users!friendships_sender_id_fkey(id, display_name, profile_img_url, username),
+        receiver:users!friendships_receiver_id_fkey(id, display_name, profile_img_url, username)
+      `)
+      .eq('status', 'accepted')
+      .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`);
+
+    if (data) {
+      const friendList = data.map((f: any) => f.sender.id === currentUser.id ? f.receiver : f.sender);
+      const currentMemberIds = participants.map(p => p.user_id);
+      // กรองเอาเฉพาะเพื่อนที่ยังไม่มี ID ในกลุ่ม
+      setAvailableFriends(friendList.filter(f => !currentMemberIds.includes(f.id)));
     }
   };
 
@@ -127,27 +158,59 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     }
   };
 
-  // ✅ ฟังก์ชันเตะคนออกจากกลุ่ม
   const handleKickMember = async (targetUserId: string, targetName: string) => {
     if (!confirm(`คุณต้องการเตะ ${targetName} ออกจากกลุ่มใช่หรือไม่?`)) return;
     try {
-      // ลบออกจาก chat_participants
       await supabase.from('chat_participants').delete().eq('chat_id', chatId).eq('user_id', targetUserId);
-      
-      // ส่งข้อความระบบแจ้งให้คนอื่นรู้
       await supabase.from('messages').insert({ 
         chat_id: chatId, 
         sender_id: currentUser.id, 
         content: `${currentUser.display_name} ได้เตะ ${targetName} ออกจากกลุ่ม`, 
         event: 'system' 
       });
-
-      // รีเฟรชข้อมูล
       loadParticipants();
       loadMessages();
     } catch (err) {
       console.error('Error kicking member:', err);
       alert('เกิดข้อผิดพลาดในการเตะสมาชิก');
+    }
+  };
+
+  // ✅ ฟังก์ชันกดยืนยันเพิ่มคนเข้ากลุ่ม
+  const submitAddMembers = async () => {
+    if (selectedNewMembers.length === 0) return;
+    setIsAdding(true);
+    try {
+      const newParticipants = selectedNewMembers.map(id => ({
+        chat_id: chatId,
+        user_id: id,
+        role: 'member' // ดึงเข้ามาเป็นสมาชิกระดับปกติ
+      }));
+      await supabase.from('chat_participants').insert(newParticipants);
+
+      // ดึงชื่อคนที่ถูกเชิญมาเพื่อแสดงในข้อความระบบ
+      const addedNames = availableFriends
+        .filter(f => selectedNewMembers.includes(f.id))
+        .map(f => f.display_name)
+        .join(', ');
+
+      await supabase.from('messages').insert({
+        chat_id: chatId,
+        sender_id: currentUser.id,
+        content: `${currentUser.display_name} ได้เพิ่ม ${addedNames} เข้ากลุ่ม`,
+        event: 'system'
+      });
+
+      setShowAddMember(false);
+      setSelectedNewMembers([]);
+      loadParticipants();
+      loadMessages();
+      onRefreshChats();
+    } catch (e) {
+      console.error(e);
+      alert('เกิดข้อผิดพลาดในการเพิ่มสมาชิก');
+    } finally {
+      setIsAdding(false);
     }
   };
 
@@ -238,10 +301,55 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
           </div>
           <div className="p-6 space-y-8 flex-1 overflow-y-auto pb-24 custom-scrollbar">
             
-            {/* ✅ แสดงสมาชิกในกลุ่มเฉพาะเมื่อเป็นแชทกลุ่ม */}
+            {/* ✅ ส่วนจัดการสมาชิกกลุ่ม */}
             {initialChatData.is_group && participants.length > 0 && (
               <div className="space-y-4">
-                <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Users size={14}/> สมาชิกในกลุ่ม ({participants.length})</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Users size={14}/> สมาชิกในกลุ่ม ({participants.length})</h4>
+                  {/* ปุ่มเพิ่มคนเข้ากลุ่ม (ให้แอดมินหรือทุกคนกดได้ตามต้องการ ตอนนี้เปิดให้ทุกคนกดเชิญเพื่อนได้) */}
+                  <button onClick={() => setShowAddMember(!showAddMember)} className="text-[10px] font-bold text-frog-600 bg-frog-50 hover:bg-frog-100 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors">
+                    <UserPlus size={12} /> เพิ่มสมาชิก
+                  </button>
+                </div>
+
+                {/* ✅ กล่องเลือกเพื่อนเพื่อเพิ่มเข้ากลุ่ม */}
+                {showAddMember && (
+                  <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100 animate-in fade-in slide-in-from-top-2 space-y-2">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">เลือกเพื่อนของคุณ</span>
+                      <button onClick={() => setShowAddMember(false)} className="text-[10px] text-gray-400 hover:text-gray-600 font-bold">ปิด</button>
+                    </div>
+                    <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
+                      {availableFriends.length === 0 ? (
+                        <p className="text-xs text-gray-400 text-center py-4 italic">เพื่อนทุกคนอยู่ในกลุ่มนี้แล้ว</p>
+                      ) : (
+                        availableFriends.map(f => (
+                          <button 
+                            key={f.id} 
+                            onClick={() => setSelectedNewMembers(prev => prev.includes(f.id) ? prev.filter(id => id !== f.id) : [...prev, f.id])}
+                            className={`w-full flex items-center justify-between p-2 rounded-xl border transition-all ${selectedNewMembers.includes(f.id) ? 'bg-white border-frog-400 shadow-sm' : 'bg-white border-transparent hover:bg-gray-100'}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-6 h-6 rounded-full object-cover" alt="" />
+                              <span className="text-xs font-bold text-gray-700 truncate">{f.display_name}</span>
+                            </div>
+                            {selectedNewMembers.includes(f.id) && <Check size={14} className="text-frog-600" />}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    {availableFriends.length > 0 && (
+                      <button 
+                        onClick={submitAddMembers} 
+                        disabled={selectedNewMembers.length === 0 || isAdding}
+                        className="w-full py-2.5 mt-2 bg-frog-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-frog-600 disabled:opacity-50 transition-all shadow-sm"
+                      >
+                        {isAdding ? 'กำลังดึงเข้ากลุ่ม...' : `ดึงเข้ากลุ่ม (${selectedNewMembers.length} คน)`}
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   {participants.map(p => (
                     <div key={p.user?.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-2xl border border-gray-100">
@@ -255,7 +363,6 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                         </div>
                       </Link>
                       
-                      {/* ปุ่มเตะ: แอดมินถึงจะเห็น และไม่สามารถเตะตัวเองได้ */}
                       {myRole === 'admin' && p.user?.id !== currentUser.id && (
                         <button 
                           onClick={() => handleKickMember(p.user?.id, p.user?.display_name)}
