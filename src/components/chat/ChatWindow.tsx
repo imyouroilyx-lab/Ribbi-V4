@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, RefreshCcw, Palette, UserPen, Eraser } from 'lucide-react';
+import { Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, RefreshCcw, Palette, UserPen, Eraser, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ChatWindow({ chatId, chatData: initialChatData, currentUser, onBack, onRefreshChats }: any) {
@@ -82,10 +82,8 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     } catch (e) { console.error(e); } finally { setIsSaving(false); }
   };
 
-  // ✅ ล้างประวัติ (และลบ Preview หน้าปกออกด้วย)
   const clearHistoryForMe = async () => {
     if (!confirm('ล้างประวัติการแชท (หายเฉพาะฝั่งคุณ)?')) return;
-    
     const { data } = await supabase.from('messages').select('id, deleted_by').eq('chat_id', chatId);
     if (data) {
       const updates = data.map(m => {
@@ -94,19 +92,17 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       });
       await Promise.all(updates);
       
-      // ✅ สั่งล้าง Preview ในตาราง chats ด้วย
-      await supabase.from('chats').update({ 
-        last_message_content: null, 
-        last_message_at: null 
-      }).eq('id', chatId);
+      // ✅ ล้าง Preview ในหน้า Chat List ด้วย
+      await supabase.from('chats').update({ last_message_content: null, last_message_at: null }).eq('id', chatId);
 
       loadMessages();
       setShowSettings(false);
-      onRefreshChats(); // บังคับให้หน้าซ้ายอัปเดต Preview ทันที
+      onRefreshChats();
     }
   };
 
   const otherUser = initialChatData.other_user;
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const renderMessageContent = (content: string) => {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -121,7 +117,6 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
 
   return (
     <div className="flex flex-col h-full bg-white w-full relative overflow-hidden">
-      {/* Header */}
       <div className="h-16 px-4 border-b flex items-center justify-between bg-white/90 z-20 sticky top-0 backdrop-blur-md">
         <div className="flex items-center gap-3 min-w-0">
           <button onClick={onBack} className="md:hidden p-1 text-gray-400"><ChevronLeft /></button>
@@ -136,12 +131,11 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fcfdfe]">
         {messages.length === 0 && !isLoading && (
-          <div className="h-full flex flex-col items-center justify-center opacity-20">
+          <div className="h-full flex flex-col items-center justify-center opacity-20 text-gray-900">
             <MessageSquare size={64}/>
-            <p className="text-[10px] font-black uppercase mt-2">No messages here</p>
+            <p className="text-[10px] font-black uppercase mt-2 text-gray-900">No messages here</p>
           </div>
         )}
         {messages.map((m) => {
@@ -168,9 +162,8 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         <div ref={scrollRef} />
       </div>
 
-      {/* Settings Drawer */}
       {showSettings && (
-        <div className="absolute right-0 top-0 bottom-0 w-full sm:w-80 bg-white border-l z-30 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+        <div className="absolute right-0 top-0 bottom-0 w-full sm:w-80 bg-white border-l z-30 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 text-gray-900">
           <div className="p-4 border-b flex justify-between items-center bg-gray-50">
             <span className="font-black text-xs uppercase text-gray-400 tracking-widest">Settings</span>
             <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-white rounded-full"><X size={20}/></button>
@@ -179,22 +172,21 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><UserPen size={14}/> Nicknames</h4>
               <div className="space-y-3">
-                <input value={myNick} onChange={e => setMyNick(e.target.value)} placeholder="My Nickname..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm" />
-                {!initialChatData.is_group && <input value={theirNick} onChange={e => setTheirNick(e.target.value)} placeholder="Friend Nickname..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm" />}
+                <input value={myNick} onChange={e => setMyNick(e.target.value)} placeholder="My Nickname..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none" />
+                {!initialChatData.is_group && <input value={theirNick} onChange={e => setTheirNick(e.target.value)} placeholder="Friend Nickname..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none" />}
               </div>
             </div>
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Palette size={14}/> Theme Color</h4>
               <div className="grid grid-cols-5 gap-3">
                 {['#22c55e', '#3b82f6', '#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#000000', '#64748b', '#f97316'].map(c => (
-                  <button key={c} onClick={() => setTempColor(c)} className={`aspect-square rounded-full border-2 transition-transform ${tempColor === c ? 'border-gray-900 scale-110 shadow-md' : 'border-white shadow-sm'}`} style={{ backgroundColor: c }} />
+                  <button key={c} onClick={() => setTempColor(c)} className={`aspect-square rounded-full border-2 ${tempColor === c ? 'border-gray-900 scale-110 shadow-md' : 'border-white shadow-sm'}`} style={{ backgroundColor: c }} />
                 ))}
               </div>
-              <input type="color" value={tempColor} onChange={e => setTempColor(e.target.value)} className="w-10 h-8 rounded cursor-pointer bg-transparent" />
+              <input type="color" value={tempColor} onChange={e => setTempColor(e.target.value)} className="w-10 h-8 rounded cursor-pointer bg-transparent border-none" />
             </div>
             <button onClick={clearHistoryForMe} className="w-full p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2 tracking-widest hover:bg-red-100 transition-colors"><Eraser size={14}/> Clear Chat History</button>
           </div>
-          
           <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t z-50">
             <button onClick={saveAllSettings} disabled={isSaving} className="w-full py-4 rounded-[1.25rem] text-[12px] font-black uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all disabled:opacity-50" style={{ backgroundColor: '#16a34a', color: '#ffffff', display: 'block' }}>
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -203,9 +195,8 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         </div>
       )}
 
-      {/* Form */}
       <form onSubmit={handleSend} className="p-4 border-t bg-white flex items-center gap-3 relative">
-        <input value={input} onChange={e => setInput(e.target.value)} placeholder="พิมพ์ข้อความ..." className="flex-1 p-3.5 bg-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-frog-200" />
+        <input value={input} onChange={e => setInput(e.target.value)} placeholder="พิมพ์ข้อความ..." className="flex-1 p-3.5 bg-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-frog-200 text-gray-900" />
         <button type="submit" className="p-3.5 bg-frog-600 text-white rounded-2xl shadow-lg" style={{ backgroundColor: initialChatData.theme_color || '#22c55e' }}><Send size={20} /></button>
       </form>
     </div>
