@@ -16,6 +16,8 @@ export interface Chat {
   last_message_at: string | null;
   last_message_content: string | null;
   unread_count: number;
+  my_nickname?: string | null;
+  theme_color?: string | null;
   other_user?: {
     id: string;
     username: string;
@@ -33,7 +35,6 @@ export default function MessagesPage() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ✅ ระบบดูคนออนไลน์ยังทำงาน (ผ่าน Hook ที่เราสุ่มชื่อท่อแก้ Error แดงแล้ว)
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
   const currentSelectedChat = chats.find(c => c.id === selectedChatId);
 
@@ -56,29 +57,38 @@ export default function MessagesPage() {
 
   const loadChats = async (userId: string) => {
     try {
-      const { data: partData } = await supabase.from('chat_participants').select(`
+      const { data: partData, error: partError } = await supabase.from('chat_participants').select(`
         chat_id, unread_count, 
         chats:chat_id (*, members:chat_participants (user:user_id (id, username, display_name, profile_img_url)))
       `).eq('user_id', userId);
 
-      if (!partData) return;
+      if (partError || !partData) return;
+
+      const chatIds = partData.map((p: any) => p.chat_id);
+      const { data: nicknames } = await supabase.from('chat_nicknames').select('*').in('chat_id', chatIds);
 
       const formatted = partData.map((p: any) => {
-        const c = p.chats;
+        const c = p.chats as any;
         if (!c) return null;
+        
         const otherMember = c.is_group ? null : c.members.find((m: any) => m.user?.id !== userId)?.user;
+        const myNickEntry = nicknames?.find(n => n.chat_id === c.id && n.target_user_id === userId);
+        const otherNickEntry = otherMember ? nicknames?.find(n => n.chat_id === c.id && n.target_user_id === otherMember.id) : null;
+
         return { 
           ...c, 
           unread_count: p.unread_count || 0, 
+          my_nickname: myNickEntry?.nickname || null,
           other_user: otherMember ? { 
             ...otherMember, 
-            is_online: !!onlineUsers[otherMember.id] // 🟢 ยังโชว์จุดเขียวแบบเรียลไทม์
+            display_name: otherNickEntry?.nickname || otherMember.display_name,
+            is_online: !!onlineUsers[otherMember.id]
           } : undefined 
         };
       }).filter(Boolean) as Chat[];
 
       setChats(formatted.sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
-    } catch (e) { console.error("Load error:", e); }
+    } catch (e) { console.error(e); }
   };
 
   if (isLoading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-frog-500" /></div>;
