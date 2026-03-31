@@ -43,6 +43,23 @@ export interface Chat {
   unread_count: number;
 }
 
+// 🛡️ ฟังก์ชันไม้ตาย: แบ่งการ Query ทีละ 150 รายการ เพื่อป้องกัน URL ยาวเกิน Limit ของ API
+const fetchInChunks = async (table: string, select: string, column: string, ids: string[]) => {
+  if (!ids || ids.length === 0) return [];
+  const chunkSize = 150;
+  const chunks: string[][] = [];
+  
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    chunks.push(ids.slice(i, i + chunkSize));
+  }
+  
+  const results = await Promise.all(
+    chunks.map(chunk => supabase.from(table).select(select).in(column, chunk))
+  );
+  
+  return results.flatMap(res => res.data || []);
+};
+
 export default function MessagesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -190,24 +207,23 @@ export default function MessagesPage() {
       const chatIds = participantsData.map(p => p.chat_id);
       const lastMsgIds = participantsData.map(p => (p.chats as any)?.last_message_id).filter(Boolean);
 
-      // ✅ 2. Parallel Fetch ข้อมูลประกอบ (แก้ N+1)
-      const [messagesRes, allPartsRes, nicknamesRes] = await Promise.all([
-        lastMsgIds.length > 0 ? supabase.from('messages').select('id, deleted_by, event').in('id', lastMsgIds) : Promise.resolve({ data: [] }),
-        supabase.from('chat_participants').select('chat_id, user_id').in('chat_id', chatIds),
-        supabase.from('chat_nicknames').select('chat_id, target_user_id, nickname').in('chat_id', chatIds)
+      // ✅ 2. Parallel Fetch ข้อมูลประกอบผ่านระบบ Chunking (แก้ N+1 แบบทะลุ Limit API)
+      const [messagesData, allPartsData, nicknamesData] = await Promise.all([
+        fetchInChunks('messages', 'id, deleted_by, event', 'id', lastMsgIds),
+        fetchInChunks('chat_participants', 'chat_id, user_id', 'chat_id', chatIds),
+        fetchInChunks('chat_nicknames', 'chat_id, target_user_id, nickname', 'chat_id', chatIds)
       ]);
 
       // ✅ 3. สร้าง Lookup Maps เพื่อ O(1) Access (หัวใจของความลื่น)
-      const deletedMap = new Map(messagesRes.data?.map(m => [m.id, m.deleted_by || []]));
-      const eventMap = new Map(messagesRes.data?.map(m => [m.id, !!m.event]));
-      const nickMap = new Map(nicknamesRes.data?.map(n => [`${n.chat_id}:${n.target_user_id}`, n.nickname]));
+      const deletedMap = new Map(messagesData.map((m: any) => [m.id, m.deleted_by || []]));
+      const eventMap = new Map(messagesData.map((m: any) => [m.id, !!m.event]));
+      const nickMap = new Map(nicknamesData.map((n: any) => [`${n.chat_id}:${n.target_user_id}`, n.nickname]));
       
-      const otherUserIds = [...new Set(allPartsRes.data?.filter(p => p.user_id !== user.id).map(p => p.user_id))];
-      const { data: usersData } = await supabase.from('users')
-        .select('id, username, display_name, profile_img_url, is_online')
-        .in('id', otherUserIds);
+      const otherUserIds = [...new Set(allPartsData.filter((p: any) => p.user_id !== user.id).map((p: any) => p.user_id))];
       
-      const userMap = new Map(usersData?.map(u => [u.id, u]));
+      // ✅ ดึงข้อมูล Users แบบ Chunking ด้วยเผื่อห้องแชทเยอะจัด
+      const usersData = await fetchInChunks('users', 'id, username, display_name, profile_img_url, is_online', 'id', otherUserIds);
+      const userMap = new Map(usersData.map((u: any) => [u.id, u]));
 
       // ✅ 4. ประกอบร่างข้อมูล
       const result: Chat[] = participantsData.map(p => {
@@ -215,7 +231,7 @@ export default function MessagesPage() {
         const lastId = c.last_message_id;
         const isHidden = lastId && (deletedMap.get(lastId)?.includes(user.id) || eventMap.get(lastId));
         
-        const memberIds = allPartsRes.data?.filter(ap => ap.chat_id === p.chat_id && ap.user_id !== user.id).map(ap => ap.user_id) || [];
+        const memberIds = allPartsData.filter((ap: any) => ap.chat_id === p.chat_id && ap.user_id !== user.id).map((ap: any) => ap.user_id) || [];
 
         if (c.is_group) {
           return {
@@ -226,7 +242,7 @@ export default function MessagesPage() {
             last_message_at: isHidden ? null : c.last_message_at,
             last_message_content: isHidden ? null : c.last_message_content,
             last_message_sender_id: isHidden ? null : c.last_message_sender_id,
-            members: memberIds.map(id => userMap.get(id)).filter(Boolean) as any[],
+            members: memberIds.map((id: any) => userMap.get(id)).filter(Boolean) as any[],
             unread_count: p.unread_count || 0
           };
         } else {
