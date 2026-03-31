@@ -1,142 +1,112 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { supabase, User } from '@/lib/supabase';
+import React, { useState, useEffect } from 'react';
+import { supabase, User } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
-import NavLayout from '@/components/NavLayout';
-import { 
-  Search, 
-  Users, 
-  ChevronRight, 
-  Filter,
-  Loader2,
-  ChevronLeft,
-  ChevronRight as ChevronRightIcon,
-  UserPlus,
-  UserCheck,
-  Clock,
-  UserMinus
-} from 'lucide-react';
+import NavLayout from '../../components/NavLayout';
+import { Search, Users, ChevronLeft, ChevronRight, UserPlus, UserCheck, Clock, Loader2 } from 'lucide-react';
 
 const USERS_PER_PAGE = 20;
 const ALPHABETS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-// ปรับปรุง Interface ให้รองรับสถานะความสัมพันธ์
 interface UserWithFriendship extends Omit<User, 'updated_at'> {
   friendshipStatus?: 'none' | 'pending' | 'accepted' | 'sent';
   friendshipId?: string;
-  updated_at?: string; 
+  updated_at?: string;
+  is_online?: boolean;
 }
 
 export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<UserWithFriendship[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
-  
-  // ✅ แยก State สำหรับการพิมพ์ กับ การค้นหาจริง
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // ✅ 1. โหลดข้อมูล Auth แค่ "ครั้งเดียว" ตอนเปิดหน้าเว็บ
   useEffect(() => {
     const initAuth = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      } else {
-        router.push('/login');
-      }
+      if (user) setCurrentUserId(user.id);
+      else router.push('/login');
     };
     initAuth();
   }, [router]);
 
-  // ✅ 2. ระบบหน่วงเวลาตอนพิมพ์ (Debounce) ไม่ให้ยิง Database รัวเกินไป
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchTerm);
-    }, 400); // รอ 0.4 วินาทีหลังพิมพ์เสร็จค่อยเริ่มค้นหา
+      setCurrentPage(1);
+    }, 400);
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // ✅ 3. โหลดข้อมูล Users เมื่อมีการเปลี่ยนหน้า, เปลี่ยนตัวอักษร, หรือพิมพ์ค้นหาเสร็จ
   useEffect(() => {
-    if (!currentUserId) return; // รอให้ดึง Auth เสร็จก่อนค่อยทำงาน
+    if (!currentUserId) return;
 
     const fetchUsers = async () => {
+      if (users.length > 0) setRefreshing(true);
+      else setInitialLoading(true);
+
       try {
-        setLoading(true);
-        
         let query = supabase
           .from('users')
-          .select('id, username, display_name, profile_img_url, created_at, updated_at', { count: 'exact' });
+          .select('id, username, display_name, profile_img_url, is_online, created_at, updated_at', { count: 'exact' })
+          .neq('id', currentUserId);
 
         if (selectedLetter) {
           query = query.ilike('display_name', `${selectedLetter}%`);
         }
-
         if (debouncedSearch) {
           query = query.or(`display_name.ilike.%${debouncedSearch}%,username.ilike.%${debouncedSearch}%`);
         }
 
         const from = (currentPage - 1) * USERS_PER_PAGE;
-        const to = from + USERS_PER_PAGE - 1;
-
-        const { data: userData, count, error: userError } = await query
+        const { data: userData, count, error } = await query
           .order('display_name', { ascending: true })
-          .range(from, to);
+          .range(from, from + USERS_PER_PAGE - 1);
 
-        if (userError) throw userError;
+        if (error) throw error;
         setTotalCount(count || 0);
 
-        if (userData && userData.length > 0) {
-          const userIdsInPage = userData.map(u => u.id);
-          
-          // ตรวจสอบสถานะความสัมพันธ์จากตาราง friendships (ใช้ sender_id/receiver_id)
-          const { data: friendshipData } = await supabase
-            .from('friendships')
-            .select('id, sender_id, receiver_id, status')
-            .or(`sender_id.in.(${userIdsInPage.join(',')}),receiver_id.in.(${userIdsInPage.join(',')})`)
-            .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
-
-          // สร้างแผนผังความสัมพันธ์
-          const finalUsers: UserWithFriendship[] = userData.map(u => {
-            const rel = friendshipData?.find(f => 
-              (f.sender_id === currentUserId && f.receiver_id === u.id) || 
-              (f.sender_id === u.id && f.receiver_id === currentUserId)
-            );
-
-            let status: 'none' | 'pending' | 'accepted' | 'sent' = 'none';
-            if (rel) {
-              if (rel.status === 'accepted') {
-                status = 'accepted';
-              } else if (rel.sender_id === currentUserId) {
-                status = 'sent'; // เราส่งไปหาเขา
-              } else {
-                status = 'pending'; // เขาส่งมาหาเรา
-              }
-            }
-
-            return {
-              ...u,
-              friendshipStatus: status,
-              friendshipId: rel?.id || null
-            };
-          });
-
-          setUsers(finalUsers);
-        } else {
+        if (!userData?.length) {
           setUsers([]);
+          return;
         }
+
+        const { data: friendshipData } = await supabase
+          .from('friendships')
+          .select('id, sender_id, receiver_id, status')
+          .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
+
+        const friendshipMap = new Map<string, any>();
+        friendshipData?.forEach(f => {
+          const otherId = f.sender_id === currentUserId ? f.receiver_id : f.sender_id;
+          friendshipMap.set(otherId, f);
+        });
+
+        const finalUsers: UserWithFriendship[] = userData.map(u => {
+          const rel = friendshipMap.get(u.id);
+          let status: 'none' | 'pending' | 'accepted' | 'sent' = 'none';
+          if (rel) {
+            if (rel.status === 'accepted') status = 'accepted';
+            else if (rel.sender_id === currentUserId) status = 'sent';
+            else status = 'pending';
+          }
+          return { ...u, friendshipStatus: status, friendshipId: rel?.id };
+        });
+
+        setUsers(finalUsers);
       } catch (err: any) {
         console.error('Fetch error:', err.message);
       } finally {
-        setLoading(false);
+        setInitialLoading(false);
+        setRefreshing(false);
       }
     };
 
@@ -149,27 +119,19 @@ export default function UsersPage() {
     try {
       const { data: newFriendship, error } = await supabase
         .from('friendships')
-        .insert({
-          sender_id: currentUserId,
-          receiver_id: targetId,
-          status: 'pending'
-        })
-        .select('id')
-        .single();
-
+        .insert({ sender_id: currentUserId, receiver_id: targetId, status: 'pending' })
+        .select('id').single();
       if (error) throw error;
 
-      await supabase.from('notifications').insert({
-        receiver_id: targetId,
-        sender_id: currentUserId,
-        type: 'friend_request'
+      supabase.from('notifications').insert({
+        receiver_id: targetId, sender_id: currentUserId, type: 'friend_request'
       });
 
-      setUsers(prev => prev.map(u => 
+      setUsers(prev => prev.map(u =>
         u.id === targetId ? { ...u, friendshipStatus: 'sent', friendshipId: newFriendship.id } : u
       ));
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
     } finally {
       setActionId(null);
     }
@@ -180,14 +142,12 @@ export default function UsersPage() {
     setActionId(targetUser.id);
     try {
       const { error } = await supabase.from('friendships').delete().eq('id', targetUser.friendshipId);
-      
       if (error) throw error;
-
-      setUsers(prev => prev.map(u => 
+      setUsers(prev => prev.map(u =>
         u.id === targetUser.id ? { ...u, friendshipStatus: 'none', friendshipId: undefined } : u
       ));
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
     } finally {
       setActionId(null);
     }
@@ -198,6 +158,8 @@ export default function UsersPage() {
   return (
     <NavLayout>
       <div className="min-h-screen bg-[#F8FAFC] pb-20">
+
+        {/* Header */}
         <div className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
           <div className="max-w-5xl mx-auto px-4 py-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -210,34 +172,30 @@ export default function UsersPage() {
                   MEMBER DIRECTORY ({totalCount.toLocaleString()})
                 </p>
               </div>
-
               <div className="relative w-full md:w-72">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input 
+                <input
                   type="text"
                   placeholder="ค้นหาชื่อ..."
                   className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent rounded-xl focus:border-indigo-500 focus:bg-white focus:outline-none transition-all text-sm font-medium shadow-inner"
                   value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1); // รีเซ็ตหน้ากลับไปหน้า 1 เสมอเมื่อพิมพ์ค้นหา
-                  }}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
             </div>
 
             <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-              <button 
+              <button
                 onClick={() => { setSelectedLetter(null); setCurrentPage(1); }}
-                className={`flex-shrink-0 px-3 py-1 rounded-lg text-[10px] font-black transition-all ${!selectedLetter ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                className={`flex-shrink-0 px-3 py-1 rounded-lg text-[10px] font-black transition-all ${!selectedLetter ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
               >
                 ทั้งหมด
               </button>
               {ALPHABETS.map(letter => (
-                <button 
+                <button
                   key={letter}
                   onClick={() => { setSelectedLetter(letter); setCurrentPage(1); }}
-                  className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all ${selectedLetter === letter ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                  className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all ${selectedLetter === letter ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                 >
                   {letter}
                 </button>
@@ -246,27 +204,38 @@ export default function UsersPage() {
           </div>
         </div>
 
+        {/* Main */}
         <main className="max-w-5xl mx-auto px-4 mt-6">
-          {loading && users.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20">
+          {initialLoading ? (
+            <div className="flex justify-center py-20">
               <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
             </div>
-          ) : users.length > 0 ? (
-            <>
+          ) : users.length === 0 ? (
+            <div className="py-20 text-center text-slate-400 text-sm font-medium">
+              ไม่พบสมาชิกที่คุณต้องการ
+            </div>
+          ) : (
+            <div className={`transition-opacity duration-150 ${refreshing ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {users.map((user) => (
-                  <div 
+                  <div
                     key={user.id}
                     onClick={() => router.push(`/profile/${user.username}`)}
                     className="group bg-white border border-slate-200 rounded-2xl p-3 flex items-center gap-3 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer active:scale-[0.98]"
                   >
-                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-50">
-                      <img 
-                        src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} 
-                        alt="" 
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
+                    {/* Avatar */}
+                    <div className="relative w-12 h-12 flex-shrink-0">
+                      <div className="w-full h-full rounded-xl overflow-hidden bg-slate-100">
+                        <img
+                          src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                      {user.is_online && (
+                        <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full shadow-sm z-10" />
+                      )}
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -275,53 +244,44 @@ export default function UsersPage() {
                     </div>
 
                     <div className="flex-shrink-0">
-                      {user.id !== currentUserId ? (
-                        <div className="flex items-center">
-                          {user.friendshipStatus === 'none' && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleAddFriend(user.id); }}
-                              disabled={actionId === user.id}
-                              className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black hover:bg-indigo-700 transition flex items-center gap-1.5 shadow-sm"
-                            >
-                              {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={14} />}
-                              เพิ่มเพื่อน
-                            </button>
-                          )}
-                          
-                          {user.friendshipStatus === 'sent' && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleCancelOrRemove(user); }}
-                              disabled={actionId === user.id}
-                              className="px-3 py-1.5 bg-slate-100 text-slate-400 rounded-xl text-[10px] font-black hover:text-red-500 hover:bg-red-50 transition flex items-center gap-1.5"
-                            >
-                              {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <Clock size={14} />}
-                              ยกเลิกคำขอ
-                            </button>
-                          )}
-
-                          {user.friendshipStatus === 'accepted' && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleCancelOrRemove(user); }}
-                              disabled={actionId === user.id}
-                              className="px-3 py-1.5 bg-white border border-slate-200 text-slate-400 rounded-xl text-[10px] font-black hover:text-red-500 hover:border-red-200 transition flex items-center gap-1.5 shadow-sm"
-                            >
-                              {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <UserCheck size={14} className="text-green-500" />}
-                              เพื่อน
-                            </button>
-                          )}
-
-                          {user.friendshipStatus === 'pending' && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); router.push('/friends'); }}
-                              className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black hover:bg-indigo-100 transition flex items-center gap-1.5 shadow-sm border border-indigo-100"
-                            >
-                              <Clock size={14} />
-                              รอยืนยัน
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-[9px] text-slate-300 font-black px-2 uppercase tracking-widest italic">You</span>
+                      {user.friendshipStatus === 'none' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleAddFriend(user.id); }}
+                          disabled={actionId === user.id}
+                          className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black hover:bg-indigo-700 transition flex items-center gap-1.5 shadow-sm"
+                        >
+                          {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={14} />}
+                          เพิ่มเพื่อน
+                        </button>
+                      )}
+                      {user.friendshipStatus === 'sent' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleCancelOrRemove(user); }}
+                          disabled={actionId === user.id}
+                          className="px-3 py-1.5 bg-slate-100 text-slate-400 rounded-xl text-[10px] font-black hover:text-red-500 hover:bg-red-50 transition flex items-center gap-1.5"
+                        >
+                          {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <Clock size={14} />}
+                          ยกเลิกคำขอ
+                        </button>
+                      )}
+                      {user.friendshipStatus === 'accepted' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleCancelOrRemove(user); }}
+                          disabled={actionId === user.id}
+                          className="px-3 py-1.5 bg-white border border-slate-200 text-slate-400 rounded-xl text-[10px] font-black hover:text-red-500 hover:border-red-200 transition flex items-center gap-1.5 shadow-sm"
+                        >
+                          {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <UserCheck size={14} className="text-green-500" />}
+                          เพื่อน
+                        </button>
+                      )}
+                      {user.friendshipStatus === 'pending' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); router.push('/friends'); }}
+                          className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black hover:bg-indigo-100 transition flex items-center gap-1.5 border border-indigo-100"
+                        >
+                          <Clock size={14} />
+                          รอยืนยัน
+                        </button>
                       )}
                     </div>
                   </div>
@@ -330,31 +290,25 @@ export default function UsersPage() {
 
               {totalPages > 1 && (
                 <div className="mt-10 flex items-center justify-center gap-2">
-                  <button 
-                    disabled={currentPage === 1 || loading}
+                  <button
+                    disabled={currentPage === 1 || refreshing}
                     onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0 }); }}
                     className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50"
                   >
                     <ChevronLeft size={18} />
                   </button>
-                  
-                  <div className="bg-white border border-slate-200 px-4 py-1.5 rounded-xl text-[10px] font-black text-slate-500 uppercase tracking-tighter">
+                  <div className="bg-white border border-slate-200 px-4 py-1.5 rounded-xl text-[10px] font-black text-slate-500">
                     Page {currentPage} of {totalPages}
                   </div>
-
-                  <button 
-                    disabled={currentPage === totalPages || loading}
+                  <button
+                    disabled={currentPage === totalPages || refreshing}
                     onClick={() => { setCurrentPage(p => p + 1); window.scrollTo({ top: 0 }); }}
                     className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50"
                   >
-                    <ChevronRightIcon size={18} />
+                    <ChevronRight size={18} />
                   </button>
                 </div>
               )}
-            </>
-          ) : (
-            <div className="py-20 text-center text-slate-400 text-sm font-medium">
-               ไม่พบสมาชิกที่คุณต้องการ
             </div>
           )}
         </main>
