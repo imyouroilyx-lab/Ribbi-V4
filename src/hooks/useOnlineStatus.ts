@@ -10,7 +10,9 @@ export function useOnlineStatus(userId: string | null) {
   useEffect(() => {
     if (!userId) return;
 
-    const channel = supabase.channel(`online-status-${userId}`, {
+    // ✅ ใช้ชื่อท่อแบบสุ่มเพื่อป้องกัน Error: cannot add presence callbacks
+    const channelName = `presence-${userId}-${Math.random().toString(36).substring(7)}`;
+    const channel = supabase.channel(channelName, {
       config: { presence: { key: userId } },
     });
 
@@ -23,14 +25,23 @@ export function useOnlineStatus(userId: string | null) {
         }
         setOnlineUsers(simplified);
       })
+      // ✅ คงระบบ Presence ไว้เพื่อให้ "ดูคนหน้าเว็บ" ได้แบบเรียลไทม์
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          await channel.track({ user_id: userId, online_at: new Date().toISOString() });
+          await channel.track({ 
+            user_id: userId, 
+            online_at: new Date().toISOString() 
+          });
         }
       });
 
     channelRef.current = channel;
-    return () => { void supabase.removeChannel(channel); };
+
+    return () => {
+      if (channelRef.current) {
+        void supabase.removeChannel(channelRef.current);
+      }
+    };
   }, [userId]);
 
   return { onlineUsers };
