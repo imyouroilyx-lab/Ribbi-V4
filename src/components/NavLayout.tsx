@@ -13,13 +13,14 @@ import {
   Menu, 
   X, 
   MessageCircle, 
-  Bell
+  Bell,
+  ExternalLink // ✅ เพิ่มไอคอนนี้สำหรับลิงก์กลับเว็บ
 } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 const CACHE_KEY = 'ribbi_cache_ultimate';
 
-// ✅ Singleton Audio
+// Singleton Audio
 let notificationAudio: HTMLAudioElement | null = null;
 if (typeof window !== 'undefined') {
   notificationAudio = new Audio('/sounds/ribbi.wav');
@@ -51,10 +52,8 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const [unreadMsg, setUnreadMsg] = useState(0);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
-  // ✅ ใช้ Ref เก็บ pathname ล่าสุดเพื่อให้ Listener ของ Realtime เรียกดูได้ทันทีโดยไม่เกิด Delay
   const pathnameRef = useRef(pathname);
 
-  // ✅ ระบบ Auto Clear Badge เมื่อเข้าสู่หน้านั้นๆ
   useEffect(() => {
     pathnameRef.current = pathname;
 
@@ -73,13 +72,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     fetchLatestData();
   }, []);
 
-  // ✅ ระบบ Realtime พร้อม Logic เสียงอัจฉริยะ
   useEffect(() => {
     if (!currentUser?.id) return;
 
     const channel = supabase
       .channel('nav-layout-realtime-v3')
-      // 1. แจ้งเตือนทั่วไป
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
@@ -87,14 +84,12 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         filter: `receiver_id=eq.${currentUser.id}` 
       }, (payload) => {
         if (payload.new.type !== 'friend_request') {
-          // ถ้าไม่ได้อยู่หน้าแจ้งเตือน ให้บวกเลขและเล่นเสียง
           if (pathnameRef.current !== '/notifications') {
             setUnreadNotif(prev => prev + 1);
             playNotificationSound();
           }
         }
       })
-      // 2. คำขอเป็นเพื่อน
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
@@ -102,14 +97,12 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         filter: `receiver_id=eq.${currentUser.id}` 
       }, (payload) => {
         if (payload.new.status === 'pending') {
-          // ถ้าไม่ได้อยู่หน้าเพื่อน ให้บวกเลขและเล่นเสียง
           if (pathnameRef.current !== '/friends') {
             setFriendReq(prev => prev + 1);
             playNotificationSound();
           }
         }
       })
-      // 3. ข้อความแชท
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
@@ -120,10 +113,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         const newUnread = payload.new?.unread_count || 0;
 
         if (newUnread > oldUnread) {
-          // อัปเดตยอดรวมแชทเสมอเพื่อให้เลขเป๊ะ
           quickRefreshChatCount();
-          
-          // ✅ เล่นเสียงก็ต่อเมื่อไม่ได้อยู่หน้าข้อความ
           if (pathnameRef.current !== '/messages') {
             playNotificationSound();
           }
@@ -145,7 +135,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       .eq('user_id', currentUser.id);
     if (data) {
       const total = data.reduce((sum, p) => sum + (p.unread_count || 0), 0);
-      // ถ้าอยู่หน้าแชทอยู่แล้ว ให้กดเป็น 0 ทันที
       setUnreadMsg(pathnameRef.current === '/messages' ? 0 : total);
     }
   };
@@ -191,7 +180,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
       if (uData) {
         setCurrentUser(uData);
-        // เช็กอีกรอบว่าตอนนี้อยู่หน้านั้นๆ ไหม ถ้าอยู่ไม่ต้องขึ้นเลข
         setUnreadNotif(pathname === '/notifications' ? 0 : nNotif);
         setFriendReq(pathname === '/friends' ? 0 : nFriend);
         setUnreadMsg(pathname === '/messages' ? 0 : nMsg);
@@ -211,6 +199,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
+  // ✅ ฟังก์ชันจัดการปุ่มหน้าหลัก (รีเฟรชถ้าอยู่หน้าแรกอยู่แล้ว)
+  const handleHomeClick = (e: React.MouseEvent) => {
+    if (pathname === '/') {
+      e.preventDefault();
+      window.location.reload();
+    }
+  };
+
   const isProfileActive = currentUser?.username ? pathname.startsWith(`/profile/${currentUser.username}`) : false;
   const profileLink = currentUser?.username ? `/profile/${currentUser.username}` : '#';
 
@@ -228,7 +224,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 fixed inset-y-0 bg-white border-r border-gray-100 z-50 p-4">
         <div className="mb-8 px-2 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 group">
+          <Link href="/" onClick={handleHomeClick} className="flex items-center gap-2 group">
             <img src="https://iili.io/qbtgKBt.png" className="w-10 h-10 group-hover:scale-110 transition-transform duration-300" alt="Ribbi" />
             <span className="text-2xl font-black text-frog-600 tracking-tighter">Ribbi</span>
           </Link>
@@ -242,6 +238,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               <Link 
                 key={item.label} 
                 href={item.href}
+                onClick={(e) => { if (item.href === '/') handleHomeClick(e); }}
                 className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 group ${
                   active ? 'bg-frog-500 text-white font-bold shadow-lg shadow-frog-100' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 }`}
@@ -258,6 +255,17 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+
+          {/* ✅ ลิงก์กลับสู่เว็บไซต์ (RoleplayTH) */}
+          <a 
+            href="https://roleplayth.com/index.php" 
+            className="flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 group text-gray-500 hover:bg-gray-50 hover:text-gray-900 mt-2 border border-dashed border-gray-200"
+          >
+            <div className="relative">
+              <ExternalLink className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            </div>
+            <span className="text-sm font-medium">กลับสู่เว็บไซต์</span>
+          </a>
         </nav>
 
         <div className="mt-auto pt-4 border-t border-gray-100 space-y-2">
@@ -279,7 +287,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 z-40 shadow-sm">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/" onClick={handleHomeClick} className="flex items-center gap-2">
           <img src="https://iili.io/qbtgKBt.png" className="w-8 h-8" alt="" />
           <span className="text-xl font-black text-frog-600 tracking-tighter">Ribbi</span>
         </Link>
@@ -308,6 +316,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             <Link 
               key={item.label} 
               href={item.href} 
+              onClick={(e) => { if (item.href === '/') handleHomeClick(e); }}
               className={`flex flex-col items-center gap-1 flex-1 relative transition-all ${active ? 'text-frog-600 font-bold scale-105' : 'text-gray-400'}`}
             >
               <div className="relative">
@@ -352,7 +361,10 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                   <Link 
                     key={item.label} 
                     href={item.href} 
-                    onClick={() => setShowMobileMenu(false)} 
+                    onClick={(e) => { 
+                      setShowMobileMenu(false);
+                      if (item.href === '/') handleHomeClick(e); 
+                    }} 
                     className={`flex items-center justify-between p-4 rounded-2xl font-black transition-all ${active ? 'bg-frog-50 text-frog-600' : 'text-gray-600 hover:bg-gray-50'}`}
                   >
                     <div className="flex items-center gap-4"><Icon size={24} className={active ? 'text-frog-600' : 'text-gray-300'} /><span>{item.label}</span></div>
@@ -360,6 +372,15 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
                   </Link>
                 );
               })}
+
+              {/* ✅ ลิงก์กลับสู่เว็บไซต์ (Mobile Drawer) */}
+              <a 
+                href="https://roleplayth.com/index.php" 
+                className="flex items-center justify-between p-4 rounded-2xl font-black transition-all text-gray-600 hover:bg-gray-50 border border-dashed border-gray-200 mt-2"
+              >
+                <div className="flex items-center gap-4"><ExternalLink size={24} className="text-gray-300" /><span>กลับสู่เว็บไซต์</span></div>
+              </a>
+
             </div>
             <div className="p-6 border-t border-gray-100 bg-gray-50/50">
               <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 py-4 bg-white border border-red-100 text-red-500 rounded-2xl font-black text-sm transition-all shadow-sm">
