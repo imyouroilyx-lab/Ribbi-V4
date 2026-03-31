@@ -1,327 +1,300 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, type User, type Post } from '@/lib/supabase';
+import React, { useState, useEffect } from 'react';
+import { supabase, User } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
-import NavLayout from '@/components/NavLayout';
-import PostCardV3 from '@/components/PostCardV3';
-import CreatePostV3 from '@/components/CreatePostV3';
-import ConfirmModal from '@/components/ConfirmModal';
-import Link from 'next/link';
-import { Users, Circle, ChevronRight, RefreshCw, Loader2, ArrowRight } from 'lucide-react';
+import NavLayout from '../../components/NavLayout';
+import { Search, Users, ChevronLeft, ChevronRight, UserPlus, UserCheck, Clock, Loader2 } from 'lucide-react';
 
-const POSTS_PER_PAGE = 15;
+const USERS_PER_PAGE = 20;
+const ALPHABETS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-export default function HomePage() {
+interface UserWithFriendship {
+  id: string;
+  username: string;
+  display_name: string;
+  profile_img_url?: string;
+  is_online?: boolean;
+  friendshipStatus: 'none' | 'pending' | 'accepted' | 'sent';
+  friendshipId?: string;
+}
+
+export default function UsersPage() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
-  const [totalOnlineCount, setTotalOnlineCount] = useState(0); // ✅ เพิ่ม State นี้นับจำนวนทั้งหมด
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isOnlineLoading, setIsOnlineLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(0);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [postToDelete, setPostToDelete] = useState<string | null>(null);
-
-  const observer = useRef<IntersectionObserver | null>(null);
-  
-  const lastPostElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (isLoading || isLoadingMore) return;
-    if (observer.current) observer.current.disconnect();
-
-    observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) {
-        setPage(prevPage => prevPage + 1);
-      }
-    });
-
-    if (node) observer.current.observe(node);
-  }, [isLoading, isLoadingMore, hasMore]);
+  const [users, setUsers] = useState<UserWithFriendship[]>([]);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadInitialData();
-  }, [refreshTrigger]);
+    const initAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setCurrentUserId(user.id);
+      else router.push('/login');
+    };
+    initAuth();
+  }, [router]);
 
   useEffect(() => {
-    if (page > 0) {
-      loadMorePosts();
-    }
-  }, [page]);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setCurrentPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   useEffect(() => {
-    if (!currentUser) return;
-    const updateActivity = async () => {
-      const lastUpdated = sessionStorage.getItem('last_active_update');
-      const now = Date.now();
-      if (!lastUpdated || now - parseInt(lastUpdated) > 120000) {
-        await supabase.from('users').update({ last_active: new Date().toISOString() }).eq('id', currentUser.id);
-        sessionStorage.setItem('last_active_update', now.toString());
+    if (!currentUserId) return;
+
+    const fetchUsers = async () => {
+      if (users.length > 0) setRefreshing(true);
+      else setInitialLoading(true);
+
+      try {
+        const from = (currentPage - 1) * USERS_PER_PAGE;
+
+        // ✅ 1 round trip ดึงข้อมูลและเช็คออนไลน์จากฝั่ง DB จบในรอบเดียว
+        const { data, error } = await supabase.rpc('get_users_with_friendship', {
+          p_current_user_id: currentUserId,
+          p_search: debouncedSearch || null,
+          p_letter: selectedLetter || null,
+          p_from: from,
+          p_to: from + USERS_PER_PAGE - 1
+        });
+
+        if (error) throw error;
+
+        const result = data as { count: number; users: any[] };
+        setTotalCount(result.count);
+        setUsers(
+          result.users.map(u => ({
+            id: u.id,
+            username: u.username,
+            display_name: u.display_name,
+            profile_img_url: u.profile_img_url,
+            is_online: u.is_online, // ค่าที่ได้จาก DB (พึ่งพิงเวลารีเฟรช)
+            friendshipStatus: u.friendship_status,
+            friendshipId: u.friendship_id ?? undefined,
+          }))
+        );
+      } catch (err: any) {
+        console.error('Fetch error:', err.message);
+      } finally {
+        setInitialLoading(false);
+        setRefreshing(false);
       }
     };
-    updateActivity();
-    const interval = setInterval(updateActivity, 5 * 60 * 1000); 
-    return () => clearInterval(interval);
-  }, [currentUser?.id]);
 
-  useEffect(() => {
-    if (currentUser) {
-      loadOnlineUsers();
-    }
-  }, [currentUser?.id]);
+    fetchUsers();
+  }, [currentPage, debouncedSearch, selectedLetter, currentUserId]);
 
-  const loadInitialData = async () => {
-    setIsLoading(true);
+  const handleAddFriend = async (targetId: string) => {
+    if (!currentUserId || actionId) return;
+    setActionId(targetId);
     try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) { router.push('/login'); return; }
+      const { data: newFriendship, error } = await supabase
+        .from('friendships')
+        .insert({ sender_id: currentUserId, receiver_id: targetId, status: 'pending' })
+        .select('id').single();
+      if (error) throw error;
 
-      const [userDataRes, postsDataRes] = await Promise.all([
-        supabase.from('users')
-          .select('id, username, display_name, profile_img_url')
-          .eq('id', authUser.id)
-          .single(),
-        supabase
-          .from('posts')
-          .select(`
-            id, content, images, created_at, author_id, target_id, location, mood, activity,
-            author:author_id(id, username, display_name, profile_img_url),
-            target:target_id(id, username, display_name, profile_img_url)
-          `)
-          .order('created_at', { ascending: false })
-          .range(0, POSTS_PER_PAGE - 1)
-      ]);
+      supabase.from('notifications').insert({
+        receiver_id: targetId, sender_id: currentUserId, type: 'friend_request'
+      });
 
-      if (userDataRes.data) setCurrentUser(userDataRes.data as any);
-      if (postsDataRes.data) {
-        setPosts(postsDataRes.data as any);
-        setHasMore(postsDataRes.data.length === POSTS_PER_PAGE);
-      }
-    } catch (error) {
-      console.error('Error loading data:', error);
+      setUsers(prev => prev.map(u =>
+        u.id === targetId ? { ...u, friendshipStatus: 'sent', friendshipId: newFriendship.id } : u
+      ));
+    } catch (err) {
+      console.error(err);
     } finally {
-      setIsLoading(false);
+      setActionId(null);
     }
   };
 
-  const loadMorePosts = async () => {
-    if (isLoadingMore || !hasMore) return;
-    setIsLoadingMore(true);
-    const start = page * POSTS_PER_PAGE;
-    const end = start + POSTS_PER_PAGE - 1;
+  const handleCancelOrRemove = async (targetUser: UserWithFriendship) => {
+    if (!currentUserId || !targetUser.friendshipId || actionId) return;
+    setActionId(targetUser.id);
     try {
-      const { data: newPosts } = await supabase
-        .from('posts')
-        .select(`
-          id, content, images, created_at, author_id, target_id, location, mood, activity,
-          author:author_id(id, username, display_name, profile_img_url),
-          target:target_id(id, username, display_name, profile_img_url)
-        `)
-        .order('created_at', { ascending: false })
-        .range(start, end);
-
-      if (newPosts && newPosts.length > 0) {
-        setPosts(prev => [...prev, ...newPosts] as any);
-        setHasMore(newPosts.length === POSTS_PER_PAGE);
-      } else {
-        setHasMore(false);
-      }
-    } catch (error) {
-      console.error('Error loading more posts:', error);
+      const { error } = await supabase.from('friendships').delete().eq('id', targetUser.friendshipId);
+      if (error) throw error;
+      setUsers(prev => prev.map(u =>
+        u.id === targetUser.id ? { ...u, friendshipStatus: 'none', friendshipId: undefined } : u
+      ));
+    } catch (err) {
+      console.error(err);
     } finally {
-      setIsLoadingMore(false);
+      setActionId(null);
     }
   };
 
-  const loadOnlineUsers = async () => {
-    if (isOnlineLoading) return;
-    setIsOnlineLoading(true);
-    try {
-      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      // ✅ เพิ่ม { count: 'exact' } เพื่อขอนับจำนวนคนออนทั้งหมด
-      const { data, count } = await supabase
-        .from('users')
-        .select('id, username, display_name, profile_img_url, last_active', { count: 'exact' }) 
-        .gte('last_active', tenMinutesAgo)
-        .order('last_active', { ascending: false })
-        .limit(12);
-      
-      setOnlineUsers((data as any) || []);
-      setTotalOnlineCount(count || 0); // ✅ เซฟจำนวนเต็มลง State
-    } catch (error) { 
-      console.error(error); 
-    } finally {
-      setIsOnlineLoading(false);
-    }
-  };
-
-  const handlePostCreated = () => {
-    setPage(0);
-    setRefreshTrigger(prev => prev + 1);
-  };
-
-  const handleDeletePost = async () => {
-    if (!postToDelete) return;
-    try {
-      await supabase.from('posts').delete().eq('id', postToDelete);
-      setPosts(posts.filter(p => p.id !== postToDelete));
-      setPostToDelete(null);
-      setShowDeleteConfirm(false);
-    } catch (error) { console.error(error); }
-  };
-
-  if (isLoading && page === 0) {
-    return (
-      <NavLayout>
-        <div className="flex flex-col items-center justify-center h-64">
-          <Loader2 className="w-12 h-12 text-frog-500 animate-spin mb-4" />
-          <p className="text-gray-400 font-black uppercase text-[10px] tracking-widest">กำลังเตรียมฟีด...</p>
-        </div>
-      </NavLayout>
-    );
-  }
-
-  if (!currentUser) return null;
+  const totalPages = Math.ceil(totalCount / USERS_PER_PAGE);
 
   return (
     <NavLayout>
-      <div className="max-w-7xl mx-auto px-2 md:px-4 animate-in fade-in duration-500">
-        <div className="flex flex-col lg:flex-row gap-6">
-          
-          <div className="flex-1 min-w-0 space-y-6">
-            
-            {/* ONLINE USERS (Mobile) */}
-            <div className="lg:hidden">
-              <div className="flex items-center justify-between mb-2 px-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                    <Circle className="w-2 h-2 fill-green-500 text-green-500" />
-                    {/* ✅ โชว์จำนวนออนทั้งหมดตรงนี้ */}
-                    ออนไลน์ขณะนี้ ({totalOnlineCount})
-                  </h3>
-                </div>
-                
-                <div className="flex items-center gap-1">
-                  <Link href="/users" className="text-[9px] font-black uppercase text-frog-600 px-2 py-1 bg-frog-50 rounded-lg flex items-center gap-1">
-                    สมาชิก <ChevronRight size={10} />
-                  </Link>
-                  <button onClick={loadOnlineUsers} disabled={isOnlineLoading} className="p-1 hover:bg-gray-100 rounded-full transition-colors">
-                    <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin' : ''} text-gray-400`} />
-                  </button>
-                </div>
-              </div>
+      <div className="min-h-screen bg-[#F8FAFC] pb-20">
 
-              <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-                {onlineUsers.map((user) => (
-                  <Link key={user.id} href={`/profile/${user.username}`} className="flex flex-col items-center gap-1 flex-shrink-0 w-16 group">
-                    <div className="relative">
-                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border-2 border-white shadow-sm group-hover:scale-105 transition-transform" loading="lazy" alt="" />
-                      <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
-                    </div>
-                    <p className="text-[10px] font-bold truncate w-full text-center text-gray-700">{user.display_name.split(' ')[0]}</p>
-                  </Link>
-                ))}
-                
-                {onlineUsers.length > 0 && (
-                  <Link href="/users" className="flex flex-col items-center gap-1 flex-shrink-0 w-16 group">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center border-2 border-dashed border-slate-300 group-hover:bg-frog-500 group-hover:border-frog-500 transition-all">
-                      <ArrowRight size={20} className="text-slate-400 group-hover:text-white" />
-                    </div>
-                    <p className="text-[10px] font-black text-slate-400 group-hover:text-frog-600 text-center uppercase tracking-tighter">ทั้งหมด</p>
-                  </Link>
-                )}
+        {/* Header */}
+        <div className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+          <div className="max-w-5xl mx-auto px-4 py-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Users className="text-indigo-600" size={24} />
+                  สมาชิก Ribbi
+                </h1>
+                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">
+                  MEMBER DIRECTORY ({totalCount.toLocaleString()})
+                </p>
+              </div>
+              <div className="relative w-full md:w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="ค้นหาชื่อ..."
+                  className="w-full pl-9 pr-4 py-2 bg-slate-100 border-transparent rounded-xl focus:border-indigo-500 focus:bg-white focus:outline-none transition-all text-sm font-medium shadow-inner"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
               </div>
             </div>
 
-            <CreatePostV3 currentUser={currentUser} onPostCreated={handlePostCreated} />
-
-            {/* FEED */}
-            <div className="space-y-6">
-              {posts.length === 0 && !isLoading ? (
-                <div className="card-minimal text-center py-12">
-                  <img src="https://iili.io/qbtgKBt.png" alt="No posts" className="w-20 h-20 mx-auto mb-4 opacity-30 grayscale" />
-                  <p className="text-gray-400 font-bold text-sm uppercase tracking-widest">ยังไม่มีโพสต์ในขณะนี้</p>
-                </div>
-              ) : (
-                <>
-                  {posts.map((post, index) => (
-                    <div ref={posts.length === index + 1 ? lastPostElementRef : null} key={post.id}>
-                      <PostCardV3
-                        post={post}
-                        currentUserId={currentUser.id}
-                        onDelete={(id) => { setPostToDelete(id); setShowDeleteConfirm(true); }}
-                      />
-                    </div>
-                  ))}
-                  {isLoadingMore && (
-                    <div className="text-center py-6">
-                      <Loader2 className="w-8 h-8 text-frog-500 animate-spin mx-auto" />
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* SIDEBAR (Desktop) */}
-          <div className="hidden lg:block w-80 flex-shrink-0">
-            <div className="sticky top-4 space-y-6">
-              <div className="card-minimal bg-white/90 border border-gray-100 shadow-soft overflow-hidden">
-                <div className="p-4 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-black text-[10px] uppercase tracking-[0.2em] flex items-center gap-2 text-gray-500">
-                      <Circle className="w-2 h-2 fill-green-500 text-green-500 animate-pulse" />
-                      {/* ✅ โชว์จำนวนออนทั้งหมดตรงนี้ */}
-                      ออนไลน์ขณะนี้ ({totalOnlineCount})
-                    </h3>
-                  </div>
-                  <button onClick={loadOnlineUsers} disabled={isOnlineLoading} className="p-1.5 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-gray-200">
-                    <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin' : ''} text-frog-600`} />
-                  </button>
-                </div>
-
-                <div className="p-2 space-y-1 max-h-[400px] overflow-y-auto custom-scrollbar">
-                  {onlineUsers.length === 0 && !isOnlineLoading ? (
-                    <p className="text-[10px] font-bold text-gray-300 text-center py-8 uppercase italic">ไม่มีผู้ใช้ออนไลน์</p>
-                  ) : (
-                    onlineUsers.map((user) => (
-                      <Link key={user.id} href={`/profile/${user.username}`} className="flex items-center gap-3 p-2 rounded-2xl hover:bg-frog-50 transition-all group">
-                        <div className="relative flex-shrink-0">
-                          <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-2xl object-cover shadow-sm group-hover:scale-105 transition-transform" loading="lazy" alt="" />
-                          <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm truncate text-gray-900 leading-none mb-1">{user.display_name}</p>
-                          <p className="text-[10px] text-gray-400 truncate font-medium">@{user.username}</p>
-                        </div>
-                      </Link>
-                    ))
-                  )}
-                </div>
-
-                <div className="p-3 bg-gray-50/50 border-t border-gray-100">
-                  <Link href="/users" className="flex items-center justify-center gap-2 w-full py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all shadow-sm">
-                    <Users size={14} /> ดูสมาชิกทั้งหมด <ChevronRight size={12} />
-                  </Link>
-                </div>
-              </div>
+            <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+              <button
+                onClick={() => { setSelectedLetter(null); setCurrentPage(1); }}
+                className={`flex-shrink-0 px-3 py-1 rounded-lg text-[10px] font-black transition-all ${!selectedLetter ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+              >
+                ทั้งหมด
+              </button>
+              {ALPHABETS.map(letter => (
+                <button
+                  key={letter}
+                  onClick={() => { setSelectedLetter(letter); setCurrentPage(1); }}
+                  className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all ${selectedLetter === letter ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                >
+                  {letter}
+                </button>
+              ))}
             </div>
           </div>
         </div>
-      </div>
 
-      <ConfirmModal
-        isOpen={showDeleteConfirm}
-        onClose={() => { setShowDeleteConfirm(false); setPostToDelete(null); }}
-        onConfirm={handleDeletePost}
-        title="ต้องการลบโพสต์นี้?"
-        message="การกระทำนี้ไม่สามารถย้อนกลับได้ โพสต์ของคุณจะหายไปจากระบบทันที"
-        variant="danger"
-      />
+        {/* Main */}
+        <main className="max-w-5xl mx-auto px-4 mt-6">
+          {initialLoading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+            </div>
+          ) : users.length === 0 ? (
+            <div className="py-20 text-center text-slate-400 text-sm font-medium">
+              ไม่พบสมาชิกที่คุณต้องการ
+            </div>
+          ) : (
+            <div className={`transition-opacity duration-150 ${refreshing ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {users.map((user) => (
+                  <div
+                    key={user.id}
+                    onClick={() => router.push(`/profile/${user.username}`)}
+                    className="group bg-white border border-slate-200 rounded-2xl p-3 flex items-center gap-3 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer active:scale-[0.98]"
+                  >
+                    {/* Avatar */}
+                    <div className="relative w-12 h-12 flex-shrink-0">
+                      <div className="w-full h-full rounded-xl overflow-hidden bg-slate-100">
+                        <img
+                          src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                      {/* ✅ แสดงสถานะอิงตาม DB เลย เบาเครื่องแน่นอน */}
+                      {user.is_online && (
+                        <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full shadow-sm z-10" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-sm text-slate-900 truncate">{user.display_name}</h3>
+                      <p className="text-[10px] text-slate-500 truncate font-medium">@{user.username}</p>
+                    </div>
+
+                    <div className="flex-shrink-0">
+                      {user.friendshipStatus === 'none' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleAddFriend(user.id); }}
+                          disabled={actionId === user.id}
+                          className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black hover:bg-indigo-700 transition flex items-center gap-1.5 shadow-sm"
+                        >
+                          {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={14} />}
+                          เพิ่มเพื่อน
+                        </button>
+                      )}
+                      {user.friendshipStatus === 'sent' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleCancelOrRemove(user); }}
+                          disabled={actionId === user.id}
+                          className="px-3 py-1.5 bg-slate-100 text-slate-400 rounded-xl text-[10px] font-black hover:text-red-500 hover:bg-red-50 transition flex items-center gap-1.5"
+                        >
+                          {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <Clock size={14} />}
+                          ยกเลิกคำขอ
+                        </button>
+                      )}
+                      {user.friendshipStatus === 'accepted' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleCancelOrRemove(user); }}
+                          disabled={actionId === user.id}
+                          className="px-3 py-1.5 bg-white border border-slate-200 text-slate-400 rounded-xl text-[10px] font-black hover:text-red-500 hover:border-red-200 transition flex items-center gap-1.5 shadow-sm"
+                        >
+                          {actionId === user.id ? <Loader2 size={12} className="animate-spin" /> : <UserCheck size={14} className="text-green-500" />}
+                          เพื่อน
+                        </button>
+                      )}
+                      {user.friendshipStatus === 'pending' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); router.push('/friends'); }}
+                          className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black hover:bg-indigo-100 transition flex items-center gap-1.5 border border-indigo-100"
+                        >
+                          <Clock size={14} />
+                          รอยืนยัน
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {totalPages > 1 && (
+                <div className="mt-10 flex items-center justify-center gap-2">
+                  <button
+                    disabled={currentPage === 1 || refreshing}
+                    onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0 }); }}
+                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <div className="bg-white border border-slate-200 px-4 py-1.5 rounded-xl text-[10px] font-black text-slate-500">
+                    Page {currentPage} of {totalPages}
+                  </div>
+                  <button
+                    disabled={currentPage === totalPages || refreshing}
+                    onClick={() => { setCurrentPage(p => p + 1); window.scrollTo({ top: 0 }); }}
+                    className="p-2 bg-white border border-slate-200 rounded-xl disabled:opacity-30 shadow-sm hover:bg-slate-50"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </main>
+      </div>
     </NavLayout>
   );
 }
