@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { supabase, User } from '@/lib/supabase';
-import { Image, Smile, MapPin, X, Activity } from 'lucide-react';
+import { Image, Smile, MapPin, X, Activity, AtSign, Send, Loader2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
@@ -30,69 +30,52 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // States สำหรับระบบ Mention (@)
+  // ✅ States สำหรับระบบ Mention แบบประหยัดทรัพยากร
+  const [friends, setFriends] = useState<User[]>([]);
   const [showMentions, setShowMentions] = useState(false);
-  const [mentionResults, setMentionResults] = useState<any[]>([]);
+  const [mentionSearchQuery, setMentionSearchQuery] = useState('');
   const [cursorIndex, setCursorIndex] = useState(0);
-  const [mentionSearchQuery, setMentionSearchQuery] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleAddImage = () => {
-    if (newImageUrl.trim() && imageUrls.length < 4) {
-      setImageUrls([...imageUrls, newImageUrl.trim()]);
-      setNewImageUrl('');
-    }
-  };
+  // โหลดรายชื่อเพื่อนแค่ครั้งเดียวตอน Mount (ไม่หน่วงตอนพิมพ์)
+  useEffect(() => {
+    const loadFriends = async () => {
+      const { data } = await supabase
+        .from('friendships')
+        .select(`sender:sender_id(*), receiver:receiver_id(*)`)
+        .eq('status', 'accepted')
+        .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`);
+      
+      if (data) {
+        const list = data.map((f: any) => f.sender.id === currentUser.id ? f.receiver : f.sender);
+        setFriends(list);
+      }
+    };
+    loadFriends();
+  }, [currentUser.id]);
 
-  const handleRemoveImage = (index: number) => {
-    setImageUrls(imageUrls.filter((_, i) => i !== index));
-  };
+  // ✅ กรองรายชื่อในแรม (ใช้เวลาหลัก Microseconds)
+  const filteredFriends = useMemo(() => {
+    if (!showMentions) return [];
+    return friends
+      .filter(f => 
+        f.display_name.toLowerCase().includes(mentionSearchQuery.toLowerCase()) || 
+        f.username.toLowerCase().includes(mentionSearchQuery.toLowerCase())
+      )
+      .slice(0, 5);
+  }, [friends, mentionSearchQuery, showMentions]);
 
-  // ตรวจสอบว่ากำลังพิมพ์ @ อยู่ไหม
   const detectMention = (val: string, cursor: number) => {
     const textBeforeCursor = val.slice(0, cursor);
-    const mentionMatch = textBeforeCursor.match(/(?:\s|^)@([a-zA-Z0-9_ก-๙]*)$/);
+    const mentionMatch = textBeforeCursor.match(/@([a-zA-Z0-9_ก-๙]*)$/);
 
     if (mentionMatch) {
       setMentionSearchQuery(mentionMatch[1]);
       setShowMentions(true);
     } else {
-      setMentionSearchQuery(null);
       setShowMentions(false);
     }
   };
-
-  // ระบบ Debounce & Fetch Mentions
-  useEffect(() => {
-    if (mentionSearchQuery === null) return;
-
-    const timer = setTimeout(async () => {
-      try {
-        if (mentionSearchQuery.length > 0) {
-          // ✅ แก้ไข Performance: เอา % ข้างหน้าออก เพื่อให้ Database สามารถใช้ Index ได้
-          const { data } = await supabase
-            .from('users')
-            .select('id, username, display_name, profile_img_url')
-            .neq('id', currentUser.id)
-            .or(`username.ilike.${mentionSearchQuery}%,display_name.ilike.${mentionSearchQuery}%`)
-            .limit(5);
-          setMentionResults(data || []);
-        } else {
-          // ถ้าพิมพ์แค่ @ เปล่าๆ ให้ดึงรายชื่อเพื่อนหรือผู้ใช้อื่นมาแนะนำ
-          const { data } = await supabase
-            .from('users')
-            .select('id, username, display_name, profile_img_url')
-            .neq('id', currentUser.id)
-            .limit(5);
-          setMentionResults(data || []);
-        }
-      } catch (error) {
-        console.error('Error fetching mentions:', error);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [mentionSearchQuery, currentUser.id]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -101,17 +84,11 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
     detectMention(val, e.target.selectionStart);
   };
 
-  const handleSelectionChange = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
-    const target = e.target as HTMLTextAreaElement;
-    setCursorIndex(target.selectionStart);
-    detectMention(target.value, target.selectionStart);
-  };
-
-  const insertMention = (user: any) => {
+  const insertMention = (user: User) => {
     const textBeforeCursor = content.slice(0, cursorIndex);
     const textAfterCursor = content.slice(cursorIndex);
-    
     const lastAtPos = textBeforeCursor.lastIndexOf('@');
+
     if (lastAtPos !== -1) {
       const textBeforeMention = content.slice(0, lastAtPos);
       const safeDisplayName = user.display_name.replace(/[\[\]\(\)]/g, ''); 
@@ -120,57 +97,41 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
     }
     
     setShowMentions(false);
-    setMentionSearchQuery(null);
-    if (textareaRef.current) {
-      textareaRef.current.focus();
+    if (textareaRef.current) textareaRef.current.focus();
+  };
+
+  const handleAddImage = () => {
+    if (newImageUrl.trim() && imageUrls.length < 4) {
+      setImageUrls([...imageUrls, newImageUrl.trim()]);
+      setNewImageUrl('');
     }
   };
 
+  // ✅ ระบบแจ้งเตือนแท็กที่แม่นยำ
   const notifyTaggedUsers = async (text: string, postId: string) => {
-    const markdownMatches = Array.from(text.matchAll(/@\[.*?\]\((.*?)\)/g)).map(m => m[1]);
-    const plainMatches = Array.from(text.matchAll(/(?:\s|^)@([a-zA-Z0-9_]+)/g)).map(m => m[1]);
-    const usernames = [...new Set([...markdownMatches, ...plainMatches])];
+    const mentionRegex = /@\[.*?\]\(([a-zA-Z0-9_]+)\)/g;
+    const usernames = Array.from(text.matchAll(mentionRegex)).map(m => m[1]);
     
     if (usernames.length === 0) return;
 
-    try {
-      const { data: users, error: fetchError } = await supabase
-        .from('users')
-        .select('id, username')
-        .in('username', usernames);
-
-      if (fetchError) {
-        console.error("❌ [ERROR] ดึงข้อมูล User จากฐานข้อมูลไม่ได้:", fetchError.message);
-        return;
-      }
-
-      if (!users || users.length === 0) return;
-
-      const usersToNotify = users.filter(u => u.id !== currentUser.id);
-
-      const notifications = usersToNotify.map(u => ({
-        receiver_id: u.id,
-        sender_id: currentUser.id,
-        type: 'tag_post',
-        post_id: postId,
-        is_read: false
-      }));
-
-      if (notifications.length > 0) {
-        const { error: insertError } = await supabase.from('notifications').insert(notifications);
-        if (insertError) {
-          console.error("❌ [ERROR] บันทึกการแจ้งเตือนลงตารางล้มเหลว:", insertError.message, insertError.details);
-        }
-      }
-    } catch (error) {
-      console.error('❌ [ERROR] ระบบแจ้งเตือนพัง:', error);
+    const { data: users } = await supabase.from('users').select('id').in('username', usernames);
+    if (users) {
+      const notifs = users
+        .filter(u => u.id !== currentUser.id)
+        .map(u => ({
+          receiver_id: u.id,
+          sender_id: currentUser.id,
+          type: 'tag_post',
+          post_id: postId,
+          is_read: false
+        }));
+      if (notifs.length > 0) await supabase.from('notifications').insert(notifs);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim() || isSubmitting) return;
-
     setIsSubmitting(true);
 
     try {
@@ -188,30 +149,14 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
       }).select().single();
 
       if (error) throw error;
+      if (newPost) await notifyTaggedUsers(content.trim(), newPost.id);
 
-      if (newPost) {
-        await notifyTaggedUsers(content.trim(), newPost.id);
-      }
+      // Reset states
+      setContent(''); setImageUrls([]); setNewImageUrl(''); setMood(''); setMoodEmoji(''); setActivity(''); setActivityEmoji(''); setLocation('');
+      setShowImageInput(false); setShowMoodActivityPicker(false); setShowLocationInput(false); setShowMentions(false);
 
-      setContent('');
-      setImageUrls([]);
-      setNewImageUrl('');
-      setMood('');
-      setMoodEmoji('');
-      setActivity('');
-      setActivityEmoji('');
-      setLocation('');
-      setShowImageInput(false);
-      setShowMoodActivityPicker(false);
-      setShowLocationInput(false);
-      setShowMentions(false);
-      setMentionSearchQuery(null);
-
-      if (onPostCreated) {
-        onPostCreated();
-      }
+      if (onPostCreated) onPostCreated();
     } catch (error) {
-      console.error('Error creating post:', error);
       alert('ไม่สามารถโพสต์ได้ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsSubmitting(false);
@@ -219,79 +164,19 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
   };
 
   return (
-    <div className="card-minimal">
+    <div className="card-minimal animate-in fade-in duration-500">
       <form onSubmit={handleSubmit}>
-        <div className="flex gap-2 md:gap-3 mb-3">
-          <Link href={`/profile/${currentUser.username}`} className="flex-shrink-0">
-            <img
-              src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
-              alt={currentUser.display_name}
-              className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover hover:opacity-80 transition"
-            />
+        <div className="flex gap-3 mb-3">
+          <Link href={`/profile/${currentUser.username}`} className="shrink-0">
+            <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover border-2 border-white shadow-sm" alt="" />
           </Link>
-
           <div className="flex-1 min-w-0">
-            <Link 
-              href={`/profile/${currentUser.username}`} 
-              className="font-bold text-sm md:text-base hover:underline text-gray-900 transition-colors block truncate"
-            >
-              {currentUser.display_name}
-            </Link>
-            
+            <Link href={`/profile/${currentUser.username}`} className="font-black text-sm md:text-base text-gray-900 block truncate">{currentUser.display_name}</Link>
             {(mood || activity || location) && (
-              <div className="flex flex-wrap items-center gap-1 text-sm text-gray-600 mt-1">
-                {mood && moodEmoji && (
-                  <>
-                    <span>รู้สึก</span>
-                    <span className="font-medium">{moodEmoji}  {mood}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMood('');
-                        setMoodEmoji('');
-                      }}
-                      className="ml-1 text-gray-400 hover:text-gray-600"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </>
-                )}
-                
-                {activity && activityEmoji && (
-                  <>
-                    {mood && <span className="mx-1">—</span>}
-                    <span>กำลัง</span>
-                    <span className="font-medium">{activityEmoji}  {activity}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActivity('');
-                        setActivityEmoji('');
-                      }}
-                      className="ml-1 text-gray-400 hover:text-gray-600"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </>
-                )}
-                
-                {location && (
-                  <>
-                    {(mood || activity) && <span className="mx-1">—</span>}
-                    <span>ที่</span>
-                    <span className="font-medium flex items-center gap-1">
-                      <MapPin className="w-3 h-3" />
-                      {location}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setLocation('')}
-                      className="ml-1 text-gray-400 hover:text-gray-600"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </>
-                )}
+              <div className="flex flex-wrap items-center gap-1 text-[10px] md:text-xs text-gray-500 mt-0.5 font-bold uppercase tracking-tight">
+                {mood && <><span className="text-gray-300">รู้สึก</span><span className="text-yellow-600 bg-yellow-50 px-1.5 py-0.5 rounded-md border border-yellow-100">{moodEmoji} {mood}</span></>}
+                {activity && <><span className="mx-0.5 text-gray-200">|</span><span className="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-100">กำลัง {activityEmoji} {activity}</span></>}
+                {location && <><span className="mx-0.5 text-gray-200">|</span><span className="text-red-500 bg-red-50 px-1.5 py-0.5 rounded-md border border-red-100 flex items-center gap-1"><MapPin size={10} /> {location}</span></>}
               </div>
             )}
           </div>
@@ -302,267 +187,85 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
             ref={textareaRef}
             value={content}
             onChange={handleContentChange}
-            onClick={handleSelectionChange}
-            onKeyUp={handleSelectionChange}
-            placeholder={targetUser && targetUser.id !== currentUser.id 
-              ? `เขียนข้อความถึง ${targetUser.display_name} (ใช้ @ เพื่อแท็ก)...` 
-              : "คุณกำลังคิดอะไรอยู่? (ใช้ @ เพื่อแท็ก)"}
-            className="w-full resize-none border-none outline-none text-base md:text-lg p-0 bg-transparent"
-            rows={3}
+            onKeyUp={(e) => setCursorIndex(e.currentTarget.selectionStart)}
+            onClick={(e) => setCursorIndex(e.currentTarget.selectionStart)}
+            placeholder={targetUser && targetUser.id !== currentUser.id ? `เขียนอะไรถึง ${targetUser.display_name.split(' ')[0]} หน่อย...` : "คุณกำลังคิดอะไรอยู่? (พิมพ์ @ เพื่อแท็กเพื่อน)"}
+            className="w-full resize-none border-none outline-none text-base md:text-lg p-0 bg-transparent min-h-[100px] placeholder:text-gray-300"
             disabled={isSubmitting}
           />
 
-          {/* Dropdown แนะนำเพื่อนตอนพิมพ์ @ */}
-          {showMentions && mentionResults.length > 0 && (
-            <div className="absolute z-20 left-0 top-full mt-1 w-full md:w-64 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-              {mentionResults.map(user => (
-                <button
-                  key={user.id}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()} 
-                  onClick={() => insertMention(user)}
-                  className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 text-left transition border-b border-gray-50 last:border-0"
-                >
-                  <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{user.display_name}</p>
-                    <p className="text-xs text-gray-500 truncate">@{user.username}</p>
-                  </div>
+          {/* ✅ Mention Dropdown แบบลื่นปรื๊ด */}
+          {showMentions && filteredFriends.length > 0 && (
+            <div className="absolute z-20 left-0 top-full mt-1 w-full md:w-64 bg-white border border-gray-100 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2">
+              <div className="p-2 border-b bg-gray-50 flex items-center gap-2"><AtSign size={12} className="text-frog-500" /><span className="text-[10px] font-black uppercase text-gray-400">แท็กเพื่อน</span></div>
+              {filteredFriends.map(user => (
+                <button key={user.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertMention(user)} className="w-full flex items-center gap-3 p-3 hover:bg-frog-50 text-left transition-colors border-b border-gray-50 last:border-0">
+                  <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" />
+                  <div className="min-w-0"><p className="text-sm font-bold text-gray-900 truncate">{user.display_name}</p><p className="text-[10px] text-gray-400">@{user.username}</p></div>
                 </button>
               ))}
             </div>
           )}
         </div>
 
+        {/* Feature Sections (Images, Location, Mood) */}
         {showImageInput && (
-          <div className="mb-3 space-y-3">
+          <div className="mb-4 p-3 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
             {imageUrls.length < 4 && (
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  value={newImageUrl}
-                  onChange={(e) => setNewImageUrl(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddImage())}
-                  placeholder="ใส่ URL รูปภาพ..."
-                  className="input-minimal flex-1"
-                  disabled={isSubmitting}
-                />
-                <button
-                  type="button"
-                  onClick={handleAddImage}
-                  className="btn-secondary px-4"
-                  disabled={!newImageUrl.trim() || isSubmitting}
-                >
-                  เพิ่ม
-                </button>
+              <div className="flex gap-2 mb-3">
+                <input type="url" value={newImageUrl} onChange={(e) => setNewImageUrl(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddImage())} placeholder="วาง URL รูปภาพที่นี่..." className="input-minimal flex-1 text-xs" />
+                <button type="button" onClick={handleAddImage} className="px-4 bg-gray-900 text-white rounded-xl text-xs font-bold transition-all active:scale-95">เพิ่ม</button>
               </div>
             )}
-
-          {imageUrls.length > 0 && (
-            <div className={`grid gap-2 ${
-              imageUrls.length === 1 ? 'grid-cols-1' :
-              imageUrls.length === 2 ? 'grid-cols-2' :
-              imageUrls.length === 3 ? 'grid-cols-2' :
-              'grid-cols-2'
-            }`}>
-              {imageUrls.map((url, index) => (
-                <div 
-                  key={index} 
-                  className={`relative ${
-                    imageUrls.length === 3 && index === 0 ? 'col-span-2' : ''
-                  }`}
-                >
-                  <img
-                    src={url}
-                    alt={`Preview ${index + 1}`}
-                    className="w-full h-32 md:h-48 rounded-xl object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveImage(index)}
-                      className="absolute top-2 right-2 w-6 h-6 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+            {imageUrls.length > 0 && (
+              <div className="grid grid-cols-2 gap-2">
+                {imageUrls.map((url, idx) => (
+                  <div key={idx} className="relative aspect-video rounded-xl overflow-hidden group">
+                    <img src={url} className="w-full h-full object-cover" alt="" />
+                    <button type="button" onClick={() => setImageUrls(imageUrls.filter((_, i) => i !== idx))} className="absolute top-1 right-1 w-6 h-6 bg-black/60 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X size={14} /></button>
                   </div>
                 ))}
               </div>
             )}
-
-            <p className="text-xs text-gray-500">
-              เพิ่มได้สูงสุด 4 รูป ({imageUrls.length}/4)
-            </p>
           </div>
         )}
 
         {showLocationInput && (
-          <div className="mb-3">
-            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl">
-              <MapPin className="w-5 h-5 text-green-600" />
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="คุณอยู่ที่ไหน?"
-                className="flex-1 bg-transparent border-none outline-none"
-              />
-              {location && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLocation('');
-                    setShowLocationInput(false);
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+          <div className="mb-4 flex items-center gap-2 p-3 bg-red-50 rounded-2xl border border-red-100 animate-in slide-in-from-top-2">
+            <MapPin className="text-red-500" size={18} />
+            <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="ระบุสถานที่..." className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-red-700 placeholder:text-red-300" />
+            <button type="button" onClick={() => { setLocation(''); setShowLocationInput(false); }} className="text-red-400"><X size={16} /></button>
           </div>
         )}
 
         {showMoodActivityPicker && (
-          <div className="mb-3 p-4 bg-gray-50 rounded-xl space-y-4">
-            <div className="flex gap-2 mb-4">
-              <button
-                type="button"
-                onClick={() => setMoodActivityType('mood')}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition ${
-                  moodActivityType === 'mood'
-                    ? 'bg-yellow-500 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <Smile className="w-4 h-4 inline mr-2" />
-                อารมณ์
-              </button>
-              <button
-                type="button"
-                onClick={() => setMoodActivityType('activity')}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition ${
-                  moodActivityType === 'activity'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <Activity className="w-4 h-4 inline mr-2" />
-                กิจกรรม
-              </button>
+          <div className="mb-4 p-4 bg-white rounded-2xl border border-gray-100 shadow-sm space-y-4 animate-in slide-in-from-top-2">
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setMoodActivityType('mood')} className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${moodActivityType === 'mood' ? 'bg-yellow-400 text-white' : 'bg-gray-100 text-gray-500'}`}>FEELING</button>
+              <button type="button" onClick={() => setMoodActivityType('activity')} className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${moodActivityType === 'activity' ? 'bg-blue-400 text-white' : 'bg-gray-100 text-gray-500'}`}>ACTIVITY</button>
             </div>
-
-            {moodActivityType === 'mood' && (
-              <div>
-                <label className="block text-sm font-medium mb-2">คุณรู้สึกอย่างไร?</label>
-                <div className="flex gap-2 mb-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 text-2xl"
-                  >
-                    {moodEmoji || '😊'}
-                  </button>
-                  <input
-                    type="text"
-                    value={mood}
-                    onChange={(e) => setMood(e.target.value)}
-                    placeholder="เช่น มีความสุข, เศร้า, ตื่นเต้น..."
-                    className="input-minimal flex-1"
-                  />
-                </div>
-                {showEmojiPicker && (
-                  <div className="relative z-10 mt-2">
-                    <EmojiPicker
-                      onEmojiClick={(emojiData) => {
-                        setMoodEmoji(emojiData.emoji);
-                        setShowEmojiPicker(false);
-                      }}
-                      width="100%"
-                      height={350}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {moodActivityType === 'activity' && (
-              <div>
-                <label className="block text-sm font-medium mb-2">คุณกำลังทำอะไร?</label>
-                <div className="flex gap-2 mb-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 text-2xl"
-                  >
-                    {activityEmoji || '🎯'}
-                  </button>
-                  <input
-                    type="text"
-                    value={activity}
-                    onChange={(e) => setActivity(e.target.value)}
-                    placeholder="เช่น กินข้าว, ดูหนัง, เล่นเกม..."
-                    className="input-minimal flex-1"
-                  />
-                </div>
-                {showEmojiPicker && (
-                  <div className="relative z-10 mt-2">
-                    <EmojiPicker
-                      onEmojiClick={(emojiData) => {
-                        setActivityEmoji(emojiData.emoji);
-                        setShowEmojiPicker(false);
-                      }}
-                      width="100%"
-                      height={350}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="p-3 bg-gray-50 border rounded-xl text-2xl active:scale-90 transition-transform">{moodActivityType === 'mood' ? (moodEmoji || '😊') : (activityEmoji || '🎯')}</button>
+              <input type="text" value={moodActivityType === 'mood' ? mood : activity} onChange={(e) => moodActivityType === 'mood' ? setMood(e.target.value) : setActivity(e.target.value)} placeholder={moodActivityType === 'mood' ? "คุณรู้สึกอย่างไร?" : "คุณกำลังทำอะไร?"} className="flex-1 bg-gray-50 border border-transparent focus:border-frog-200 rounded-xl px-4 text-sm outline-none font-bold" />
+            </div>
+            {showEmojiPicker && <div className="mt-2"><EmojiPicker onEmojiClick={(e) => { moodActivityType === 'mood' ? setMoodEmoji(e.emoji) : setActivityEmoji(e.emoji); setShowEmojiPicker(false); }} width="100%" height={300} /></div>}
           </div>
         )}
 
-        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+        <div className="flex items-center justify-between pt-3 border-t border-gray-50">
           <div className="flex gap-1 md:gap-2">
-            <button
-              type="button"
-              onClick={() => setShowImageInput(!showImageInput)}
-              className="flex items-center gap-1 md:gap-2 px-2 md:px-4 py-2 hover:bg-gray-100 rounded-lg transition text-xs md:text-sm text-gray-700"
-              disabled={isSubmitting}
-            >
-              <Image className="w-4 h-4 md:w-5 md:h-5 text-green-600" />
-              <span className="hidden sm:inline">รูปภาพ</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowMoodActivityPicker(!showMoodActivityPicker)}
-              className="flex items-center gap-1 md:gap-2 px-2 md:px-4 py-2 hover:bg-gray-100 rounded-lg transition text-xs md:text-sm text-gray-700"
-              disabled={isSubmitting}
-            >
-              <Smile className="w-4 h-4 md:w-5 md:h-5 text-yellow-600" />
-              <span className="hidden sm:inline">อารมณ์/กิจกรรม</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowLocationInput(!showLocationInput)}
-              className="flex items-center gap-1 md:gap-2 px-2 md:px-4 py-2 hover:bg-gray-100 rounded-lg transition text-xs md:text-sm text-gray-700"
-              disabled={isSubmitting}
-            >
-              <MapPin className="w-4 h-4 md:w-5 md:h-5 text-red-600" />
-              <span className="hidden sm:inline">สถานที่</span>
-            </button>
+            <button type="button" onClick={() => setShowImageInput(!showImageInput)} className={`p-2 md:px-4 md:py-2 rounded-xl flex items-center gap-2 transition-all ${showImageInput ? 'bg-green-50 text-green-600' : 'hover:bg-gray-50 text-gray-500'}`}><Image size={20} className="text-green-500" /><span className="hidden sm:inline text-xs font-bold uppercase tracking-widest">Photo</span></button>
+            <button type="button" onClick={() => setShowMoodActivityPicker(!showMoodActivityPicker)} className={`p-2 md:px-4 md:py-2 rounded-xl flex items-center gap-2 transition-all ${showMoodActivityPicker ? 'bg-yellow-50 text-yellow-600' : 'hover:bg-gray-50 text-gray-500'}`}><Smile size={20} className="text-yellow-500" /><span className="hidden sm:inline text-xs font-bold uppercase tracking-widest">Mood</span></button>
+            <button type="button" onClick={() => setShowLocationInput(!showLocationInput)} className={`p-2 md:px-4 md:py-2 rounded-xl flex items-center gap-2 transition-all ${showLocationInput ? 'bg-red-50 text-red-600' : 'hover:bg-gray-50 text-gray-500'}`}><MapPin size={20} className="text-red-500" /><span className="hidden sm:inline text-xs font-bold uppercase tracking-widest">Check-in</span></button>
           </div>
 
           <button
             type="submit"
             disabled={!content.trim() || isSubmitting}
-            className="btn-primary px-4 md:px-6 py-2 text-sm md:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2.5 bg-frog-600 text-white rounded-2xl text-sm font-black uppercase tracking-[0.2em] shadow-lg shadow-frog-100 disabled:opacity-30 disabled:shadow-none transition-all active:scale-95 flex items-center gap-2"
           >
-            {isSubmitting ? 'กำลังโพสต์...' : 'โพสต์'}
+            {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            <span>{isSubmitting ? 'Posting' : 'Post'}</span>
           </button>
         </div>
       </form>
