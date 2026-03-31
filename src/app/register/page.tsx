@@ -24,7 +24,6 @@ setIsLoading(true);
 setError('');
 setSuccess('');
 
-```
 if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
   setError('Username ต้องเป็น a-z, 0-9, _ เท่านั้น');
   setIsLoading(false);
@@ -88,13 +87,11 @@ try {
 } finally {
   setIsLoading(false);
 }
-```
 
 };
 
 return ( <div className="min-h-screen bg-cream-100 flex items-center justify-center p-4"> <div className="w-full max-w-md"> <div className="text-center mb-8"> <div className="mb-4 flex justify-center"> <img src="https://iili.io/qbtgKBt.png" className="w-24 h-24 object-contain" /> </div> <h1 className="text-3xl font-bold">Ribbi</h1> </div>
 
-```
     <div className="card-minimal">
       <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
         <UserPlus className="w-6 h-6" />
@@ -158,7 +155,6 @@ return ( <div className="min-h-screen bg-cream-100 flex items-center justify-cen
     </div>
   </div>
 </div>
-```
 
 );
 }
