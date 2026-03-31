@@ -18,8 +18,6 @@ import {
   Loader2
 } from 'lucide-react';
 import Link from 'next/link';
-
-// นำเข้าฟังก์ชันแจ้งเตือน
 import { notifyFriendAccept } from '@/lib/notifications';
 
 interface Friendship {
@@ -40,7 +38,9 @@ export default function FriendsPage() {
   const [friends, setFriends] = useState<any[]>([]); 
   const [pendingRequests, setPendingRequests] = useState<Friendship[]>([]);
   const [sentRequests, setSentRequests] = useState<Friendship[]>([]);
+  
   const [isLoading, setIsLoading] = useState(true);
+  const [isFetchingFriends, setIsFetchingFriends] = useState(false); // ✅ เพิ่ม State โหลดเฉพาะส่วนเพื่อน
   const [totalFriends, setTotalFriends] = useState(0);
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,15 +53,17 @@ export default function FriendsPage() {
     loadInitialData();
   }, []);
 
-  // ✅ ระบบหน่วงเวลาค้นหา (Debounce)
+  // ✅ แก้ไข 1: ระบบ Debounce ที่รวมการ Reset หน้าไปด้วย
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery);
+      if (searchQuery !== debouncedSearch) {
+        setCurrentPage(1); // ✅ รีเซ็ตหน้าเฉพาะตอนที่ Debounce ทำงานเสร็จ
+      }
     }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // โหลดรายชื่อเพื่อนเมื่อเปลี่ยนหน้า หรือ ค้นหา
   useEffect(() => {
     if (currentUser?.id) loadFriendsData();
   }, [currentPage, debouncedSearch, currentUser?.id]);
@@ -72,7 +74,6 @@ export default function FriendsPage() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
 
-      // ✅ Optimize: ดึงเฉพาะข้อมูลที่ต้องใช้ และใส่ 'as any' เพื่อแก้ Build Error
       const { data: userData } = await supabase
         .from('users')
         .select('id, username, display_name, profile_img_url')
@@ -81,18 +82,20 @@ export default function FriendsPage() {
       
       setCurrentUser(userData as any);
 
-      // โหลดคำขอเข้า-ออกพร้อมกัน (Parallel)
       const [pending, sent] = await Promise.all([
         supabase.from('friendships')
           .select('*, sender:sender_id(id, username, display_name, profile_img_url)')
           .eq('receiver_id', authUser.id)
           .eq('status', 'pending')
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .limit(30), // ✅ แก้ไข 2: ป้องกัน DOM Overload (ดึงแค่ 30 คำขอล่าสุด)
+          
         supabase.from('friendships')
           .select('*, receiver:receiver_id(id, username, display_name, profile_img_url)')
           .eq('sender_id', authUser.id)
           .eq('status', 'pending')
           .order('created_at', { ascending: false })
+          .limit(30)  // ✅ ป้องกัน DOM Overload
       ]);
       
       setPendingRequests(pending.data || []);
@@ -106,6 +109,8 @@ export default function FriendsPage() {
 
   const loadFriendsData = async () => {
     if (!currentUser) return;
+    setIsFetchingFriends(true); // ✅ เริ่มแสดง UI โหลด
+    
     const from = (currentPage - 1) * FRIENDS_PER_PAGE;
     const to = from + FRIENDS_PER_PAGE - 1;
 
@@ -138,6 +143,8 @@ export default function FriendsPage() {
       setFriends(friendsList);
     } catch (error) {
       console.error('Error loading friends list:', error);
+    } finally {
+      setIsFetchingFriends(false); // ✅ ปิด UI โหลด
     }
   };
 
@@ -149,7 +156,6 @@ export default function FriendsPage() {
       
       await notifyFriendAccept(senderId, currentUser.id);
       
-      // อัปเดต UI ทันที (Optimistic)
       const acceptedUser = pendingRequests.find(r => r.id === id);
       setPendingRequests(prev => prev.filter(r => r.id !== id));
       
@@ -157,9 +163,7 @@ export default function FriendsPage() {
         setFriends(prev => [{ ...acceptedUser.sender, friendshipId: id }, ...prev]);
         setTotalFriends(prev => prev + 1);
       }
-    } catch (error) {
-      console.error('Error accepting friend:', error);
-    }
+    } catch (error) { console.error('Error accepting friend:', error); }
   };
 
   const handleCancelRequest = async (id: string, type: 'pending' | 'sent') => {
@@ -170,9 +174,7 @@ export default function FriendsPage() {
       } else {
         setSentRequests(prev => prev.filter(r => r.id !== id));
       }
-    } catch (error) {
-      console.error(error);
-    }
+    } catch (error) { console.error(error); }
   };
 
   const handleRemoveFriend = async () => {
@@ -185,9 +187,7 @@ export default function FriendsPage() {
       setTotalFriends(prev => prev - 1);
       setShowRemoveConfirm(false);
       setSelectedFriendshipId(null);
-    } catch (error) {
-      console.error('Error removing friend:', error);
-    }
+    } catch (error) { console.error('Error removing friend:', error); }
   };
 
   const totalPages = Math.ceil(totalFriends / FRIENDS_PER_PAGE);
@@ -197,7 +197,7 @@ export default function FriendsPage() {
       <NavLayout>
         <div className="flex flex-col items-center justify-center py-20">
           <Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" />
-          <p className="text-gray-400 font-black uppercase tracking-widest text-xs">กำลังโหลดรายชื่อเพื่อน...</p>
+          <p className="text-gray-400 font-black uppercase tracking-widest text-xs">กำลังโหลดข้อมูล...</p>
         </div>
       </NavLayout>
     );
@@ -219,7 +219,7 @@ export default function FriendsPage() {
               type="text"
               placeholder="ค้นหาชื่อเพื่อน..."
               value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => setSearchQuery(e.target.value)} // ✅ เอา setCurrentPage(1) ออกจากตรงนี้
               className="w-full pl-9 pr-4 py-2.5 bg-gray-100 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-frog-500 outline-none transition-all text-sm font-bold shadow-inner"
             />
           </div>
@@ -270,38 +270,46 @@ export default function FriendsPage() {
         )}
 
         {/* Friends List Grid */}
-        <div className="space-y-4">
+        <div className="space-y-4 relative">
           <h2 className="text-[10px] font-black text-gray-900 uppercase tracking-[0.2em] px-1 flex items-center gap-2">
             <Users size={14} /> รายชื่อเพื่อน ({totalFriends})
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {friends.length === 0 ? (
-              <div className="col-span-full py-20 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-gray-100 shadow-sm">
-                <Users size={40} className="mx-auto mb-4 text-gray-100" />
-                <p className="text-gray-400 text-xs font-black uppercase tracking-widest">ไม่พบรายชื่อเพื่อน</p>
-              </div>
-            ) : (
-              friends.map(f => (
-                <div key={f.id} className="p-3 bg-white border border-gray-100 rounded-[1.5rem] hover:border-frog-200 hover:shadow-xl hover:shadow-frog-500/5 transition-all group flex items-center gap-3">
-                  <Link href={`/profile/${f.username}`} className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
-                    <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border border-gray-50 shadow-sm" loading="lazy" alt="" />
-                    {f.is_online && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full shadow-sm"></div>}
-                  </Link>
-                  <div className="flex-1 min-w-0">
-                    <Link href={`/profile/${f.username}`} className="font-black text-sm hover:text-frog-600 truncate block transition-colors leading-tight">{f.display_name}</Link>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{f.username}</p>
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => { setSelectedFriendshipId(f.friendshipId); setShowRemoveConfirm(true); }} className="p-2.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all active:scale-90" title="ลบเพื่อน"><Trash2 size={16} /></button>
-                  </div>
+          
+          {/* ✅ แก้ไข 3: เพิ่ม UI หมุนตอนค้นหา/เปลี่ยนหน้า เพื่อไม่ให้รู้สึกหน่วง */}
+          {isFetchingFriends ? (
+            <div className="py-10 flex flex-col items-center justify-center bg-white rounded-[2.5rem] border border-gray-100">
+              <Loader2 className="w-8 h-8 animate-spin text-frog-400 mb-2" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {friends.length === 0 ? (
+                <div className="col-span-full py-20 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-gray-100 shadow-sm">
+                  <Users size={40} className="mx-auto mb-4 text-gray-100" />
+                  <p className="text-gray-400 text-xs font-black uppercase tracking-widest">ไม่พบรายชื่อเพื่อน</p>
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                friends.map(f => (
+                  <div key={f.id} className="p-3 bg-white border border-gray-100 rounded-[1.5rem] hover:border-frog-200 hover:shadow-xl hover:shadow-frog-500/5 transition-all group flex items-center gap-3">
+                    <Link href={`/profile/${f.username}`} className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
+                      <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border border-gray-50 shadow-sm" loading="lazy" alt="" />
+                      <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 border-2 border-white rounded-full shadow-sm ${f.is_online ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                    </Link>
+                    <div className="flex-1 min-w-0">
+                      <Link href={`/profile/${f.username}`} className="font-black text-sm hover:text-frog-600 truncate block transition-colors leading-tight">{f.display_name}</Link>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">@{f.username}</p>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => { setSelectedFriendshipId(f.friendshipId); setShowRemoveConfirm(true); }} className="p-2.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all active:scale-90" title="ลบเพื่อน"><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* Pagination Controls */}
-        {totalPages > 1 && (
+        {totalPages > 1 && !isFetchingFriends && (
           <div className="mt-8 flex items-center justify-center gap-3 pb-10">
             <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-3 bg-white border border-gray-100 rounded-2xl disabled:opacity-20 shadow-sm hover:bg-gray-50 active:scale-90 transition-all"><ChevronLeft size={18} /></button>
             <div className="bg-white border border-gray-100 px-6 py-2.5 rounded-2xl text-[10px] font-black text-gray-400 uppercase tracking-widest shadow-sm">PAGE {currentPage} OF {totalPages}</div>
