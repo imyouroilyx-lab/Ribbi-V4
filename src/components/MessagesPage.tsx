@@ -36,10 +36,9 @@ export default function MessagesPage() {
     init();
   }, [searchParams]);
 
-  // ✅ ฟัง Realtime: ชื่อเล่น และ สีแชท
   useEffect(() => {
     if (!currentUser?.id) return;
-    const channel = supabase.channel('msg-page-updates')
+    const channel = supabase.channel('msg-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => loadChats(currentUser.id))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_nicknames' }, () => loadChats(currentUser.id))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => loadChats(currentUser.id))
@@ -49,24 +48,28 @@ export default function MessagesPage() {
 
   const loadChats = async (userId: string) => {
     try {
-      // 1. ดึงแชทและสมาชิก
-      const { data: partData } = await supabase.from('chat_participants').select(`
+      // ✅ แก้ไข: เพิ่ม chat_id เข้าไปตรงๆ และดึง username มาด้วยเพื่อทำ Link โปรไฟล์
+      const { data: partData, error: partError } = await supabase.from('chat_participants').select(`
+        chat_id,
         unread_count, 
-        chats:chat_id (*, members:chat_participants (user:user_id (id, username, display_name, profile_img_url, is_online)))
+        chats:chat_id (
+          *, 
+          members:chat_participants (
+            user:user_id (id, username, display_name, profile_img_url)
+          )
+        )
       `).eq('user_id', userId);
 
-      if (!partData) return;
+      if (partError || !partData) return;
 
-      // 2. ดึงชื่อเล่นทั้งหมดในแชทเหล่านั้น
-      const chatIds = partData.map(p => p.chat_id);
+      const chatIds = partData.map((p: any) => p.chat_id);
       const { data: nicknames } = await supabase.from('chat_nicknames').select('*').in('chat_id', chatIds);
 
       const formatted = partData.map((p: any) => {
-        const c = p.chats;
+        const c = p.chats as any;
         if (!c) return null;
-        const otherMember = c.is_group ? null : c.members.find((m: any) => m.user?.id !== userId)?.user;
         
-        // ค้นหาชื่อเล่น
+        const otherMember = c.is_group ? null : c.members.find((m: any) => m.user?.id !== userId)?.user;
         const myNick = nicknames?.find(n => n.chat_id === c.id && n.target_user_id === userId)?.nickname;
         const otherNick = otherMember ? nicknames?.find(n => n.chat_id === c.id && n.target_user_id === otherMember.id)?.nickname : null;
 
@@ -76,8 +79,8 @@ export default function MessagesPage() {
           my_nickname: myNick,
           other_user: otherMember ? { 
             ...otherMember, 
-            display_name: otherNick || otherMember.display_name, // ✅ ใช้ชื่อเล่นถ้ามี
-            is_online: !!onlineUsers[otherMember.id] || otherMember.is_online 
+            display_name: otherNick || otherMember.display_name,
+            is_online: !!onlineUsers[otherMember.id]
           } : undefined 
         };
       }).filter(Boolean);
@@ -86,7 +89,7 @@ export default function MessagesPage() {
     } catch (e) { console.error(e); }
   };
 
-  if (isLoading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-frog-500" /></div>;
+  if (isLoading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-frog-500" /></div>;
   if (!currentUser) return null;
 
   return (
@@ -94,7 +97,7 @@ export default function MessagesPage() {
       <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r flex-col`}>
         <ChatList chats={chats} currentUserId={currentUser.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={() => loadChats(currentUser.id)} />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 bg-gray-50/30">
         {selectedChatId && currentSelectedChat ? (
           <ChatWindow 
             key={selectedChatId} 
