@@ -28,16 +28,17 @@ export interface Chat {
   unread_count: number;
 }
 
-// 🛡️ ป้องกัน API URL ยาวเกินไป (Error 502/524)
 const fetchInChunks = async (table: string, select: string, column: string, ids: string[]) => {
   if (!ids || ids.length === 0) return [];
   const chunkSize = 80;
   const results = [];
-  for (let i = 0; i < ids.length; i += chunkSize) {
-    const chunk = ids.slice(i, i + chunkSize);
-    const { data } = await supabase.from(table).select(select).in(column, chunk);
-    if (data) results.push(...data);
-  }
+  try {
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { data } = await supabase.from(table).select(select).in(column, chunk);
+      if (data) results.push(...data);
+    }
+  } catch (e) { console.error(`Error fetching ${table}:`, e); }
   return results;
 };
 
@@ -49,31 +50,28 @@ export default function MessagesPage() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 🔥 ใช้ Presence RAM แทน Database
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
 
   const selectedChatIdRef = useRef<string | null>(null);
   const currentUserRef = useRef<any>(null);
-  const chatsRef = useRef<Chat[]>([]);
 
   useEffect(() => {
     selectedChatIdRef.current = selectedChatId;
     currentUserRef.current = currentUser;
-    chatsRef.current = chats;
-  }, [selectedChatId, currentUser, chats]);
+  }, [selectedChatId, currentUser]);
 
   useEffect(() => {
     const chatIdFromUrl = searchParams.get('chat');
     if (chatIdFromUrl) setSelectedChatId(chatIdFromUrl);
     loadCurrentUser();
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     if (currentUser) {
       loadChats();
-      const channel = supabase.channel('messages-live-updates')
+      const channel = supabase.channel('messages-live-v4')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-          loadChats(); // โหลดใหม่เมื่อมีข้อความเข้า
+          loadChats();
         }).subscribe();
       return () => { supabase.removeChannel(channel); };
     }
@@ -93,30 +91,37 @@ export default function MessagesPage() {
         .select(`chat_id, unread_count, chats:chat_id (id, is_group, name, group_img_url, last_message_at, last_message_content, last_message_sender_id, last_message_id)`)
         .eq('user_id', currentUserRef.current.id);
 
-      if (error || !participantsData?.length) { setChats([]); setIsLoading(false); return; }
+      if (error || !participantsData?.length) { 
+        setChats([]); 
+        setIsLoading(false); 
+        return; 
+      }
 
       const chatIds = participantsData.map(p => p.chat_id);
       const lastMsgIds = participantsData.map(p => (p.chats as any)?.last_message_id).filter(Boolean);
 
-      // โหลดข้อมูลแบบ Chunk เพื่อประสิทธิภาพ
+      // ✅ เพิ่ม Safety Check [] เพื่อกัน Crash
       const [messagesData, allPartsData, nicknamesData] = await Promise.all([
         fetchInChunks('messages', 'id, deleted_by, event', 'id', lastMsgIds),
         fetchInChunks('chat_participants', 'chat_id, user_id', 'chat_id', chatIds),
         fetchInChunks('chat_nicknames', 'chat_id, target_user_id, nickname', 'chat_id', chatIds)
       ]);
 
-      const otherUserIds = [...new Set(allPartsData.filter((p: any) => p.user_id !== currentUserRef.current.id).map((p: any) => p.user_id))];
+      const otherUserIds = [...new Set((allPartsData || []).filter((p: any) => p.user_id !== currentUserRef.current.id).map((p: any) => p.user_id))];
       const usersData = await fetchInChunks('users', 'id, username, display_name, profile_img_url', 'id', otherUserIds as string[]);
       
-      const deletedMap = new Map(messagesData.map((m: any) => [m.id, m.deleted_by || []]));
-      const eventMap = new Map(messagesData.map((m: any) => [m.id, !!m.event]));
-      const nickMap = new Map(nicknamesData.map((n: any) => [`${n.chat_id}:${n.target_user_id}`, n.nickname]));
-      const userMap = new Map(usersData.map((u: any) => [u.id, u]));
+      // ✅ เพิ่มการเช็คข้อมูลก่อนสร้าง Map
+      const deletedMap = new Map((messagesData || []).map((m: any) => [m.id, m.deleted_by || []]));
+      const eventMap = new Map((messagesData || []).map((m: any) => [m.id, !!m.event]));
+      const nickMap = new Map((nicknamesData || []).map((n: any) => [`${n.chat_id}:${n.target_user_id}`, n.nickname]));
+      const userMap = new Map((usersData || []).map((u: any) => [u.id, u]));
 
       const result: Chat[] = participantsData.map(p => {
         const c = p.chats as any;
+        if (!c) return null; // กันพังถ้าข้อมูลแชทหาย
+
         const isHidden = c.last_message_id && (deletedMap.get(c.last_message_id)?.includes(currentUserRef.current.id) || eventMap.get(c.last_message_id));
-        const memberIds = allPartsData.filter((ap: any) => ap.chat_id === p.chat_id && ap.user_id !== currentUserRef.current.id).map((ap: any) => ap.user_id);
+        const memberIds = (allPartsData || []).filter((ap: any) => ap.chat_id === p.chat_id && ap.user_id !== currentUserRef.current.id).map((ap: any) => ap.user_id);
 
         if (c.is_group) {
           return {
@@ -142,14 +147,24 @@ export default function MessagesPage() {
             unread_count: p.unread_count || 0
           };
         }
-      }).filter(chat => chat.is_group || chat.other_user);
+      }).filter((chat): chat is Chat => chat !== null && (chat.is_group || !!chat.other_user));
 
       result.sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime());
       setChats(result);
-    } catch (err) { console.error(err); } finally { setIsLoading(false); }
+    } catch (err) { 
+      console.error('Crash in loadChats:', err); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
-  if (isLoading) return <div className="flex flex-col items-center justify-center h-screen"><Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" /><p className="text-gray-400 font-black text-[10px] tracking-widest uppercase">กำลังเตรียมแชท...</p></div>;
+  if (isLoading) return (
+    <div className="flex flex-col items-center justify-center h-[calc(100dvh-64px)] bg-white">
+      <Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" />
+      <p className="text-gray-400 font-black text-[10px] tracking-widest uppercase">กำลังเตรียมแชท...</p>
+    </div>
+  );
+  
   if (!currentUser) return null;
 
   return (
