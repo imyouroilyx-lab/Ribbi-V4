@@ -4,11 +4,20 @@ import { Suspense } from 'react';
 import NavLayout from '@/components/NavLayout';
 import MessagesPage from '@/components/MessagesPage';
 
+// ✅ บังคับให้ Next.js ไม่ทำ Static แคชหน้าเว็บนี้ (แก้หน้าขาว 100%)
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 export default function Messages() {
   return (
     <NavLayout>
-      {/* ใส่ Suspense ครอบ Component ที่มีการเรียกใช้ useSearchParams() ไว้ด้านใน */}
-      <Suspense fallback={<div>กำลังโหลด...</div>}>
+      <Suspense fallback={
+        <div className="flex items-center justify-center h-[calc(100dvh-64px)] bg-white">
+          <div className="text-gray-400 font-black text-xs animate-pulse tracking-widest uppercase">
+            กำลังเชื่อมต่อระบบแชท...
+          </div>
+        </div>
+      }>
         <MessagesPage />
       </Suspense>
     </NavLayout>
