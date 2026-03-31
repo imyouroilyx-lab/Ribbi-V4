@@ -6,22 +6,26 @@ export default function PresenceHandler({ userId }: { userId: string | undefined
   useEffect(() => {
     if (!userId) return;
 
-    const channel = supabase.channel('online-status', {
+    const channel = supabase.channel('user-main-presence', {
       config: { presence: { key: userId } },
     });
 
-    const updateLastSeenOnce = async () => {
-      await supabase.from('users').update({ last_seen: new Date().toISOString() }).eq('id', userId);
-    };
-
-    channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        // 1. ประกาศตัวใน RAM (ไม่หนักเครื่อง)
-        await channel.track({ user_id: userId, online_at: new Date().toISOString() });
-        // 2. อัปเดต DB แค่ครั้งเดียวพอ
-        updateLastSeenOnce();
-      }
-    });
+    // ✅ ลำดับที่ถูกต้อง: .on -> .subscribe
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        // Sync สถานะ
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ 
+            user_id: userId, 
+            online_at: new Date().toISOString() 
+          });
+          
+          // อัปเดต DB แค่ครั้งเดียวพอ
+          await supabase.from('users').update({ last_seen: new Date().toISOString() }).eq('id', userId);
+        }
+      });
 
     return () => { channel.unsubscribe(); };
   }, [userId]);
