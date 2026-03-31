@@ -33,7 +33,6 @@ const formatDate = (dateString: string) => {
   } catch { return dateString; }
 };
 
-// ✅ สร้างฟังก์ชันแปลง Text ให้ตรงกับหน้า Edit ทุกประการ
 const getRelationshipText = (status: string) => {
   switch(status) {
     case 'single': return 'โสด';
@@ -54,7 +53,12 @@ export default function ProfilePage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [profileUser, setProfileUser] = useState<any | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  
+  // ✅ แยก State การโหลดเพื่อไม่ให้รอกัน
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
+  const [isPostsLoading, setIsPostsLoading] = useState(true);
+  const [isWidgetsLoading, setIsWidgetsLoading] = useState(true);
+
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
@@ -78,57 +82,102 @@ export default function ProfilePage() {
 
   const observer = useRef<IntersectionObserver | null>(null);
   const lastPostElementRef = useCallback((node: HTMLDivElement | null) => {
-    if (isLoading || isLoadingMore) return;
+    if (isPostsLoading || isLoadingMore) return;
     if (observer.current) observer.current.disconnect();
     observer.current = new IntersectionObserver(entries => { 
       if (entries[0].isIntersecting && hasMore) setPage(p => p + 1); 
     });
     if (node) observer.current.observe(node);
-  }, [isLoading, isLoadingMore, hasMore]);
+  }, [isPostsLoading, isLoadingMore, hasMore]);
 
-  useEffect(() => { loadInitialData(); }, [username, refreshTrigger]);
-  useEffect(() => { if (page > 0) loadMorePosts(); }, [page]);
+  // ✅ เมื่อ Component โหลด ให้ดึงข้อมูลหลักก่อน
+  useEffect(() => { 
+    loadMainProfile(); 
+  }, [username]);
 
-  const loadInitialData = async () => {
-    setIsLoading(true);
+  // ✅ เมื่อข้อมูลโปรไฟล์หลักมาแล้ว ค่อยโหลดโพสต์และ Widget ตามมา (Lazy Load)
+  useEffect(() => {
+    if (profileUser && currentUser) {
+      loadSecondaryData(profileUser.id, currentUser.id);
+      loadPosts(profileUser.id);
+    }
+  }, [profileUser?.id, currentUser?.id, refreshTrigger]);
+
+  useEffect(() => { 
+    if (page > 0 && profileUser) loadMorePosts(profileUser.id); 
+  }, [page]);
+
+  // 1. โหลดเฉพาะข้อมูลโปรไฟล์และผู้ใช้ (ให้หน้าเว็บโชว์เร็วที่สุด)
+  const loadMainProfile = async () => {
+    setIsProfileLoading(true);
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
 
-      const { data: profileData } = await supabase.from('users').select('*').eq('username', username).single();
-      if (!profileData) { router.push('/'); return; }
-      setProfileUser(profileData);
-
-      const [currentUserRes, postsRes, familyRes, friendsRes, friendStatusRes, checkFamilyRes, viewsRes] = await Promise.all([
-        supabase.from('users').select('*').eq('id', authUser.id).single(),
-        supabase.from('posts').select('*, author:author_id(*), target:target_id(*)').eq('target_id', profileData.id).order('created_at', { ascending: false }).range(0, POSTS_PER_PAGE - 1),
-        
-        supabase.from('family_members').select('id, user_id, member_user_id, relationship_label, member:member_user_id(*)').eq('user_id', profileData.id),
-        
-        supabase.from('friendships').select('*, sender:sender_id(*), receiver:receiver_id(*)').eq('status', 'accepted').or(`sender_id.eq.${profileData.id},receiver_id.eq.${profileData.id}`).order('created_at', { ascending: false }).limit(6),
-        supabase.from('friendships').select('*').or(`and(sender_id.eq.${authUser.id},receiver_id.eq.${profileData.id}),and(sender_id.eq.${profileData.id},receiver_id.eq.${authUser.id})`).maybeSingle(),
-        supabase.from('family_members').select('id').eq('user_id', authUser.id).eq('member_user_id', profileData.id).maybeSingle(),
-        supabase.from('profile_views').select('visitor_id, viewed_at, visitor:visitor_id(id, username, display_name, profile_img_url)').eq('profile_id', profileData.id).order('viewed_at', { ascending: false }).limit(20)
+      const [profileRes, currentUserRes] = await Promise.all([
+        supabase.from('users').select('*').eq('username', username).single(),
+        supabase.from('users').select('*').eq('id', authUser.id).single()
       ]);
 
-      setCurrentUser(currentUserRes.data);
-      setPosts(postsRes.data || []);
-      setHasMore((postsRes.data?.length || 0) === POSTS_PER_PAGE);
+      if (!profileRes.data) { router.push('/'); return; }
       
+      setProfileUser(profileRes.data);
+      setCurrentUser(currentUserRes.data);
+
+      // บันทึกการเข้าชมทันทีแบบไม่รอ
+      if (authUser.id !== profileRes.data.id) {
+        const viewKey = `v_${profileRes.data.id}`;
+        if (!sessionStorage.getItem(viewKey)) {
+          supabase.from('profile_views').insert({ profile_id: profileRes.data.id, visitor_id: authUser.id }).then();
+          sessionStorage.setItem(viewKey, '1');
+        }
+      }
+    } catch (err) { console.error(err); } 
+    finally { setIsProfileLoading(false); }
+  };
+
+  // 2. โหลดโพสต์แบบแยกต่างหาก
+  const loadPosts = async (targetId: string) => {
+    setIsPostsLoading(true);
+    try {
+      const { data } = await supabase
+        .from('posts')
+        .select('*, author:author_id(*), target:target_id(*)')
+        .eq('target_id', targetId)
+        .order('created_at', { ascending: false })
+        .range(0, POSTS_PER_PAGE - 1);
+        
+      setPosts(data || []);
+      setHasMore((data?.length || 0) === POSTS_PER_PAGE);
+    } catch (err) { console.error(err); }
+    finally { setIsPostsLoading(false); }
+  };
+
+  // 3. โหลด Widget ข้อมูลรองรอบๆ ข้าง
+  const loadSecondaryData = async (targetId: string, authId: string) => {
+    setIsWidgetsLoading(true);
+    try {
+      const [familyRes, friendsRes, friendStatusRes, checkFamilyRes, viewsRes] = await Promise.all([
+        supabase.from('family_members').select('id, user_id, member_user_id, relationship_label, member:member_user_id(*)').eq('user_id', targetId),
+        supabase.from('friendships').select('*, sender:sender_id(*), receiver:receiver_id(*)').eq('status', 'accepted').or(`sender_id.eq.${targetId},receiver_id.eq.${targetId}`).order('created_at', { ascending: false }).limit(6),
+        supabase.from('friendships').select('*').or(`and(sender_id.eq.${authId},receiver_id.eq.${targetId}),and(sender_id.eq.${targetId},receiver_id.eq.${authId})`).maybeSingle(),
+        supabase.from('family_members').select('id').eq('user_id', authId).eq('member_user_id', targetId).maybeSingle(),
+        supabase.from('profile_views').select('visitor_id, viewed_at, visitor:visitor_id(id, username, display_name, profile_img_url)').eq('profile_id', targetId).order('viewed_at', { ascending: false }).limit(20)
+      ]);
+
       const formattedFamilyMembers = (familyRes.data || []).map((fm: any) => ({
         ...fm,
         member: Array.isArray(fm.member) ? fm.member[0] : fm.member
       }));
       setFamilyMembers(formattedFamilyMembers as FamilyMember[]);
       
-      setFriends((friendsRes.data || []).map((f: any) => f.sender_id === profileData.id ? f.receiver : f.sender));
-      
+      setFriends((friendsRes.data || []).map((f: any) => f.sender_id === targetId ? f.receiver : f.sender));
       setIsAddedToFamily(!!checkFamilyRes.data);
 
       if (friendStatusRes.data) {
         setFriendshipId(friendStatusRes.data.id); 
         if (friendStatusRes.data.status === 'accepted') setFriendshipStatus('accepted');
-        else if (friendStatusRes.data.sender_id === authUser.id) setFriendshipStatus('sent');
+        else if (friendStatusRes.data.sender_id === authId) setFriendshipStatus('sent');
         else setFriendshipStatus('pending');
       } else { 
         setFriendshipId(null);
@@ -148,21 +197,15 @@ export default function ProfilePage() {
       }
       setRecentVisitors(uniqueVisitors);
 
-      const viewKey = `v_${profileData.id}`;
-      if (!sessionStorage.getItem(viewKey) && authUser.id !== profileData.id) {
-        await supabase.from('profile_views').insert({ profile_id: profileData.id, visitor_id: authUser.id });
-        sessionStorage.setItem(viewKey, '1');
-      }
-
-    } catch (err) { console.error(err); } 
-    finally { setIsLoading(false); }
+    } catch (err) { console.error(err); }
+    finally { setIsWidgetsLoading(false); }
   };
 
-  const loadMorePosts = async () => {
-    if (isLoadingMore || !hasMore || !profileUser) return;
+  const loadMorePosts = async (targetId: string) => {
+    if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
     const start = page * POSTS_PER_PAGE;
-    const { data } = await supabase.from('posts').select('*, author:author_id(*), target:target_id(*)').eq('target_id', profileUser.id).order('created_at', { ascending: false }).range(start, start + POSTS_PER_PAGE - 1);
+    const { data } = await supabase.from('posts').select('*, author:author_id(*), target:target_id(*)').eq('target_id', targetId).order('created_at', { ascending: false }).range(start, start + POSTS_PER_PAGE - 1);
     if (data && data.length > 0) {
       setPosts(prev => [...prev, ...data]);
       setHasMore(data.length === POSTS_PER_PAGE);
@@ -223,7 +266,8 @@ export default function ProfilePage() {
     setShowFamilyDeleteConfirm(false);
   };
 
-  if (isLoading || !profileUser || !currentUser) return (
+  // โชว์แค่ตอนโหลดโปรไฟล์หลักเท่านั้น จะได้ดูไม่หน่วงนานเกินไป
+  if (isProfileLoading || !profileUser || !currentUser) return (
     <NavLayout>
       <div className="flex flex-col items-center justify-center py-20">
         <Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" />
@@ -236,6 +280,7 @@ export default function ProfilePage() {
   const isOwnProfile = currentUser.id === profileUser.id;
 
   const MusicWidget = () => {
+    if (isWidgetsLoading) return <div className="card-minimal h-24 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
     if (!profileUser.music_url) return null;
     return (
       <div className="card-minimal bg-white p-6 rounded-[2.5rem] border border-gray-100 flex items-center gap-4 transition-all shadow-sm">
@@ -254,6 +299,7 @@ export default function ProfilePage() {
   };
 
   const RecentVisitorsWidget = () => {
+    if (isWidgetsLoading) return <div className="card-minimal h-32 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
     if (recentVisitors.length === 0) return null;
     return (
       <div className="card-minimal bg-white p-6 md:p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-5">
@@ -272,28 +318,32 @@ export default function ProfilePage() {
     );
   };
 
-  const FriendsWidget = () => (
-    <div className="card-minimal bg-white p-6 md:p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="font-black text-gray-900 text-sm flex items-center gap-2"><Users className="w-5 h-5" style={{ color: themeColor }} /> เพื่อนล่าสุด</h3>
-        <Link href={`/profile/${profileUser.username}/friends`} className="text-xs font-bold px-3 py-1.5 rounded-lg transition-colors hover:bg-gray-50 text-gray-600 border border-gray-100">ดูทั้งหมด</Link>
-      </div>
-      {friends.length === 0 ? (
-        <p className="text-sm text-center text-gray-500 font-bold py-4">ยังไม่มีเพื่อน</p>
-      ) : (
-        <div className="grid grid-cols-3 gap-3">
-          {friends.map(f => (
-            <Link key={f.id} href={`/profile/${f.username}`} className="group flex flex-col items-center gap-2 transition-all hover:scale-105">
-              <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-16 h-16 rounded-2xl object-cover shadow-sm border border-gray-100" />
-              <p className="text-xs font-bold text-center truncate w-full text-gray-700 group-hover:text-gray-900">{f.display_name.split(' ')[0]}</p>
-            </Link>
-          ))}
+  const FriendsWidget = () => {
+    if (isWidgetsLoading) return <div className="card-minimal h-48 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
+    return (
+      <div className="card-minimal bg-white p-6 md:p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="font-black text-gray-900 text-sm flex items-center gap-2"><Users className="w-5 h-5" style={{ color: themeColor }} /> เพื่อนล่าสุด</h3>
+          <Link href={`/profile/${profileUser.username}/friends`} className="text-xs font-bold px-3 py-1.5 rounded-lg transition-colors hover:bg-gray-50 text-gray-600 border border-gray-100">ดูทั้งหมด</Link>
         </div>
-      )}
-    </div>
-  );
+        {friends.length === 0 ? (
+          <p className="text-sm text-center text-gray-500 font-bold py-4">ยังไม่มีเพื่อน</p>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            {friends.map(f => (
+              <Link key={f.id} href={`/profile/${f.username}`} className="group flex flex-col items-center gap-2 transition-all hover:scale-105">
+                <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-16 h-16 rounded-2xl object-cover shadow-sm border border-gray-100" />
+                <p className="text-xs font-bold text-center truncate w-full text-gray-700 group-hover:text-gray-900">{f.display_name.split(' ')[0]}</p>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const RelationshipWidget = () => {
+    if (isWidgetsLoading) return <div className="card-minimal h-32 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
     const hasFamily = familyMembers.length > 0;
     if (!profileUser.relationship_status && !hasFamily) return null;
 
@@ -305,7 +355,6 @@ export default function ProfilePage() {
           <div className="p-4 rounded-2xl border" style={{ backgroundColor: `${themeColor}05`, borderColor: `${themeColor}15` }}>
             <p className="text-[11px] font-bold mb-1" style={{ color: themeColor }}>สถานะหัวใจ</p>
             <p className="text-sm font-black text-gray-800 break-words">
-              {/* ✅ เรียกใช้ฟังก์ชันที่แปลข้อความได้แม่นยำตรงกับหน้า Edit 100% */}
               {getRelationshipText(profileUser.relationship_status)}
               {profileUser.relationship_custom_name && <span className="font-black" style={{ color: themeColor }}> กับ {profileUser.relationship_custom_name}</span>}
             </p>
@@ -338,7 +387,7 @@ export default function ProfilePage() {
       <div className="max-w-7xl mx-auto px-4 md:px-6 pb-24">
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
           
-          <div className="flex-1 min-w-0 space-y-6 lg:space-y-8">
+          <div className="flex-1 min-w-0 space-y-6 lg:space-y-8 animate-in fade-in">
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm bg-white rounded-[3rem]">
               <div className="h-48 md:h-80 relative w-full bg-slate-100" style={{ backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
               </div>
@@ -427,12 +476,21 @@ export default function ProfilePage() {
             </div>
 
             {(friendshipStatus === 'accepted' || isOwnProfile) ? (
-              <div className="space-y-6 lg:space-y-8">
-                <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={() => setRefreshTrigger(t => t + 1)} />
+              <div className="space-y-6 lg:space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={() => loadPosts(profileUser.id)} />
                 <div className="space-y-6 lg:space-y-8">
-                  {posts.length === 0 ? <div className="card-minimal text-center py-20 bg-white/50 rounded-[3rem] border-dashed border-gray-200 border-2"><p className="text-gray-400 font-bold text-sm">ยังไม่มีโพสต์ให้แสดง</p></div> : 
-                    posts.map((p) => (<PostCardV3 key={p.id} post={p} currentUserId={currentUser.id} profileOwnerId={profileUser.id} onDelete={() => {}} />))}
-                  {isLoadingMore && <div className="py-6 flex justify-center"><Loader2 className="animate-spin text-gray-400" /></div>}
+                  {isPostsLoading ? (
+                     <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-frog-500 w-10 h-10" /></div>
+                  ) : posts.length === 0 ? (
+                     <div className="card-minimal text-center py-20 bg-white/50 rounded-[3rem] border-dashed border-gray-200 border-2"><p className="text-gray-400 font-bold text-sm">ยังไม่มีโพสต์ให้แสดง</p></div>
+                  ) : (
+                    posts.map((p, index) => (
+                      <div key={p.id} ref={posts.length === index + 1 ? lastPostElementRef : null}>
+                         <PostCardV3 post={p} currentUserId={currentUser.id} profileOwnerId={profileUser.id} onDelete={() => {}} />
+                      </div>
+                    ))
+                  )}
+                  {isLoadingMore && <div className="py-6 flex justify-center"><Loader2 className="animate-spin text-gray-400 w-8 h-8" /></div>}
                 </div>
               </div>
             ) : <div className="card-minimal bg-white/50 border-2 border-dashed border-gray-200 p-20 text-center rounded-[3rem] text-gray-500 font-bold">เพิ่มเพื่อนเพื่อดูโพสต์ของ {profileUser.display_name}</div>}
