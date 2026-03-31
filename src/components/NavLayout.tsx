@@ -19,24 +19,27 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
+  // ระบบ Presence (ออนไลน์) ยังทำงานปกติ
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
 
   useEffect(() => {
     setIsMounted(true);
-    setShowMobileMenu(false);
+    setShowMobileMenu(false); // ปิดเมนูอัตโนมัติเมื่อเปลี่ยนหน้า
     fetchLatestData();
   }, [pathname]);
 
   const fetchLatestData = async () => {
-    const { data: authData } = await supabase.auth.getSession();
-    if (!authData?.session) return;
-    const { data } = await supabase.rpc('get_user_app_data', { user_uuid: authData.session.user.id });
-    if (data && data.user_info) {
-      setCurrentUser(data.user_info);
-      setUnreadNotif(data.unread_notifications || 0);
-      setFriendReq(data.pending_friends || 0);
-      setUnreadMsg(data.unread_messages || 0);
-    }
+    try {
+      const { data: authData } = await supabase.auth.getSession();
+      if (!authData?.session) return;
+      const { data, error } = await supabase.rpc('get_user_app_data', { user_uuid: authData.session.user.id });
+      if (!error && data && data.user_info) {
+        setCurrentUser(data.user_info);
+        setUnreadNotif(data.unread_notifications || 0);
+        setFriendReq(data.pending_friends || 0);
+        setUnreadMsg(data.unread_messages || 0);
+      }
+    } catch (err) { console.error(err); }
   };
 
   const handleLogout = async () => {
@@ -47,72 +50,113 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   if (!isMounted) return null;
 
   const profileLink = currentUser?.username ? `/profile/${currentUser.username}` : '#';
-  const navItems = [
-    { label: 'Home', icon: Home, href: '/' },
-    { label: 'Friends', icon: Users, href: '/friends', count: friendReq },
-    { label: 'Chat', icon: MessageCircle, href: '/messages', count: unreadMsg },
-    { label: 'Noti', icon: Bell, href: '/notifications', count: unreadNotif },
+  
+  // ✅ กำหนด Interface ให้ชัดเจนกัน TS เอ๋อ
+  interface NavItem {
+    label: string;
+    icon: any;
+    href: string;
+    count?: number;
+  }
+
+  const navItems: NavItem[] = [
+    { label: 'หน้าหลัก', icon: Home, href: '/' },
+    { label: 'เพื่อน', icon: Users, href: '/friends', count: friendReq },
+    { label: 'แชท', icon: MessageCircle, href: '/messages', count: unreadMsg },
+    { label: 'แจ้งเตือน', icon: Bell, href: '/notifications', count: unreadNotif },
   ];
 
   return (
     <div className="min-h-[100dvh] bg-gray-50 flex flex-col lg:flex-row overflow-x-hidden">
-      {/* Desktop Aside */}
+      {/* 💻 Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 fixed inset-y-0 bg-white border-r z-50 p-4">
-        <Link href="/" className="mb-8 px-2 flex items-center gap-2"><img src="https://iili.io/qbtgKBt.png" className="w-10 h-10"/><span className="text-2xl font-black text-frog-600">Ribbi</span></Link>
+        <Link href="/" className="mb-8 px-2 flex items-center gap-2 group">
+          <img src="https://iili.io/qbtgKBt.png" className="w-10 h-10 group-hover:rotate-12 transition-transform" alt=""/>
+          <span className="text-2xl font-black text-frog-600 tracking-tighter">Ribbi</span>
+        </Link>
         <nav className="flex-1 space-y-1">
-          {navItems.map(item => (
-            <Link key={item.label} href={item.href} className={`flex items-center gap-3 px-4 py-3 rounded-2xl ${pathname === item.href ? 'bg-frog-500 text-white font-bold' : 'text-gray-500 hover:bg-gray-50'}`}>
-              <item.icon size={20}/> <span>{item.label}</span>
-              {item.count > 0 && <span className="ml-auto bg-red-500 text-white text-[10px] px-1.5 rounded-full">{item.count}</span>}
-            </Link>
-          ))}
-          <Link href={profileLink} className={`flex items-center gap-3 px-4 py-3 rounded-2xl ${pathname.startsWith('/profile') ? 'bg-frog-500 text-white' : 'text-gray-500'}`}><User size={20}/> <span>Profile</span></Link>
+          {navItems.map(item => {
+            const active = pathname === item.href;
+            return (
+              <Link key={item.label} href={item.href} className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${active ? 'bg-frog-500 text-white font-bold shadow-lg shadow-frog-100' : 'text-gray-500 hover:bg-gray-50'}`}>
+                <item.icon size={20}/> 
+                <span className="text-sm font-medium">{item.label}</span>
+                {/* ✅ แก้จุดที่ Build พัง: ใช้ (item.count ?? 0) */}
+                {(item.count ?? 0) > 0 && (
+                  <span className={`ml-auto text-[10px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full font-black ${active ? 'bg-white text-frog-600' : 'bg-red-500 text-white'}`}>
+                    {item.count}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+          <Link href={profileLink} className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${pathname.startsWith('/profile') ? 'bg-frog-500 text-white font-bold' : 'text-gray-500 hover:bg-gray-50'}`}>
+            <User size={20}/> <span>โปรไฟล์</span>
+          </Link>
         </nav>
-        <button onClick={handleLogout} className="mt-auto p-4 text-red-500 text-xs font-black flex items-center gap-2"><LogOut size={16}/> Logout</button>
+        <div className="mt-auto pt-4 border-t">
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-red-500 hover:bg-red-50 font-black text-xs transition-all">
+            <LogOut size={16}/> <span>ออกจากระบบ</span>
+          </button>
+        </div>
       </aside>
 
-      {/* Mobile Top Nav */}
+      {/* 📱 Mobile Top Bar */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b flex items-center justify-between px-4 z-40">
-        <span className="text-xl font-black text-frog-600">Ribbi</span>
-        <button onClick={() => setShowMobileMenu(true)} className="p-2"><Menu/></button>
+        <Link href="/" className="flex items-center gap-2"><img src="https://iili.io/qbtgKBt.png" className="w-8 h-8" alt=""/><span className="text-xl font-black text-frog-600">Ribbi</span></Link>
+        <button onClick={() => setShowMobileMenu(true)} className="p-2 bg-gray-50 rounded-xl active:scale-90 transition-all"><Menu size={24} className="text-gray-600"/></button>
       </header>
 
-      {/* Mobile Drawer (Burger Menu) */}
+      {/* 📱 Mobile Drawer Menu (Burger Menu) */}
       {showMobileMenu && (
-        <div className="fixed inset-0 z-[60] lg:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileMenu(false)} />
-          <div className="absolute right-0 top-0 bottom-0 w-64 bg-white p-6 shadow-2xl animate-in slide-in-from-right">
-             <div className="flex justify-between items-center mb-8"><span className="font-black italic">MENU</span><button onClick={() => setShowMobileMenu(false)}><X/></button></div>
-             <div className="space-y-4">
-                {navItems.map(item => (
-                   <Link key={item.label} href={item.href} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                      <div className="flex items-center gap-3"><item.icon size={18}/> <span className="font-bold text-sm">{item.label}</span></div>
-                      <ChevronRight size={14}/>
-                   </Link>
-                ))}
-                <button onClick={handleLogout} className="w-full p-3 text-red-500 font-bold border-t mt-4 flex items-center gap-2"><LogOut size={16}/> Logout</button>
-             </div>
+        <div className="lg:hidden fixed inset-0 z-[60]">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)} />
+          <div className="absolute right-0 top-0 bottom-0 w-72 bg-white shadow-2xl p-6 animate-in slide-in-from-right duration-300">
+            <div className="flex justify-between items-center mb-8">
+              <span className="font-black text-frog-600 italic">RIBBI MENU</span>
+              <button onClick={() => setShowMobileMenu(false)} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button>
+            </div>
+            <div className="space-y-2">
+              {navItems.map(item => (
+                <Link key={item.label} href={item.href} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
+                  <div className="flex items-center gap-3">
+                    <item.icon size={20} className="text-gray-400"/>
+                    <span className="font-bold text-sm text-gray-700">{item.label}</span>
+                  </div>
+                  {(item.count ?? 0) > 0 && <span className="bg-red-500 text-white text-[10px] min-w-[20px] h-[20px] flex items-center justify-center rounded-full font-black">{item.count}</span>}
+                </Link>
+              ))}
+              <Link href="/settings" className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl">
+                <Settings size={20} className="text-gray-400"/> <span className="font-bold text-sm text-gray-700">ตั้งค่า</span>
+              </Link>
+              <button onClick={handleLogout} className="w-full mt-6 p-4 border-2 border-red-50 text-red-500 rounded-2xl font-black text-xs flex items-center justify-center gap-2"><LogOut size={16}/> ออกจากระบบ</button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Main Area */}
-      <main className="flex-1 lg:ml-64 pt-16 pb-20 lg:pt-0 lg:pb-0 min-h-screen">
+      {/* 🟢 Main Content */}
+      <main className="flex-1 lg:ml-64 pt-16 pb-20 lg:pt-0 lg:pb-0 min-h-[100dvh]">
         <div className="max-w-7xl mx-auto p-4 md:p-6">{children}</div>
       </main>
 
-      {/* Mobile Bottom Nav (แทบล่างที่หายไป) */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t flex items-center justify-around z-50 shadow-lg">
-        {navItems.map(item => (
-          <Link key={item.label} href={item.href} className={`flex flex-col items-center relative ${pathname === item.href ? 'text-frog-500' : 'text-gray-400'}`}>
-            <item.icon size={20} />
-            <span className="text-[10px] font-black uppercase">{item.label}</span>
-            {item.count > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] min-w-[15px] h-[15px] rounded-full flex items-center justify-center font-bold">{item.count}</span>}
-          </Link>
-        ))}
-        <Link href={profileLink} className={`flex flex-col items-center ${pathname.startsWith('/profile') ? 'text-frog-500' : 'text-gray-400'}`}>
-          <User size={20} />
-          <span className="text-[10px] font-black uppercase">Profile</span>
+      {/* 📱 Mobile Bottom Navigation (แทบล่างที่หายไป) */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-100 flex items-center justify-around z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
+        {navItems.map((item) => {
+          const active = pathname === item.href;
+          return (
+            <Link key={item.label} href={item.href} className={`flex flex-col items-center gap-0.5 relative ${active ? 'text-frog-500' : 'text-gray-400'}`}>
+              <div className="relative p-1">
+                <item.icon size={22} className={active ? 'stroke-[2.5px]' : 'stroke-[1.5px]'} />
+                {(item.count ?? 0) > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] min-w-[16px] h-[16px] flex items-center justify-center rounded-full border-2 border-white font-black">{item.count}</span>}
+              </div>
+              <span className="text-[9px] font-black uppercase tracking-tighter">{item.label}</span>
+            </Link>
+          );
+        })}
+        <Link href={profileLink} className={`flex flex-col items-center gap-0.5 ${pathname.startsWith('/profile') ? 'text-frog-500' : 'text-gray-400'}`}>
+          <div className="p-1"><User size={22} className={pathname.startsWith('/profile') ? 'stroke-[2.5px]' : 'stroke-[1.5px]'} /></div>
+          <span className="text-[9px] font-black uppercase tracking-tighter">โปรไฟล์</span>
         </Link>
       </nav>
     </div>
