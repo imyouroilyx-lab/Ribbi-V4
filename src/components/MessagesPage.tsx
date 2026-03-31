@@ -33,8 +33,6 @@ export default function MessagesPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
-
-  // ✅ หาข้อมูลแชทที่เลือกอยู่ เพื่อเอาชื่อไปแสดงใน Header
   const currentSelectedChat = chats.find(c => c.id === selectedChatId);
 
   useEffect(() => {
@@ -53,17 +51,6 @@ export default function MessagesPage() {
     };
     init();
   }, [searchParams]);
-
-  // ✅ ฟัง Realtime เพื่ออัปเดตรายการแชท
-  useEffect(() => {
-    if (!currentUser?.id) return;
-    const channel = supabase.channel('global-chats')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
-        loadChats(currentUser.id);
-      })
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [currentUser?.id]);
 
   const loadChats = async (userId: string) => {
     try {
@@ -84,23 +71,26 @@ export default function MessagesPage() {
 
   return (
     <div className="h-[calc(100dvh-64px)] w-full flex bg-white overflow-hidden">
-      <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r flex-col`}>
+      {/* รายการแชทด้านซ้าย */}
+      <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-[380px] border-r border-gray-100 flex-col flex-shrink-0`}>
         <ChatList chats={chats} currentUserId={currentUser.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={() => loadChats(currentUser.id)} />
       </div>
-      <div className={`${selectedChatId ? 'flex' : 'hidden md:flex'} flex-1`}>
+
+      {/* หน้าต่างแชทด้านขวา - ✅ เพิ่ม min-w-0 เพื่อกันโดนบีบ */}
+      <div className={`${selectedChatId ? 'flex' : 'hidden md:flex'} flex-1 min-w-0 bg-gray-50/30`}>
         {selectedChatId && currentSelectedChat ? (
           <ChatWindow 
             key={selectedChatId} 
             chatId={selectedChatId} 
-            chatData={currentSelectedChat} // ✅ ส่งข้อมูลแชทเข้าไป
+            chatData={currentSelectedChat}
             currentUser={currentUser} 
             onBack={() => setSelectedChatId(null)} 
             onRefreshChats={() => loadChats(currentUser.id)} 
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
-            <MessageSquare size={48} className="opacity-10 mb-4" />
-            <p className="font-black text-xs uppercase tracking-widest">Select conversation</p>
+            <MessageSquare size={64} className="opacity-10 mb-4" />
+            <p className="font-black text-xs uppercase tracking-[0.2em] opacity-40">Select a message</p>
           </div>
         )}
       </div>
