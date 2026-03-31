@@ -10,7 +10,7 @@ import ConfirmModal from '../../../components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, Music, 
-  MessageCircle, Loader2, ExternalLink, Award
+  MessageCircle, Loader2, ExternalLink, Award, Star
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -113,7 +113,7 @@ export default function ProfilePage() {
     setFriendshipStatus('sent');
   };
 
-  if (isLoading && page === 0) return <NavLayout><div className="flex flex-col items-center justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" /><p className="text-gray-400 font-black text-[10px] uppercase tracking-widest">RIBBI LOADING...</p></div></NavLayout>;
+  if (isLoading && page === 0) return <NavLayout><div className="flex flex-col items-center justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" /><p className="text-gray-400 font-black text-[10px] uppercase tracking-widest">LOADING RIBBI...</p></div></NavLayout>;
   if (!profileUser || !currentUser) return null;
 
   const themeColor = profileUser.theme_color || '#9de5a8';
@@ -121,20 +121,16 @@ export default function ProfilePage() {
   // --- Widgets ---
 
   const MusicWidget = () => {
-    if (!profileUser.profile_song_url) return null;
+    if (!profileUser.music_url) return null;
     return (
       <div className="card-minimal bg-white p-5 rounded-[2rem] border border-gray-100 shadow-soft">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-inner" style={{ backgroundColor: `${themeColor}15`, color: themeColor }}>
-            <Music size={24} />
-          </div>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-inner" style={{ backgroundColor: `${themeColor}15`, color: themeColor }}><Music size={20} /></div>
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">กำลังฟัง</p>
-            <p className="text-sm font-black text-gray-900 truncate">{profileUser.profile_song_name || 'Song Name'}</p>
+            <p className="text-xs font-black text-gray-900 truncate">{profileUser.music_name || 'My Song'}</p>
           </div>
-          <a href={profileUser.profile_song_url} target="_blank" rel="noopener noreferrer" className="p-3 text-white rounded-2xl transition-all shadow-md active:scale-95 flex items-center justify-center hover:opacity-90" style={{ backgroundColor: themeColor }}>
-            <ExternalLink size={18} />
-          </a>
+          <a href={profileUser.music_url} target="_blank" rel="noopener noreferrer" className="p-2.5 text-white rounded-xl transition-all shadow-md active:scale-95" style={{ backgroundColor: themeColor }}><ExternalLink size={16} /></a>
         </div>
       </div>
     );
@@ -143,9 +139,7 @@ export default function ProfilePage() {
   const FriendsWidget = () => (
     <div className="card-minimal bg-white p-6 rounded-[2rem] border border-gray-100 shadow-soft">
       <div className="flex items-center justify-between mb-5 px-1">
-        <h3 className="font-black text-gray-900 text-[11px] uppercase tracking-[0.2em] flex items-center gap-2">
-          <Users className="w-4 h-4" style={{ color: themeColor }} /> เพื่อน
-        </h3>
+        <h3 className="font-black text-gray-900 text-[11px] uppercase tracking-[0.2em] flex items-center gap-2"><Users className="w-4 h-4" style={{ color: themeColor }} /> เพื่อน</h3>
         <Link href={`/profile/${profileUser.username}/friends`} className="text-[10px] font-black px-3 py-1.5 rounded-xl uppercase transition-colors" style={{ backgroundColor: `${themeColor}15`, color: themeColor }}>ดูทั้งหมด</Link>
       </div>
       <div className="grid grid-cols-3 gap-3">
@@ -160,14 +154,18 @@ export default function ProfilePage() {
   );
 
   const RelationshipWidget = () => {
-    if (!profileUser.relationship_status && familyMembers.length === 0) return null;
+    const hasFamily = familyMembers.length > 0;
+    const hasCloseFriends = profileUser.close_friends && Array.isArray(profileUser.close_friends) && profileUser.close_friends.length > 0;
+    if (!profileUser.relationship_status && !hasFamily && !hasCloseFriends) return null;
+
     return (
-      <div className="card-minimal bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-soft space-y-5">
+      <div className="card-minimal bg-white p-6 rounded-[2rem] border border-gray-100 shadow-soft space-y-6">
         <h3 className="font-black text-gray-900 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em]"><Heart className="w-4 h-4 text-red-500" /> ความสัมพันธ์</h3>
+        
         {profileUser.relationship_status && (
           <div className="p-4 rounded-3xl border" style={{ backgroundColor: `${themeColor}05`, borderColor: `${themeColor}15` }}>
-            <p className="text-[10px] font-black uppercase mb-1.5" style={{ color: themeColor }}>สถานะปัจจุบัน</p>
-            <p className="text-[15px] font-bold text-gray-800">
+            <p className="text-[10px] font-black uppercase mb-1" style={{ color: themeColor }}>สถานะ</p>
+            <p className="text-sm font-bold text-gray-800">
               {profileUser.relationship_status === 'single' ? '👤 โสด' : 
                profileUser.relationship_status === 'in_relationship' ? '❤️ มีแฟนแล้ว' : 
                profileUser.relationship_status === 'engaged' ? '💍 หมั้นแล้ว' : '💒 แต่งงานแล้ว'}
@@ -175,18 +173,32 @@ export default function ProfilePage() {
             </p>
           </div>
         )}
-        {familyMembers.length > 0 && (
+
+        {/* ครอบครัว (Family Members) */}
+        {hasFamily && (
           <div className="space-y-3">
             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">ครอบครัว</p>
             {familyMembers.map((fm) => (
-              <Link key={fm.id} href={`/profile/${fm.member.username}`} className="flex items-center gap-4 p-2.5 hover:bg-gray-50 rounded-2xl transition-all">
-                <img src={fm.member.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-xl object-cover shadow-sm" alt="" />
+              <Link key={fm.id} href={`/profile/${fm.member.username}`} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-2xl transition-all">
+                <img src={fm.member.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-9 h-9 rounded-xl object-cover shadow-sm" alt="" />
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold text-sm text-gray-800 truncate">{fm.member.display_name}</p>
-                  <p className="text-[10px] text-gray-400 font-black uppercase tracking-wider">{fm.relationship_label}</p>
+                  <p className="font-bold text-xs text-gray-800 truncate">{fm.member.display_name}</p>
+                  <p className="text-[9px] text-gray-400 font-black uppercase">{fm.relationship_label}</p>
                 </div>
               </Link>
             ))}
+          </div>
+        )}
+
+        {/* เพื่อนสนิท (Close Friends) */}
+        {hasCloseFriends && (
+          <div className="space-y-3">
+            <p className="text-[10px] font-black text-frog-500 uppercase tracking-widest px-1 flex items-center gap-1.5"><Star size={10} fill="currentColor" /> เพื่อนสนิท</p>
+            <div className="grid grid-cols-4 gap-2">
+              {profileUser.close_friends.map((cf: any, i: number) => (
+                <img key={i} src={cf.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full aspect-square rounded-xl object-cover border border-frog-100 shadow-xs" title={cf.display_name} />
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -197,71 +209,62 @@ export default function ProfilePage() {
     <NavLayout>
       <div className="max-w-7xl mx-auto px-4 md:px-6 pb-20">
         <div className="flex flex-col lg:flex-row gap-8">
-          
           <div className="flex-1 min-w-0 space-y-8">
             
-            {/* --- Profile Header V7: Compact & Clean --- */}
+            {/* --- Profile Header V8: รูปบน ชื่อล่าง ไม่เบียดปุ่ม --- */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-soft bg-white rounded-[3rem]">
-              <div className="h-40 md:h-64 relative" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
+              <div className="h-44 md:h-72 relative" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
               
               <div className="px-6 md:px-10 pb-8">
-                {/* Avatar & Header Info Area */}
-                <div className="flex flex-col lg:flex-row items-center lg:items-end gap-6 lg:gap-8 -mt-20 md:-mt-28 relative z-10 text-center lg:text-left">
+                <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 -mt-20 md:-mt-28 relative z-10">
                   
-                  {/* Avatar: ย่อให้เล็กลงหน่อย */}
-                  <div className="shrink-0">
-                    <div className="w-36 h-36 md:w-48 md:h-48 rounded-full p-2 shadow-2xl bg-white border-[6px] md:border-[8px]" style={{ borderColor: themeColor }}>
+                  {/* Left: Avatar + Name (ย้ายชื่อมาไว้ใต้รูป) */}
+                  <div className="flex flex-col items-center lg:items-start gap-4 flex-1">
+                    <div className="w-40 h-40 md:w-52 md:h-52 rounded-full p-2 shadow-2xl bg-white border-[8px]" style={{ borderColor: themeColor }}>
                       <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover" alt="" />
                     </div>
-                  </div>
-
-                  {/* Info Area: หดชื่อให้เล็กลง ปุ่มจะได้ไม่หาย */}
-                  <div className="flex-1 w-full lg:pb-2 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    <div className="space-y-1">
-                      <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight leading-tight">{profileUser.display_name}</h1>
-                      <div className="flex items-center justify-center lg:justify-start gap-3">
+                    <div className="text-center lg:text-left space-y-1">
+                      <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight leading-tight">{profileUser.display_name}</h1>
+                      <div className="flex flex-col lg:flex-row lg:items-center gap-2">
                         <p className="text-gray-400 font-black uppercase text-[10px] tracking-[0.3em]">@{profileUser.username}</p>
-                        <div className="flex items-center gap-1.5 text-[9px] font-black text-gray-300 uppercase tracking-widest border-l pl-3 border-gray-100">
-                          <Award size={10} style={{ color: themeColor }} /> Since {new Date(profileUser.created_at).getFullYear()}
+                        <div className="hidden lg:block w-1 h-1 rounded-full bg-gray-200" />
+                        <div className="flex items-center justify-center lg:justify-start gap-1.5 text-[9px] font-black text-gray-300 uppercase tracking-widest">
+                          <Award size={10} style={{ color: themeColor }} /> Member since {new Date(profileUser.created_at).getFullYear()}
                         </div>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Action Buttons: ขนาดพอดีคำ */}
-                    <div className="flex flex-row gap-2 w-full lg:w-auto">
-                      {currentUser.id === profileUser.id ? (
-                        <Link href="/profile/edit" className="flex-1 justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 text-white shadow-md transition-all hover:opacity-90" style={{ backgroundColor: themeColor }}>
-                          <Edit size={14} /> แก้ไขโปรไฟล์
-                        </Link>
-                      ) : (
-                        <>
-                          <button onClick={handleSendMessage} className="flex-1 justify-center btn-secondary font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-900 hover:text-white transition-all shadow-sm"><MessageCircle size={14} /> ข้อความ</button>
-                          {friendshipStatus === 'none' && <button onClick={handleAddFriend} className="flex-1 justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 text-white shadow-md active:scale-95 transition-all" style={{ backgroundColor: themeColor }}><UserPlus size={14} /> เพิ่มเพื่อน</button>}
-                          {friendshipStatus === 'accepted' && <button className="flex-1 justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 border" style={{ backgroundColor: `${themeColor}10`, borderColor: themeColor, color: themeColor }}><UserCheck size={14} /> เพื่อนกันแล้ว</button>}
-                        </>
-                      )}
-                    </div>
+                  {/* Right: Action Buttons (กะทัดรัด ไม่เบียดชื่อ) */}
+                  <div className="flex flex-row gap-2 w-full lg:w-auto justify-center lg:mb-4">
+                    {currentUser.id === profileUser.id ? (
+                      <Link href="/profile/edit" className="flex-1 lg:flex-none justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 text-white shadow-md transition-all hover:scale-105" style={{ backgroundColor: themeColor }}><Edit size={14} /> แก้ไขโปรไฟล์</Link>
+                    ) : (
+                      <>
+                        <button onClick={handleSendMessage} className="flex-1 lg:flex-none justify-center btn-secondary font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-900 hover:text-white transition-all shadow-sm"><MessageCircle size={14} /> ข้อความ</button>
+                        {friendshipStatus === 'none' && <button onClick={handleAddFriend} className="flex-1 lg:flex-none justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 text-white shadow-md active:scale-95 transition-all" style={{ backgroundColor: themeColor }}><UserPlus size={14} /> เพิ่มเพื่อน</button>}
+                        {friendshipStatus === 'accepted' && <button className="flex-1 lg:flex-none justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 border" style={{ backgroundColor: `${themeColor}10`, borderColor: themeColor, color: themeColor }}><UserCheck size={14} /> เพื่อนกันแล้ว</button>}
+                      </>
+                    )}
                   </div>
                 </div>
-                
-                {/* Bio & Bottom Details Area */}
-                <div className="mt-8 space-y-8">
+
+                {/* Details Area */}
+                <div className="mt-10 space-y-8">
                   {profileUser.bio && <p className="text-gray-600 font-medium leading-relaxed whitespace-pre-wrap break-words border-l-4 pl-6 text-lg italic" style={{ borderColor: `${themeColor}20` }}>{profileUser.bio}</p>}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-10 text-[12px] text-gray-500 font-bold uppercase tracking-tight">
-                    {profileUser.birthday && <div className="flex items-center gap-3"><Calendar className="w-4 h-4" style={{ color: themeColor }} /> {formatDate(profileUser.birthday)} ({calculateAge(profileUser.birthday)} ปี)</div>}
+                    {profileUser.birthday && <div className="flex items-center gap-3"><Calendar className="w-4 h-4" style={{ color: themeColor }} /> เกิด {formatDate(profileUser.birthday)} ({calculateAge(profileUser.birthday)} ปี)</div>}
                     {profileUser.occupation && <div className="flex items-center gap-3"><Briefcase className="w-4 h-4" style={{ color: themeColor }} /> {profileUser.occupation}</div>}
-                    {profileUser.workplace && <div className="flex items-center gap-3"><HomeIcon className="w-4 h-4" style={{ color: themeColor }} /> {profileUser.workplace}</div>}
+                    {profileUser.workplace && <div className="flex items-center gap-3"><HomeIcon className="w-4 h-4" style={{ color: themeColor }} /> ที่ {profileUser.workplace}</div>}
                     {profileUser.address && <div className="flex items-center gap-3"><MapPin className="w-4 h-4 text-red-400" /> {profileUser.address}</div>}
                   </div>
 
-                  {/* Hobbies - Bubble Style */}
+                  {/* Hobbies */}
                   {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
                     <div className="pt-6 border-t border-gray-50 flex flex-wrap gap-2">
                       {profileUser.hobbies.map((h: any, i: number) => (
-                        <span key={i} className="px-4 py-2 rounded-full text-[10px] font-black border tracking-wide uppercase" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: `${themeColor}20` }}>
-                          {typeof h === 'string' ? h : h.name}
-                        </span>
+                        <span key={i} className="px-4 py-2 rounded-full text-[10px] font-black border tracking-wide uppercase" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: `${themeColor}20` }}>{typeof h === 'string' ? h : h.name}</span>
                       ))}
                     </div>
                   )}
@@ -269,14 +272,14 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Mobile Widgets */}
+            {/* Mobile Sidebar */}
             <div className="lg:hidden space-y-8 px-2">
               <MusicWidget />
               <FriendsWidget />
               <RelationshipWidget />
             </div>
 
-            {/* Posts Feed */}
+            {/* Posts */}
             {(friendshipStatus === 'accepted' || currentUser.id === profileUser.id) ? (
               <div className="space-y-8">
                 <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={() => setRefreshTrigger(t => t + 1)} />
@@ -289,7 +292,7 @@ export default function ProfilePage() {
             ) : <div className="card-minimal bg-white/50 border-2 border-dashed border-gray-200 p-24 text-center rounded-[3rem]"><p className="text-gray-400 font-black text-xs uppercase tracking-[0.3em]">Become friends to see posts</p></div>}
           </div>
 
-          {/* Desktop Sidebar (Sidebar 380px) */}
+          {/* Desktop Sidebar */}
           <div className="hidden lg:block w-[380px] space-y-8">
             <MusicWidget />
             <FriendsWidget />
