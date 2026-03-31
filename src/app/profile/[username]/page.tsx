@@ -51,7 +51,6 @@ export default function ProfilePage() {
   const [friends, setFriends] = useState<User[]>([]);
   const [recentVisitors, setRecentVisitors] = useState<User[]>([]);
   
-  // ✅ เพิ่ม State ที่หายไปกลับมาให้แล้วครับ
   const [isAddedToFamily, setIsAddedToFamily] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   
@@ -61,8 +60,6 @@ export default function ProfilePage() {
   const [familyLabel, setFamilyLabel] = useState('');
   const [showFamilyDeleteConfirm, setShowFamilyDeleteConfirm] = useState(false);
   const [familyToDelete, setFamilyToDelete] = useState<string | null>(null);
-  
-  // ✅ เพิ่ม State สำหรับ Modal ลบเพื่อน
   const [showUnfriendConfirm, setShowUnfriendConfirm] = useState(false);
 
   const observer = useRef<IntersectionObserver | null>(null);
@@ -104,11 +101,10 @@ export default function ProfilePage() {
       setFamilyMembers(familyRes.data || []);
       setFriends((friendsRes.data || []).map((f: any) => f.sender_id === profileData.id ? f.receiver : f.sender));
       
-      // อัปเดตสถานะ isAddedToFamily ว่าเราเพิ่มคนนี้เป็นคนสำคัญหรือยัง
       setIsAddedToFamily(!!checkFamilyRes.data);
 
       if (friendStatusRes.data) {
-        setFriendshipId(friendStatusRes.data.id); // เก็บ ID ไว้เผื่อใช้ลบเพื่อน
+        setFriendshipId(friendStatusRes.data.id); 
         if (friendStatusRes.data.status === 'accepted') setFriendshipStatus('accepted');
         else if (friendStatusRes.data.sender_id === authUser.id) setFriendshipStatus('sent');
         else setFriendshipStatus('pending');
@@ -117,7 +113,6 @@ export default function ProfilePage() {
         setFriendshipStatus('none'); 
       }
 
-      // กรองคนเข้าชมซ้ำ เอาแค่ 5 คน
       const viewsData = viewsRes.data || [];
       const uniqueVisitors: any[] = [];
       const seenIds = new Set();
@@ -131,7 +126,6 @@ export default function ProfilePage() {
       }
       setRecentVisitors(uniqueVisitors);
 
-      // นับ View
       const viewKey = `v_${profileData.id}`;
       if (!sessionStorage.getItem(viewKey) && authUser.id !== profileData.id) {
         await supabase.from('profile_views').insert({ profile_id: profileData.id, visitor_id: authUser.id });
@@ -172,7 +166,6 @@ export default function ProfilePage() {
     }
   };
 
-  // ✅ ฟังก์ชันใหม่สำหรับลบเพื่อน (Unfriend)
   const handleRemoveFriend = async () => {
     if (!friendshipId) return;
     try {
@@ -180,7 +173,7 @@ export default function ProfilePage() {
       setFriendshipStatus('none');
       setFriendshipId(null);
       setShowUnfriendConfirm(false);
-      setRefreshTrigger(t => t + 1); // รีเฟรชหน้าเพื่อเอาโพสต์ของเพื่อนออกและอัปเดต Widget
+      setRefreshTrigger(t => t + 1); 
     } catch (error) {
       console.error('Error removing friend:', error);
     }
@@ -332,8 +325,8 @@ export default function ProfilePage() {
             {/* Profile Header */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm bg-white rounded-[3rem]">
               
+              {/* ✅ Cover Image (เอา Gradient สีขาวออกแล้ว ภาพเต็มตา!) */}
               <div className="h-48 md:h-72 relative bg-gray-100" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }}>
-                <div className="absolute inset-x-0 bottom-0 h-32 md:h-48 bg-gradient-to-t from-white via-white/70 to-transparent"></div>
               </div>
               
               <div className="px-6 md:px-10 pb-8 bg-white relative z-10">
@@ -361,7 +354,6 @@ export default function ProfilePage() {
                         {friendshipStatus === 'sent' && (
                           <button className="px-5 py-3 rounded-xl bg-gray-50 text-gray-500 font-black text-xs flex items-center gap-2 cursor-default border border-gray-200"><Clock size={16} /> ส่งคำขอแล้ว</button>
                         )}
-                        {/* ✅ ปุ่มเพื่อนกันแล้ว (สามารถกดเพื่อลบเพื่อนได้) */}
                         {friendshipStatus === 'accepted' && (
                           <button 
                             onClick={() => setShowUnfriendConfirm(true)} 
@@ -467,7 +459,6 @@ export default function ProfilePage() {
 
       <ConfirmModal isOpen={showFamilyDeleteConfirm} onClose={() => setShowFamilyDeleteConfirm(false)} onConfirm={handleRemoveFamilyMember} title="ลบข้อมูล?" message="คุณแน่ใจนะว่าจะลบความสัมพันธ์นี้?" variant="danger" />
       
-      {/* ✅ Modal: ยืนยันการลบเพื่อน */}
       <ConfirmModal 
         isOpen={showUnfriendConfirm} 
         onClose={() => setShowUnfriendConfirm(false)} 
