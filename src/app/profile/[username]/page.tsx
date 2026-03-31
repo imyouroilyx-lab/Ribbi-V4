@@ -33,6 +33,19 @@ const formatDate = (dateString: string) => {
   } catch { return dateString; }
 };
 
+// ✅ สร้างฟังก์ชันแปลง Text ให้ตรงกับหน้า Edit ทุกประการ
+const getRelationshipText = (status: string) => {
+  switch(status) {
+    case 'single': return 'โสด';
+    case 'in_relationship': return 'มีแฟนแล้ว';
+    case 'engaged': return 'หมั้นแล้ว';
+    case 'married': return 'แต่งงานแล้ว';
+    case 'complicated': return 'ไม่ชัดเจน';
+    case 'divorced': return 'หย่าร้าง';
+    default: return status;
+  }
+};
+
 export default function ProfilePage() {
   const params = useParams();
   const router = useRouter();
@@ -102,7 +115,6 @@ export default function ProfilePage() {
       setPosts(postsRes.data || []);
       setHasMore((postsRes.data?.length || 0) === POSTS_PER_PAGE);
       
-      // ✅ แก้บั๊ก Type Error: Map ข้อมูลดึงเอา member ตัวแรกออกมา (เผื่อกรณีที่ Supabase รีเทิร์นเป็น Array)
       const formattedFamilyMembers = (familyRes.data || []).map((fm: any) => ({
         ...fm,
         member: Array.isArray(fm.member) ? fm.member[0] : fm.member
@@ -123,7 +135,6 @@ export default function ProfilePage() {
         setFriendshipStatus('none'); 
       }
 
-      // กรองคนเข้าชมซ้ำ เอาแค่ 5 คน
       const viewsData = viewsRes.data || [];
       const uniqueVisitors: any[] = [];
       const seenIds = new Set();
@@ -224,7 +235,6 @@ export default function ProfilePage() {
   const themeColor = profileUser.theme_color || '#9de5a8';
   const isOwnProfile = currentUser.id === profileUser.id;
 
-  // --- Widgets ---
   const MusicWidget = () => {
     if (!profileUser.music_url) return null;
     return (
@@ -295,10 +305,8 @@ export default function ProfilePage() {
           <div className="p-4 rounded-2xl border" style={{ backgroundColor: `${themeColor}05`, borderColor: `${themeColor}15` }}>
             <p className="text-[11px] font-bold mb-1" style={{ color: themeColor }}>สถานะหัวใจ</p>
             <p className="text-sm font-black text-gray-800 break-words">
-              {profileUser.relationship_status === 'single' ? 'โสด' : 
-               profileUser.relationship_status === 'in_relationship' ? 'มีแฟนแล้ว' : 
-               profileUser.relationship_status === 'married' ? 'แต่งงานแล้ว' : 
-               profileUser.relationship_status === 'divorced' ? 'หย่าร้าง' : 'หมั้นแล้ว'}
+              {/* ✅ เรียกใช้ฟังก์ชันที่แปลข้อความได้แม่นยำตรงกับหน้า Edit 100% */}
+              {getRelationshipText(profileUser.relationship_status)}
               {profileUser.relationship_custom_name && <span className="font-black" style={{ color: themeColor }}> กับ {profileUser.relationship_custom_name}</span>}
             </p>
           </div>
@@ -330,16 +338,11 @@ export default function ProfilePage() {
       <div className="max-w-7xl mx-auto px-4 md:px-6 pb-24">
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
           
-          {/* --- Main Content Area --- */}
           <div className="flex-1 min-w-0 space-y-6 lg:space-y-8">
-            
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm bg-white rounded-[3rem]">
-              
               <div className="h-48 md:h-80 relative w-full bg-slate-100" style={{ backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
               </div>
-              
               <div className="px-6 md:px-10 pb-8 relative bg-white z-10">
-                
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 relative z-20 mb-4">
                   <div className="w-36 h-36 md:w-48 md:h-48 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px] -mt-20 md:-mt-28" style={{ borderColor: themeColor }}>
                     <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover bg-gray-50" />
