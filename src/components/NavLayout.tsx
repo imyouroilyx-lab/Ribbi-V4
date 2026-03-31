@@ -17,26 +17,27 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
-  // ✅ ใช้ useRef เก็บตัวเล่นเสียงเพื่อประสิทธิภาพสูงสุดและลดโอกาสเกิด Leak
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastPlayedRef = useRef<number>(0); // ✅ สำหรับระบบกันเสียงรัว
 
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
 
   useEffect(() => {
     setIsMounted(true);
-    // ✅ Preload เสียงเตรียมไว้ครั้งเดียวตอนโหลดแอป
     audioRef.current = new Audio('/ribbi.wav');
     audioRef.current.load();
   }, []);
 
-  // ✅ ฟังก์ชันเล่นเสียงที่เรียกใช้จาก Memory โดยตรง (ลื่นแน่นอน)
   const playNotificationSound = () => {
+    const now = Date.now();
+    // 🛡️ กันรัว: ถ้าเสียงเพิ่งเล่นไปเมื่อไม่ถึง 1.5 วินาทีที่แล้ว ไม่ต้องเล่นซ้ำ
+    if (now - lastPlayedRef.current < 1500) return; 
+
     if (audioRef.current) {
       audioRef.current.currentTime = 0; 
-      audioRef.current.volume = 0.5;
-      audioRef.current.play().catch(() => {
-        // บล็อกกรณี User ยังไม่เคย Interaction กับหน้าเว็บ
-      });
+      audioRef.current.volume = 0.4;
+      audioRef.current.play().catch(() => {});
+      lastPlayedRef.current = now;
     }
   };
 
@@ -45,11 +46,9 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     fetchLatestData();
   }, [pathname]);
 
-  // ✅ ระบบ Realtime เฉพาะจุดที่จำเป็น (แจ้งเตือน & เพื่อน)
   useEffect(() => {
     if (!currentUser?.id) return;
 
-    // เปิด Channel เฉพาะตารางที่มีผลกระทบต่อ Notification โดยตรง
     const channel = supabase.channel('realtime_nav_alerts')
       .on(
         'postgres_changes',
@@ -72,7 +71,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => {
-      // ✅ ลบ Channel ทิ้งทันทีเมื่อเลิกใช้ เพื่อป้องกัน Memory Leak 100%
       supabase.removeChannel(channel);
     };
   }, [currentUser?.id]);
@@ -124,11 +122,23 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-[100dvh] bg-gray-50 flex flex-col lg:flex-row overflow-x-hidden">
       {/* 💻 Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-64 fixed inset-y-0 bg-white border-r z-50 p-4">
+      <aside className="hidden lg:flex flex-col w-64 fixed inset-y-0 bg-white border-r z-50 p-4 shadow-sm">
         <Link href="/" onClick={handleHomeClick} className="mb-8 px-2 flex items-center gap-2 group">
           <img src="https://iili.io/qbtgKBt.png" className="w-10 h-10 group-hover:rotate-12 transition-transform" alt=""/>
           <span className="text-2xl font-black text-frog-600 tracking-tighter">Ribbi</span>
         </Link>
+
+        {/* ✅ แสดง currentUser ใน Sidebar (Desktop) */}
+        {currentUser && (
+          <Link href={profileLink} className="mb-6 p-3 rounded-2xl bg-gray-50 flex items-center gap-3 hover:bg-frog-50 transition-colors border border-transparent hover:border-frog-100 group">
+            <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-xl object-cover border-2 border-white shadow-sm" alt=""/>
+            <div className="min-w-0">
+              <p className="text-sm font-black text-gray-900 truncate">{currentUser.display_name}</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate group-hover:text-frog-500">View Profile</p>
+            </div>
+          </Link>
+        )}
+
         <nav className="flex-1 space-y-1">
           {navItems.map(item => {
             const active = pathname === item.href;
@@ -149,13 +159,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
-          <Link href={profileLink} className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${pathname.startsWith('/profile') ? 'bg-frog-500 text-white font-bold' : 'text-gray-500 hover:bg-gray-50'}`}>
-            <User size={20}/> <span>โปรไฟล์</span>
-          </Link>
           <Link href="/settings" className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${pathname === '/settings' ? 'bg-frog-500 text-white font-bold' : 'text-gray-500 hover:bg-gray-50'}`}>
              <Settings size={20}/> <span>ตั้งค่า</span>
           </Link>
         </nav>
+
         <div className="mt-auto pt-4 border-t space-y-2">
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-red-500 hover:bg-red-50 font-black text-xs transition-all">
             <LogOut size={16}/> <span>ออกจากระบบ</span>
@@ -172,7 +180,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           <img src="https://iili.io/qbtgKBt.png" className="w-8 h-8" alt=""/>
           <span className="text-xl font-black text-frog-600">Ribbi</span>
         </Link>
-        <button onClick={() => setShowMobileMenu(true)} className="p-2 bg-gray-50 rounded-xl active:scale-90 transition-all"><Menu size={24} className="text-gray-600"/></button>
+        <button onClick={() => setShowMobileMenu(true)} className="p-1 pr-1 pl-3 bg-gray-50 rounded-2xl active:scale-90 transition-all flex items-center gap-2 border">
+          {/* ✅ แสดงรูป currentUser ข้างปุ่มเมนู (Mobile) */}
+          <img src={currentUser?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-lg object-cover shadow-sm" alt=""/>
+          <Menu size={20} className="text-gray-600 mr-2"/>
+        </button>
       </header>
 
       {/* 📱 Mobile Drawer Menu */}
@@ -184,13 +196,25 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               <span className="font-black text-frog-600 italic">RIBBI MENU</span>
               <button onClick={() => setShowMobileMenu(false)} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button>
             </div>
+            
+            {/* ✅ ข้อมูล User ใน Mobile Menu */}
+            {currentUser && (
+              <div className="mb-8 p-4 bg-gray-50 rounded-[2rem] flex flex-col items-center text-center gap-2 border border-gray-100">
+                <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-20 h-20 rounded-[1.5rem] object-cover shadow-md border-2 border-white" alt=""/>
+                <div>
+                  <p className="text-base font-black text-gray-900 leading-tight">{currentUser.display_name}</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">@{currentUser.username}</p>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               {navItems.map(item => (
                 <Link 
                   key={item.label} 
                   href={item.href} 
                   onClick={item.href === '/' ? handleHomeClick : undefined}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl"
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl active:bg-frog-50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     <item.icon size={20} className="text-gray-400"/>
@@ -204,7 +228,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               </Link>
               
               <div className="pt-4 mt-4 border-t space-y-2">
-                <button onClick={handleLogout} className="w-full p-4 border-2 border-red-50 text-red-500 rounded-2xl font-black text-xs flex items-center justify-center gap-2"><LogOut size={16}/> ออกจากระบบ</button>
+                <button onClick={handleLogout} className="w-full p-4 border-2 border-red-50 text-red-500 rounded-2xl font-black text-xs flex items-center justify-center gap-2 active:scale-95 transition-transform"><LogOut size={16}/> ออกจากระบบ</button>
                 <a href="https://roleplayth.com" target="_blank" rel="noopener noreferrer" className="w-full p-4 bg-gray-100 text-gray-600 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-gray-200 transition-colors">
                   <ArrowLeft size={16}/> กลับ RoleplayTH
                 </a>
@@ -238,7 +262,10 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           );
         })}
         <Link href={profileLink} className={`flex flex-col items-center gap-0.5 ${pathname.startsWith('/profile') ? 'text-frog-500' : 'text-gray-400'}`}>
-          <div className="p-1"><User size={22} className={pathname.startsWith('/profile') ? 'stroke-[2.5px]' : 'stroke-[1.5px]'} /></div>
+          <div className="p-1">
+            {/* ✅ ใช้รูปโปรไฟล์แทนไอคอนในแถบล่าง (Mobile) เพื่อความเท่ */}
+            <img src={currentUser?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className={`w-6 h-6 rounded-full object-cover border-2 ${pathname.startsWith('/profile') ? 'border-frog-500' : 'border-transparent'}`} alt=""/>
+          </div>
           <span className="text-[9px] font-black uppercase tracking-tighter">โปรไฟล์</span>
         </Link>
       </nav>
