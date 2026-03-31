@@ -46,7 +46,6 @@ export default function ProfilePage() {
 
   // Modals
   const [showDeletePostConfirm, setShowDeletePostConfirm] = useState(false);
-  const [postToDelete, setPostToDelete] = useState<string | null>(null);
   const [showAddFamilyModal, setShowAddFamilyModal] = useState(false);
   const [familyLabel, setFamilyLabel] = useState('');
   const [showFamilyDeleteConfirm, setShowFamilyDeleteConfirm] = useState(false);
@@ -81,7 +80,7 @@ export default function ProfilePage() {
         else if (friendStatusRes.data.sender_id === authUser.id) setFriendshipStatus('sent');
         else setFriendshipStatus('pending');
       } else { setFriendshipStatus('none'); }
-    } catch (err) { console.error('Error loading profile:', err); } 
+    } catch (err) { console.error(err); } 
     finally { setIsLoading(false); }
   };
 
@@ -156,7 +155,6 @@ export default function ProfilePage() {
       <div className="max-w-7xl mx-auto px-4 md:px-6 pb-20">
         <div className="flex flex-col lg:flex-row gap-8">
           <div className="flex-1 min-w-0 space-y-8">
-            {/* Profile Header */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-soft bg-white rounded-[3rem]">
               <div className="h-44 md:h-72 relative" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
               <div className="px-6 md:px-10 pb-8">
@@ -168,8 +166,8 @@ export default function ProfilePage() {
                     <div className="text-center lg:text-left">
                       <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight leading-tight">{profileUser.display_name}</h1>
                       <div className="flex flex-col lg:flex-row lg:items-center gap-2">
-                        {/* ✅ ขยายขนาด @username และปรับเป็น lowercase */}
-                        <p className="text-gray-400 font-bold text-sm md:text-base lowercase">@{profileUser.username}</p>
+                        {/* ✅ @username ใหญ่ขึ้น + lowercase */}
+                        <p className="text-gray-400 font-bold text-sm md:text-lg lowercase">@{profileUser.username}</p>
                         <div className="hidden lg:block w-1 h-1 rounded-full bg-gray-200" />
                         <div className="flex items-center justify-center lg:justify-start gap-1.5 text-[9px] font-black text-gray-300 uppercase tracking-widest">
                           <Award size={10} style={{ color: themeColor }} /> Since {new Date(profileUser.created_at).getFullYear()}
@@ -187,7 +185,6 @@ export default function ProfilePage() {
                         {!isOwnProfile && friendshipStatus === 'accepted' && (
                           <button onClick={() => setShowAddFamilyModal(true)} className="px-6 py-3 rounded-xl border font-black text-[10px] uppercase flex items-center gap-2 transition-all hover:scale-105 shadow-sm" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: themeColor }}><Plus size={14} /> เพิ่มคนสำคัญ</button>
                         )}
-                        {friendshipStatus === 'none' && <button onClick={() => {}} className="px-6 py-3 rounded-xl text-white font-black text-[10px] uppercase flex items-center gap-2 shadow-md" style={{ backgroundColor: themeColor }}><UserPlus size={14} /> เพิ่มเพื่อน</button>}
                       </>
                     )}
                   </div>
@@ -241,10 +238,9 @@ export default function ProfilePage() {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl p-8 text-center animate-in zoom-in duration-200">
             <div className="w-20 h-20 bg-frog-50 text-frog-500 rounded-3xl flex items-center justify-center mx-auto mb-6"><Heart size={40} /></div>
-            <h2 className="text-2xl font-black text-gray-900 mb-2">เพิ่ม {profileUser.display_name}</h2>
-            <p className="text-sm text-gray-500 font-bold mb-8">ระบุความสัมพันธ์ที่จะแสดงที่หน้าโปรไฟล์ของคุณ</p>
+            <h2 className="text-2xl font-black text-gray-900 mb-2">เพิ่มคนสำคัญ</h2>
             <input type="text" value={familyLabel} onChange={(e) => setFamilyLabel(e.target.value)} placeholder="เช่น พี่ชาย, เพื่อนสนิท" className="input-minimal w-full mb-6 text-center text-lg" autoFocus />
-            <div className="flex gap-3"><button onClick={handleAddFamilyMember} className="btn-primary flex-1 py-4 rounded-2xl font-black text-white shadow-lg" style={{ backgroundColor: themeColor }}>บันทึก</button><button onClick={() => setShowAddFamilyModal(false)} className="px-6 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black">ยกเลิก</button></div>
+            <div className="flex gap-3"><button onClick={handleAddFamilyMember} className="btn-primary flex-1 py-4 rounded-2xl font-black text-white shadow-lg" style={{ backgroundColor: themeColor }}>บันทึก</button><button onClick={() => setShowAddFamilyModal(false)} className="px-6 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black transition-all">ยกเลิก</button></div>
           </div>
         </div>
       )}
