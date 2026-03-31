@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, RefreshCcw, Palette, UserPen, Eraser, MessageSquare } from 'lucide-react';
+import { Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, RefreshCcw, Palette, UserPen, Eraser, MessageSquare, Users, UserMinus } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ChatWindow({ chatId, chatData: initialChatData, currentUser, onBack, onRefreshChats }: any) {
@@ -18,6 +18,10 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   const [tempColor, setTempColor] = useState('');
   const lastId = useRef(chatId);
 
+  // ✅ States สำหรับจัดการกลุ่ม
+  const [participants, setParticipants] = useState<any[]>([]);
+  const [myRole, setMyRole] = useState('member');
+
   useEffect(() => {
     loadMessages();
     markAsRead();
@@ -32,8 +36,27 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     }
   }, [initialChatData, chatId, showSettings]);
 
+  // ✅ โหลดรายชื่อสมาชิกกลุ่มเมื่อเปิดหน้าตั้งค่า
+  useEffect(() => {
+    if (showSettings && initialChatData.is_group) {
+      loadParticipants();
+    }
+  }, [showSettings, chatId]);
+
+  const loadParticipants = async () => {
+    const { data } = await supabase
+      .from('chat_participants')
+      .select('role, user_id, user:user_id(id, username, display_name, profile_img_url)')
+      .eq('chat_id', chatId);
+
+    if (data) {
+      setParticipants(data);
+      const me = data.find(p => p.user_id === currentUser.id);
+      setMyRole(me?.role || 'member');
+    }
+  };
+
   const loadMessages = async () => {
-    // ✅ ดึงข้อมูลผู้ส่ง (sender) มาด้วย เพื่อเอารูปโปรไฟล์ไปโชว์
     const { data } = await supabase
       .from('messages')
       .select('*, sender:users!messages_sender_id_fkey(id, display_name, profile_img_url)')
@@ -104,6 +127,30 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     }
   };
 
+  // ✅ ฟังก์ชันเตะคนออกจากกลุ่ม
+  const handleKickMember = async (targetUserId: string, targetName: string) => {
+    if (!confirm(`คุณต้องการเตะ ${targetName} ออกจากกลุ่มใช่หรือไม่?`)) return;
+    try {
+      // ลบออกจาก chat_participants
+      await supabase.from('chat_participants').delete().eq('chat_id', chatId).eq('user_id', targetUserId);
+      
+      // ส่งข้อความระบบแจ้งให้คนอื่นรู้
+      await supabase.from('messages').insert({ 
+        chat_id: chatId, 
+        sender_id: currentUser.id, 
+        content: `${currentUser.display_name} ได้เตะ ${targetName} ออกจากกลุ่ม`, 
+        event: 'system' 
+      });
+
+      // รีเฟรชข้อมูล
+      loadParticipants();
+      loadMessages();
+    } catch (err) {
+      console.error('Error kicking member:', err);
+      alert('เกิดข้อผิดพลาดในการเตะสมาชิก');
+    }
+  };
+
   const otherUser = initialChatData.other_user;
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -125,7 +172,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         <div className="flex items-center gap-3 min-w-0">
           <button onClick={onBack} className="md:hidden p-1 text-gray-400"><ChevronLeft /></button>
           <Link href={otherUser?.username ? `/profile/${otherUser.username}` : '#'} className="flex items-center gap-3">
-            <img src={(initialChatData.is_group ? initialChatData.group_img_url : otherUser?.profile_img_url) || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border" />
+            <img src={(initialChatData.is_group ? initialChatData.group_img_url : otherUser?.profile_img_url) || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border shadow-sm" />
             <h3 className="font-bold text-sm truncate">{initialChatData.is_group ? initialChatData.name : (theirNick || otherUser?.display_name || 'ผู้ใช้ Ribbi')}</h3>
           </Link>
         </div>
@@ -151,8 +198,6 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
           
           return (
             <div key={m.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} group items-end gap-2`}>
-              
-              {/* ✅ เพิ่มรูปโปรไฟล์ของเพื่อน (ถ้าไม่ใช่ข้อความเรา) */}
               {!isMe && (
                 <div className="flex-shrink-0 mb-1">
                   <img 
@@ -191,7 +236,41 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
             <span className="font-black text-xs uppercase text-gray-400 tracking-widest">การตั้งค่า</span>
             <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-white rounded-full"><X size={20}/></button>
           </div>
-          <div className="p-6 space-y-8 flex-1 overflow-y-auto pb-24">
+          <div className="p-6 space-y-8 flex-1 overflow-y-auto pb-24 custom-scrollbar">
+            
+            {/* ✅ แสดงสมาชิกในกลุ่มเฉพาะเมื่อเป็นแชทกลุ่ม */}
+            {initialChatData.is_group && participants.length > 0 && (
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Users size={14}/> สมาชิกในกลุ่ม ({participants.length})</h4>
+                <div className="space-y-2">
+                  {participants.map(p => (
+                    <div key={p.user?.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-2xl border border-gray-100">
+                      <Link href={`/profile/${p.user?.username}`} className="flex items-center gap-3 min-w-0 flex-1 hover:opacity-80 transition-opacity">
+                        <img src={p.user?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover shadow-sm" alt="" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-gray-900 truncate">{p.user?.display_name}</p>
+                          <p className={`text-[9px] font-black uppercase tracking-widest ${p.role === 'admin' ? 'text-frog-500' : 'text-gray-400'}`}>
+                            {p.role}
+                          </p>
+                        </div>
+                      </Link>
+                      
+                      {/* ปุ่มเตะ: แอดมินถึงจะเห็น และไม่สามารถเตะตัวเองได้ */}
+                      {myRole === 'admin' && p.user?.id !== currentUser.id && (
+                        <button 
+                          onClick={() => handleKickMember(p.user?.id, p.user?.display_name)}
+                          className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all ml-2"
+                          title="เตะออกจากกลุ่ม"
+                        >
+                          <UserMinus size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><UserPen size={14}/> ตั้งชื่อเล่น</h4>
               <div className="space-y-3">
@@ -199,6 +278,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                 {!initialChatData.is_group && <input value={theirNick} onChange={e => setTheirNick(e.target.value)} placeholder="ชื่อเล่นเพื่อน..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none" />}
               </div>
             </div>
+            
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Palette size={14}/> สีธีมแชท</h4>
               <div className="grid grid-cols-5 gap-3">
@@ -211,6 +291,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                 <input type="color" value={tempColor} onChange={e => setTempColor(e.target.value)} className="w-10 h-8 rounded cursor-pointer bg-transparent border-none" />
               </div>
             </div>
+            
             <button onClick={clearHistoryForMe} className="w-full p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2 tracking-widest hover:bg-red-100 transition-colors"><Eraser size={14}/> ล้างประวัติการแชท (ฝั่งคุณ)</button>
           </div>
           
