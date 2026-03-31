@@ -44,7 +44,6 @@ export default function ProfilePage() {
   const [friends, setFriends] = useState<User[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Modals
   const [showDeletePostConfirm, setShowDeletePostConfirm] = useState(false);
   const [showAddFamilyModal, setShowAddFamilyModal] = useState(false);
   const [familyLabel, setFamilyLabel] = useState('');
@@ -80,22 +79,36 @@ export default function ProfilePage() {
         else if (friendStatusRes.data.sender_id === authUser.id) setFriendshipStatus('sent');
         else setFriendshipStatus('pending');
       } else { setFriendshipStatus('none'); }
-    } catch (err) { console.error(err); } 
+    } catch (err) { console.error('Error loading profile:', err); } 
     finally { setIsLoading(false); }
+  };
+
+  // ✅ ปุ่มข้อความ: วิ่งไปหน้าแชทโดยใช้ RPC
+  const handleSendMessage = async () => {
+    if (!currentUser || !profileUser) return;
+    try {
+      const { data: chatId, error } = await supabase.rpc('get_or_create_dm', { 
+        uid_a: currentUser.id, 
+        uid_b: profileUser.id 
+      });
+      if (error) throw error;
+      router.push(`/messages?chat=${chatId}`);
+    } catch (err) {
+      console.error('Chat error:', err);
+      router.push('/messages');
+    }
   };
 
   const handleAddFamilyMember = async () => {
     if (!currentUser || !profileUser || !familyLabel.trim()) return;
-    const { error } = await supabase.from('family_members').insert({
+    await supabase.from('family_members').insert({
       user_id: currentUser.id,
       member_user_id: profileUser.id,
       relationship_label: familyLabel.trim()
     });
-    if (!error) {
-      setShowAddFamilyModal(false);
-      setFamilyLabel('');
-      setRefreshTrigger(t => t + 1);
-    }
+    setShowAddFamilyModal(false);
+    setFamilyLabel('');
+    setRefreshTrigger(t => t + 1);
   };
 
   const handleRemoveFamilyMember = async () => {
@@ -135,7 +148,7 @@ export default function ProfilePage() {
           <div className="space-y-3">
             <p className="text-[10px] font-black text-gray-400 uppercase px-1">ครอบครัวและคนสำคัญ</p>
             {familyMembers.map((fm) => (
-              <div key={fm.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-2xl">
+              <div key={fm.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-2xl group transition-all">
                 <img src={fm.member?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-9 h-9 rounded-xl object-cover" />
                 <div className="flex-1 min-w-0">
                   <Link href={`/profile/${fm.member?.username}`} className="font-bold text-xs hover:underline block truncate text-gray-800">{fm.member?.display_name}</Link>
@@ -166,11 +179,11 @@ export default function ProfilePage() {
                     <div className="text-center lg:text-left">
                       <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight leading-tight">{profileUser.display_name}</h1>
                       <div className="flex flex-col lg:flex-row lg:items-center gap-2">
-                        {/* ✅ @username ใหญ่ขึ้น + lowercase */}
+                        {/* ✅ @username ใหญ่ขึ้น + lowercase ตามสั่ง */}
                         <p className="text-gray-400 font-bold text-sm md:text-lg lowercase">@{profileUser.username}</p>
-                        <div className="hidden lg:block w-1 h-1 rounded-full bg-gray-200" />
-                        <div className="flex items-center justify-center lg:justify-start gap-1.5 text-[9px] font-black text-gray-300 uppercase tracking-widest">
-                          <Award size={10} style={{ color: themeColor }} /> Since {new Date(profileUser.created_at).getFullYear()}
+                        <div className="hidden lg:block w-1 h-1 rounded-full bg-gray-200 mx-2" />
+                        <div className="flex items-center justify-center lg:justify-start gap-1.5 text-[10px] font-black text-gray-300 uppercase tracking-widest">
+                          <Award size={12} style={{ color: themeColor }} /> Since {new Date(profileUser.created_at).getFullYear()}
                         </div>
                       </div>
                     </div>
@@ -178,13 +191,14 @@ export default function ProfilePage() {
 
                   <div className="flex flex-row gap-2 w-full lg:w-auto justify-center lg:mb-4">
                     {isOwnProfile ? (
-                      <Link href="/profile/edit" className="flex-1 lg:flex-none justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 text-white shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><Edit size={14} /> แก้ไขโปรไฟล์</Link>
+                      <Link href="/profile/edit" className="flex-1 lg:flex-none justify-center font-black text-[10px] uppercase tracking-widest px-8 py-3.5 rounded-xl flex items-center gap-2 text-white shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><Edit size={16} /> แก้ไขโปรไฟล์</Link>
                     ) : (
                       <>
-                        <button onClick={() => {}} className="flex-1 lg:flex-none justify-center btn-secondary font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-900 hover:text-white transition-all shadow-sm"><MessageCircle size={14} /> ข้อความ</button>
+                        <button onClick={handleSendMessage} className="flex-1 lg:flex-none justify-center btn-secondary font-black text-[10px] uppercase tracking-widest px-8 py-3.5 rounded-xl flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-900 hover:text-white transition-all shadow-sm"><MessageCircle size={16} /> ข้อความ</button>
                         {!isOwnProfile && friendshipStatus === 'accepted' && (
-                          <button onClick={() => setShowAddFamilyModal(true)} className="px-6 py-3 rounded-xl border font-black text-[10px] uppercase flex items-center gap-2 transition-all hover:scale-105 shadow-sm" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: themeColor }}><Plus size={14} /> เพิ่มคนสำคัญ</button>
+                          <button onClick={() => setShowAddFamilyModal(true)} className="px-8 py-3.5 rounded-xl border font-black text-[10px] uppercase flex items-center gap-2 transition-all hover:scale-105 shadow-sm" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: themeColor }}><Plus size={16} /> เพิ่มคนสำคัญ</button>
                         )}
+                        {friendshipStatus === 'none' && <button onClick={() => {}} className="px-8 py-3.5 rounded-xl text-white font-black text-[10px] uppercase flex items-center gap-2 shadow-md" style={{ backgroundColor: themeColor }}><UserPlus size={16} /> เพิ่มเพื่อน</button>}
                       </>
                     )}
                   </div>
@@ -228,7 +242,12 @@ export default function ProfilePage() {
             <RelationshipWidget />
             <div className="card-minimal bg-white p-6 rounded-3xl border border-gray-100 shadow-soft">
               <div className="flex items-center justify-between mb-5 px-1"><h3 className="font-black text-gray-900 text-[11px] uppercase tracking-widest flex items-center gap-2"><Users className="w-4 h-4" style={{ color: themeColor }} /> เพื่อน</h3><Link href={`/profile/${profileUser.username}/friends`} className="text-[10px] font-black text-frog-600">ดูทั้งหมด</Link></div>
-              <div className="grid grid-cols-3 gap-3">{friends.slice(0, 9).map(f => (<Link key={f.id} href={`/profile/${f.username}`} className="group flex flex-col items-center gap-2"><img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full aspect-square rounded-2xl object-cover shadow-sm group-hover:scale-105 transition" /><p className="text-[10px] font-black text-center truncate w-full text-gray-500">{f.display_name.split(' ')[0]}</p></Link>))}</div>
+              <div className="grid grid-cols-3 gap-3">{friends.slice(0, 9).map(f => (
+                <Link key={f.id} href={`/profile/${f.username}`} className="group flex flex-col items-center gap-2 transition-all hover:scale-105">
+                  <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full aspect-square rounded-2xl object-cover shadow-sm" />
+                  <p className="text-[10px] font-black text-center truncate w-full text-gray-500">{f.display_name.split(' ')[0]}</p>
+                </Link>
+              ))}</div>
             </div>
           </div>
         </div>
