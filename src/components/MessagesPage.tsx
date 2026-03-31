@@ -1,27 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
-import ChatList from '@/components/chat/ChatList';
-import ChatWindow from '@/components/chat/ChatWindow';
+import ChatList from './chat/ChatList';
+import ChatWindow from './chat/ChatWindow';
 import { MessageSquare, Loader2 } from 'lucide-react';
-import { useOnlineStatus } from '@/hooks/useOnlineStatus';
-
-// ✅ Singleton Audio
-let notificationAudio: HTMLAudioElement | null = null;
-if (typeof window !== 'undefined') {
-  notificationAudio = new Audio('/sounds/ribbi.wav');
-  notificationAudio.volume = 0.5;
-  notificationAudio.preload = 'auto';
-}
-
-const playNotificationSound = () => {
-  if (notificationAudio) {
-    notificationAudio.currentTime = 0;
-    notificationAudio.play().catch(() => {});
-  }
-};
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 export interface Chat {
   id: string;
@@ -43,10 +28,10 @@ export interface Chat {
   unread_count: number;
 }
 
-// 🛡️ ระบบ Batching: ป้องกัน URL API ยาวเกินไปจน Error 502/524
+// 🛡️ ป้องกัน API URL ยาวเกินไป (Error 502/524)
 const fetchInChunks = async (table: string, select: string, column: string, ids: string[]) => {
   if (!ids || ids.length === 0) return [];
-  const chunkSize = 100;
+  const chunkSize = 80;
   const results = [];
   for (let i = 0; i < ids.length; i += chunkSize) {
     const chunk = ids.slice(i, i + chunkSize);
@@ -64,11 +49,10 @@ export default function MessagesPage() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 🔥 ใช้สถานะออนไลน์จาก RAM (Presence) แทน Database
+  // 🔥 ใช้ Presence RAM แทน Database
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
 
   const selectedChatIdRef = useRef<string | null>(null);
-  const isWindowFocusedRef = useRef(true);
   const currentUserRef = useRef<any>(null);
   const chatsRef = useRef<Chat[]>([]);
 
@@ -81,24 +65,17 @@ export default function MessagesPage() {
   useEffect(() => {
     const chatIdFromUrl = searchParams.get('chat');
     if (chatIdFromUrl) setSelectedChatId(chatIdFromUrl);
-    
-    const handleFocus = () => { isWindowFocusedRef.current = true; };
-    const handleBlur = () => { isWindowFocusedRef.current = false; };
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('blur', handleBlur);
     loadCurrentUser();
-    
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('blur', handleBlur);
-    };
   }, []);
 
   useEffect(() => {
     if (currentUser) {
       loadChats();
-      const cleanup = setupRealtimeSubscription();
-      return cleanup;
+      const channel = supabase.channel('messages-live-updates')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+          loadChats(); // โหลดใหม่เมื่อมีข้อความเข้า
+        }).subscribe();
+      return () => { supabase.removeChannel(channel); };
     }
   }, [currentUser?.id]);
 
@@ -107,38 +84,6 @@ export default function MessagesPage() {
     if (!authUser) { router.push('/login'); return; }
     const { data: userData } = await supabase.from('users').select('id, username, display_name, profile_img_url').eq('id', authUser.id).single();
     setCurrentUser(userData);
-  };
-
-  const setupRealtimeSubscription = () => {
-    const msgChannel = supabase.channel('messages-page-live')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        const newMessage = payload.new as any;
-        if (newMessage?.event || !currentUserRef.current) return;
-
-        const currentChats = [...chatsRef.current];
-        const chatIndex = currentChats.findIndex(c => c.id === newMessage.chat_id);
-
-        if (chatIndex !== -1) {
-          const updatedChat = { ...currentChats[chatIndex] };
-          updatedChat.last_message_at = newMessage.created_at;
-          updatedChat.last_message_content = newMessage.content;
-          updatedChat.last_message_sender_id = newMessage.sender_id;
-          
-          if (newMessage.sender_id !== currentUserRef.current.id) {
-            if (newMessage.chat_id !== selectedChatIdRef.current || !isWindowFocusedRef.current) {
-              updatedChat.unread_count += 1;
-              playNotificationSound();
-            }
-          }
-          currentChats.splice(chatIndex, 1);
-          currentChats.unshift(updatedChat);
-          setChats(currentChats);
-        } else {
-          loadChats();
-        }
-      }).subscribe();
-
-    return () => { supabase.removeChannel(msgChannel); };
   };
 
   const loadChats = async () => {
@@ -153,6 +98,7 @@ export default function MessagesPage() {
       const chatIds = participantsData.map(p => p.chat_id);
       const lastMsgIds = participantsData.map(p => (p.chats as any)?.last_message_id).filter(Boolean);
 
+      // โหลดข้อมูลแบบ Chunk เพื่อประสิทธิภาพ
       const [messagesData, allPartsData, nicknamesData] = await Promise.all([
         fetchInChunks('messages', 'id, deleted_by, event', 'id', lastMsgIds),
         fetchInChunks('chat_participants', 'chat_id, user_id', 'chat_id', chatIds),
@@ -160,7 +106,7 @@ export default function MessagesPage() {
       ]);
 
       const otherUserIds = [...new Set(allPartsData.filter((p: any) => p.user_id !== currentUserRef.current.id).map((p: any) => p.user_id))];
-      const usersData = await fetchInChunks('users', 'id, username, display_name, profile_img_url', 'id', otherUserIds);
+      const usersData = await fetchInChunks('users', 'id, username, display_name, profile_img_url', 'id', otherUserIds as string[]);
       
       const deletedMap = new Map(messagesData.map((m: any) => [m.id, m.deleted_by || []]));
       const eventMap = new Map(messagesData.map((m: any) => [m.id, !!m.event]));
@@ -178,7 +124,6 @@ export default function MessagesPage() {
             last_message_at: isHidden ? null : c.last_message_at,
             members: memberIds.map((id: any) => {
                 const u = userMap.get(id);
-                // 🔍 เช็คออนไลน์จาก Presence (RAM)
                 return u ? { ...u, is_online: !!onlineUsers[id] } : null;
             }).filter(Boolean),
             unread_count: p.unread_count || 0
@@ -191,7 +136,6 @@ export default function MessagesPage() {
             last_message_at: isHidden ? null : c.last_message_at,
             other_user: otherUser ? { 
                 ...otherUser, 
-                // 🔍 เช็คออนไลน์จาก Presence (RAM)
                 is_online: !!onlineUsers[otherId], 
                 nickname: nickMap.get(`${c.id}:${otherId}`) 
             } : undefined,
@@ -214,7 +158,14 @@ export default function MessagesPage() {
         <ChatList chats={chats} currentUserId={currentUser.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={loadChats} />
       </div>
       <div className={`${selectedChatId ? 'flex' : 'hidden md:flex'} flex-1 bg-gray-50/30`}>
-        {selectedChatId ? <ChatWindow chatId={selectedChatId} currentUser={currentUser} onBack={() => setSelectedChatId(null)} onRefreshChats={loadChats} /> : <div className="flex-1 flex flex-col items-center justify-center text-gray-300"><MessageSquare className="w-20 h-20 mb-4 opacity-20" /><p className="font-black text-xs tracking-widest uppercase">เลือกข้อความเพื่อเริ่มคุย</p></div>}
+        {selectedChatId ? (
+          <ChatWindow chatId={selectedChatId} currentUser={currentUser} onBack={() => setSelectedChatId(null)} onRefreshChats={loadChats} />
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
+            <MessageSquare className="w-20 h-20 mb-4 opacity-20" />
+            <p className="font-black text-xs tracking-widest uppercase">เลือกข้อความเพื่อเริ่มคุย</p>
+          </div>
+        )}
       </div>
     </div>
   );
