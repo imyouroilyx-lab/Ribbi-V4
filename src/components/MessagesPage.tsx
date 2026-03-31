@@ -8,11 +8,31 @@ import ChatWindow from './chat/ChatWindow';
 import { MessageSquare, Loader2 } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
+// ✅ บรรทัดนี้ห้ามลบเด็ดขาด! เอาไว้ให้ ChatList เรียกใช้
+export interface Chat {
+  id: string;
+  is_group: boolean;
+  name: string | null;
+  group_img_url: string | null;
+  last_message_at: string | null;
+  last_message_content: string | null;
+  unread_count: number;
+  my_nickname?: string | null;
+  theme_color?: string | null;
+  other_user?: {
+    id: string;
+    username: string;
+    display_name: string;
+    profile_img_url: string | null;
+    is_online: boolean;
+  };
+}
+
 export default function MessagesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [chats, setChats] = useState<any[]>([]);
+  const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -38,7 +58,7 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (!currentUser?.id) return;
-    const channel = supabase.channel('msg-updates')
+    const channel = supabase.channel('msg-sync-v1')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => loadChats(currentUser.id))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_nicknames' }, () => loadChats(currentUser.id))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => loadChats(currentUser.id))
@@ -48,7 +68,6 @@ export default function MessagesPage() {
 
   const loadChats = async (userId: string) => {
     try {
-      // ✅ แก้ไข: เพิ่ม chat_id เข้าไปตรงๆ และดึง username มาด้วยเพื่อทำ Link โปรไฟล์
       const { data: partData, error: partError } = await supabase.from('chat_participants').select(`
         chat_id,
         unread_count, 
@@ -83,9 +102,9 @@ export default function MessagesPage() {
             is_online: !!onlineUsers[otherMember.id]
           } : undefined 
         };
-      }).filter(Boolean);
+      }).filter(Boolean) as Chat[];
 
-      setChats(formatted.sort((a: any, b: any) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
+      setChats(formatted.sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
     } catch (e) { console.error(e); }
   };
 
@@ -110,7 +129,7 @@ export default function MessagesPage() {
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-gray-300">
             <MessageSquare size={48} className="opacity-10 mb-4" />
-            <p className="font-bold text-xs uppercase tracking-widest">เลือกแชทเพื่อเริ่มสนทนา</p>
+            <p className="font-bold text-xs uppercase tracking-widest">เลือกแชทเพื่อเริ่มคุย</p>
           </div>
         )}
       </div>
