@@ -44,15 +44,16 @@ export default function ProfilePage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
+  
   const [friendshipStatus, setFriendshipStatus] = useState<'none' | 'pending' | 'accepted' | 'sent'>('none');
   const [friendshipId, setFriendshipId] = useState<string | null>(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
-  const [isAlreadyInMyFamily, setIsAlreadyInMyFamily] = useState(false);
-  const [blockStatus, setBlockStatus] = useState<'none' | 'blocked' | 'ignored'>('none');
   const [friends, setFriends] = useState<User[]>([]);
   const [recentVisitors, setRecentVisitors] = useState<User[]>([]);
+  
+  // ✅ เพิ่ม State ที่หายไปกลับมาให้แล้วครับ
+  const [isAddedToFamily, setIsAddedToFamily] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   
   const [showDeletePostConfirm, setShowDeletePostConfirm] = useState(false);
   const [postToDelete, setPostToDelete] = useState<string | null>(null);
@@ -60,6 +61,9 @@ export default function ProfilePage() {
   const [familyLabel, setFamilyLabel] = useState('');
   const [showFamilyDeleteConfirm, setShowFamilyDeleteConfirm] = useState(false);
   const [familyToDelete, setFamilyToDelete] = useState<string | null>(null);
+  
+  // ✅ เพิ่ม State สำหรับ Modal ลบเพื่อน
+  const [showUnfriendConfirm, setShowUnfriendConfirm] = useState(false);
 
   const observer = useRef<IntersectionObserver | null>(null);
   const lastPostElementRef = useCallback((node: HTMLDivElement | null) => {
@@ -99,13 +103,19 @@ export default function ProfilePage() {
       setHasMore((postsRes.data?.length || 0) === POSTS_PER_PAGE);
       setFamilyMembers(familyRes.data || []);
       setFriends((friendsRes.data || []).map((f: any) => f.sender_id === profileData.id ? f.receiver : f.sender));
+      
+      // อัปเดตสถานะ isAddedToFamily ว่าเราเพิ่มคนนี้เป็นคนสำคัญหรือยัง
       setIsAddedToFamily(!!checkFamilyRes.data);
 
       if (friendStatusRes.data) {
+        setFriendshipId(friendStatusRes.data.id); // เก็บ ID ไว้เผื่อใช้ลบเพื่อน
         if (friendStatusRes.data.status === 'accepted') setFriendshipStatus('accepted');
         else if (friendStatusRes.data.sender_id === authUser.id) setFriendshipStatus('sent');
         else setFriendshipStatus('pending');
-      } else { setFriendshipStatus('none'); }
+      } else { 
+        setFriendshipId(null);
+        setFriendshipStatus('none'); 
+      }
 
       // กรองคนเข้าชมซ้ำ เอาแค่ 5 คน
       const viewsData = viewsRes.data || [];
@@ -121,7 +131,7 @@ export default function ProfilePage() {
       }
       setRecentVisitors(uniqueVisitors);
 
-      // นับ View (Throttled 1 session)
+      // นับ View
       const viewKey = `v_${profileData.id}`;
       if (!sessionStorage.getItem(viewKey) && authUser.id !== profileData.id) {
         await supabase.from('profile_views').insert({ profile_id: profileData.id, visitor_id: authUser.id });
@@ -155,8 +165,25 @@ export default function ProfilePage() {
 
   const handleAddFriend = async () => {
     if (!currentUser || !profileUser) return;
-    await supabase.from('friendships').insert({ sender_id: currentUser.id, receiver_id: profileUser.id, status: 'pending' });
-    setFriendshipStatus('sent');
+    const { data } = await supabase.from('friendships').insert({ sender_id: currentUser.id, receiver_id: profileUser.id, status: 'pending' }).select().single();
+    if (data) { 
+      setFriendshipId(data.id); 
+      setFriendshipStatus('sent'); 
+    }
+  };
+
+  // ✅ ฟังก์ชันใหม่สำหรับลบเพื่อน (Unfriend)
+  const handleRemoveFriend = async () => {
+    if (!friendshipId) return;
+    try {
+      await supabase.from('friendships').delete().eq('id', friendshipId);
+      setFriendshipStatus('none');
+      setFriendshipId(null);
+      setShowUnfriendConfirm(false);
+      setRefreshTrigger(t => t + 1); // รีเฟรชหน้าเพื่อเอาโพสต์ของเพื่อนออกและอัปเดต Widget
+    } catch (error) {
+      console.error('Error removing friend:', error);
+    }
   };
 
   const handleAddFamilyMember = async () => {
@@ -302,18 +329,15 @@ export default function ProfilePage() {
           {/* --- Main Content Area --- */}
           <div className="flex-1 min-w-0 space-y-6 lg:space-y-8">
             
-            {/* ✅ PROFILE HEADER - REDESIGNED FOR PERFECT READABILITY */}
+            {/* Profile Header */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm bg-white rounded-[3rem]">
               
-              {/* Cover Image */}
               <div className="h-48 md:h-72 relative bg-gray-100" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }}>
-                {/* 🌟 Gradient ไล่สีขาวจากขอบล่างขึ้นไป เพื่อให้ภาพกลืนกับพื้นหลัง */}
                 <div className="absolute inset-x-0 bottom-0 h-32 md:h-48 bg-gradient-to-t from-white via-white/70 to-transparent"></div>
               </div>
               
               <div className="px-6 md:px-10 pb-8 bg-white relative z-10">
                 
-                {/* Row 1: รูปภาพโปรไฟล์ และ ปุ่ม Action (ทับรูปหน้าปก) */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 -mt-20 md:-mt-24 relative z-20 mb-4">
                   <div className="w-36 h-36 md:w-48 md:h-48 rounded-full p-2 shadow-2xl bg-white flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px]" style={{ borderColor: themeColor }}>
                     <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover shadow-inner bg-gray-50" />
@@ -328,24 +352,29 @@ export default function ProfilePage() {
                         <button onClick={handleSendMessage} className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 transition-all shadow-sm"><MessageCircle size={16} /> ข้อความ</button>
                         
                         {!isOwnProfile && friendshipStatus === 'accepted' && !isAddedToFamily && (
-                          <button onClick={() => setShowAddFamilyModal(true)} className="font-black text-xs px-5 py-3 rounded-xl border flex items-center gap-2 transition-all shadow-sm" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: themeColor }}><Plus size={16} /> เพิ่มคนสำคัญ</button>
+                          <button onClick={() => setShowAddFamilyModal(true)} className="font-black text-xs px-5 py-3 rounded-xl border flex items-center gap-2 transition-all shadow-sm active:scale-95" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: themeColor }}><Plus size={16} /> เพิ่มคนสำคัญ</button>
                         )}
                         
                         {friendshipStatus === 'none' && (
-                          <button onClick={handleAddFriend} className="text-white font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><UserPlus size={16} /> เพิ่มเพื่อน</button>
+                          <button onClick={handleAddFriend} className="text-white font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 shadow-md hover:opacity-90 transition-all active:scale-95" style={{ backgroundColor: themeColor }}><UserPlus size={16} /> เพิ่มเพื่อน</button>
                         )}
                         {friendshipStatus === 'sent' && (
                           <button className="px-5 py-3 rounded-xl bg-gray-50 text-gray-500 font-black text-xs flex items-center gap-2 cursor-default border border-gray-200"><Clock size={16} /> ส่งคำขอแล้ว</button>
                         )}
+                        {/* ✅ ปุ่มเพื่อนกันแล้ว (สามารถกดเพื่อลบเพื่อนได้) */}
                         {friendshipStatus === 'accepted' && (
-                          <button className="px-5 py-3 rounded-xl border font-black text-xs flex items-center gap-2 cursor-default bg-gray-50 text-gray-600 border-gray-200"><UserCheck size={16} /> เพื่อนกัน</button>
+                          <button 
+                            onClick={() => setShowUnfriendConfirm(true)} 
+                            className="px-5 py-3 rounded-xl border font-black text-xs flex items-center gap-2 bg-gray-50 text-gray-600 border-gray-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm active:scale-95"
+                          >
+                            <UserCheck size={16} /> เพื่อนกัน
+                          </button>
                         )}
                       </>
                     )}
                   </div>
                 </div>
 
-                {/* Row 2: ชื่อและข้อมูล (ดึงลงมาอยู่บนพื้นขาว อ่านง่าย 100%) */}
                 <div className="text-center md:text-left space-y-1 relative z-20">
                   <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 tracking-tight leading-none mb-2">{profileUser.display_name}</h1>
                   <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-sm font-bold text-gray-500">
@@ -355,7 +384,6 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {/* Row 3: Bio & Grid Details */}
                 <div className="mt-8 space-y-8">
                   {profileUser.bio && (
                     <div className="border-l-4 pl-4 py-1" style={{ borderColor: themeColor }}>
@@ -438,6 +466,19 @@ export default function ProfilePage() {
       )}
 
       <ConfirmModal isOpen={showFamilyDeleteConfirm} onClose={() => setShowFamilyDeleteConfirm(false)} onConfirm={handleRemoveFamilyMember} title="ลบข้อมูล?" message="คุณแน่ใจนะว่าจะลบความสัมพันธ์นี้?" variant="danger" />
+      
+      {/* ✅ Modal: ยืนยันการลบเพื่อน */}
+      <ConfirmModal 
+        isOpen={showUnfriendConfirm} 
+        onClose={() => setShowUnfriendConfirm(false)} 
+        onConfirm={handleRemoveFriend} 
+        title="เลิกเป็นเพื่อน?" 
+        message={`คุณต้องการเลิกเป็นเพื่อนกับ ${profileUser?.display_name} ใช่หรือไม่? หากเลิกเป็นเพื่อนคุณจะไม่เห็นโพสต์ของกันและกันอีกต่อไป`} 
+        variant="danger" 
+        confirmText="เลิกเป็นเพื่อน"
+      />
+      
+      <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => setShowDeletePostConfirm(false)} onConfirm={async () => { if(postToDelete) { await supabase.from('posts').delete().eq('id', postToDelete); setPosts(prev => prev.filter(p => p.id !== postToDelete)); setShowDeletePostConfirm(false); } }} title="ลบโพสต์?" message="ต้องการลบโพสต์นี้ถาวรใช่หรือไม่" variant="danger" />
     </NavLayout>
   );
 }
