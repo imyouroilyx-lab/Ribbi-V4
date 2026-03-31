@@ -88,11 +88,9 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [isLiked, setIsLiked] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // States สำหรับแก้ไขโพสต์
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [editContent, setEditContent] = useState(post.content || '');
 
-  // ✅ States สำหรับดูคนกดไลก์ (ปรับ Type เป็น any[] แก้ปัญหา TypeScript)
   const [showLikersModal, setShowLikersModal] = useState(false);
   const [likers, setLikers] = useState<any[]>([]); 
   const [isLoadingLikers, setIsLoadingLikers] = useState(false);
@@ -271,17 +269,28 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     finally { setIsSubmitting(false); }
   };
 
-  const handleDeleteComment = async (commentId: string) => {
+  const handleDeleteComment = async (c: Comment) => {
     if (!confirm('คุณต้องการลบความคิดเห็นนี้ใช่หรือไม่?')) return;
     try {
-      const { error } = await supabase.from('comments').delete().eq('id', commentId);
+      const { error } = await supabase.from('comments').delete().eq('id', c.id);
       if (error) throw error;
-      setComments(prev => prev.filter(c => c.id !== commentId).map(c => ({
-        ...c,
-        replies: c.replies?.filter(r => r.id !== commentId)
+
+      await supabase.from('notifications')
+        .delete()
+        .eq('post_id', post.id)
+        .eq('sender_id', c.author_id)
+        .in('type', ['comment', 'reply']);
+
+      setComments(prev => prev.filter(item => item.id !== c.id).map(item => ({
+        ...item,
+        replies: item.replies?.filter(r => r.id !== c.id)
       })));
       setCommentCount(prev => Math.max(0, prev - 1));
-    } catch (err) { console.error(err); }
+
+    } catch (err: any) { 
+      console.error(err);
+      alert('ลบไม่สำเร็จ กรุณาเช็กว่ารัน SQL แก้ RLS ตามที่แนะนำหรือยังครับ');
+    }
   };
 
   const handleUpdateComment = async (commentId: string) => {
@@ -306,7 +315,8 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       const mdMatch = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
       if (mdMatch) return <Link key={i} href={`/profile/${mdMatch[2]}`} className="text-frog-600 font-bold hover:underline">{mdMatch[1]}</Link>;
       if (part.startsWith('#')) return <span key={i} className="text-blue-500 font-bold">{part}</span>;
-      if (part.startsWith('http')) return <a key={i} href={part} target="_blank" className="text-blue-500 hover:underline">{part}</a>;
+      // ✅ ใส่ break-all ตรงนี้ เพื่อบังคับให้ URL ตัดคำลงมาบรรทัดใหม่
+      if (part.startsWith('http')) return <a key={i} href={part} target="_blank" className="text-blue-500 hover:underline break-all">{part}</a>;
       return <span key={i}>{part}</span>;
     });
   }, []);
@@ -338,7 +348,8 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             ) : (
               <div className="bg-gray-100 rounded-2xl px-3 py-2 inline-block max-w-full relative">
                 <p className="font-bold text-[11px] text-gray-900">{c.author?.display_name}</p>
-                <p className="text-sm text-gray-800 break-words">{renderTextWithTags(c.content)}</p>
+                {/* ✅ เพิ่ม break-words ตรงนี้ให้ข้อความคอมเมนต์ตัดคำเวลาเจอลิงก์ยาวๆ */}
+                <p className="text-sm text-gray-800 break-words whitespace-pre-wrap">{renderTextWithTags(c.content)}</p>
                 {c.image_url && <img src={c.image_url} onClick={() => setSelectedImage(c.image_url!)} className="mt-2 rounded-xl max-h-48 object-cover cursor-zoom-in hover:opacity-95 transition-all shadow-sm" alt="" />}
                 {(commentLikes[c.id] || 0) > 0 && <div className="absolute -bottom-2 -right-1 bg-white shadow-sm border rounded-full px-1.5 py-0.5 flex items-center gap-1"><Heart size={10} className="fill-red-500 text-red-500" /><span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span></div>}
               </div>
@@ -352,7 +363,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               {(isMyComment || canDeletePost) && !isEditing && (
                 <div className="flex gap-3 opacity-0 group-hover/comment:opacity-100 transition-opacity">
                   {isMyComment && <button onClick={() => { setEditingCommentId(c.id); setEditCommentContent(c.content); }} className="text-indigo-500">แก้ไข</button>}
-                  <button onClick={() => handleDeleteComment(c.id)} className="text-red-400">ลบ</button>
+                  <button onClick={() => handleDeleteComment(c)} className="text-red-400">ลบ</button>
                 </div>
               )}
             </div>
@@ -456,7 +467,8 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           </div>
         </div>
       ) : (
-        <div className="text-sm text-gray-900 mb-4 whitespace-pre-wrap leading-relaxed">{renderTextWithTags(post.content || '')}</div>
+        // ✅ เพิ่ม break-words ตรงนี้เพื่อบังคับให้ลิงก์หรือข้อความยาวๆ ในโพสต์ตัดคำ ไม่ทะลุกรอบ
+        <div className="text-sm text-gray-900 mb-4 whitespace-pre-wrap break-words leading-relaxed">{renderTextWithTags(post.content || '')}</div>
       )}
 
       {!isEditingPost && post.content && (
@@ -485,7 +497,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           <button onClick={handleLike} className={`transition-all active:scale-75 p-1 -ml-1 rounded-full ${isLiked ? 'text-red-500' : 'text-gray-400 hover:bg-red-50 hover:text-red-400'}`}>
             <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
           </button>
-          {/* ✅ กดที่ตัวเลขเพื่อดูว่าใครไลก์บ้าง */}
           <button onClick={handleViewLikers} className={`text-xs font-black transition-colors py-1 pr-2 ${likeCount > 0 ? 'text-gray-500 hover:text-gray-900 hover:underline cursor-pointer' : 'text-gray-400 cursor-default'}`}>
             {likeCount}
           </button>
@@ -529,7 +540,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </div>
       )}
 
-      {/* ✅ Modal แสดงรายชื่อคนกดไลก์ */}
+      {/* Modal แสดงรายชื่อคนกดไลก์ */}
       {showLikersModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowLikersModal(false)}>
           <div className="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl p-6 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
