@@ -13,22 +13,39 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // ข้อมูลแชทปัจจุบัน
   const [chatData, setChatData] = useState(initialChatData);
-  const [myNick, setMyNick] = useState(initialChatData.my_nickname || '');
-  const [theirNick, setTheirNick] = useState(initialChatData.other_user?.display_name || '');
-  const [tempColor, setTempColor] = useState(initialChatData.theme_color || '#22c55e');
+  
+  // ✅ States สำหรับการแก้ไข (เราจะไม่ให้มันโดนทับง่ายๆ)
+  const [myNick, setMyNick] = useState('');
+  const [theirNick, setTheirNick] = useState('');
+  const [tempColor, setTempColor] = useState('');
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const otherUser = chatData.other_user;
+  const lastChatId = useRef(chatId); // ใช้จดจำว่าล่าสุดอยู่ห้องไหน
 
   useEffect(() => {
+    // 1. โหลดข้อความและเคลียร์ Unread เสมอ
     loadMessages();
     markAsRead();
+    
+    // 2. อัปเดตข้อมูล Chat พื้นฐาน (ชื่อกลุ่ม, รูปกลุ่ม)
     setChatData(initialChatData);
-    setMyNick(initialChatData.my_nickname || '');
-    setTheirNick(initialChatData.other_user?.display_name || '');
-    setTempColor(initialChatData.theme_color || '#22c55e');
-  }, [chatId, initialChatData]);
+
+    // 3. ✅ ตรรกะใหม่: รีเซ็ตค่า Input เฉพาะตอน "ย้ายห้อง" เท่านั้น
+    if (lastChatId.current !== chatId) {
+      setMyNick(initialChatData.my_nickname || '');
+      setTheirNick(initialChatData.other_user?.display_name || '');
+      setTempColor(initialChatData.theme_color || '#22c55e');
+      lastChatId.current = chatId; // อัปเดตห้องล่าสุด
+    } else {
+      // ถ้าอยู่ห้องเดิม แต่ DB อัปเดต (เช่น สีเปลี่ยนจริงจากฝั่งอื่น) 
+      // เราอาจจะอยากให้อัปเดตตาม แต่ถ้าเรากำลังเลือกค้างไว้จะไม่ไปทับ
+      if (!showSettings) {
+         setTempColor(initialChatData.theme_color || '#22c55e');
+      }
+    }
+  }, [chatId, initialChatData, showSettings]);
 
   const loadMessages = async () => {
     const { data } = await supabase.from('messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true });
@@ -60,11 +77,9 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     loadMessages();
   };
 
-  // ✅ แก้ระบบเซฟให้ทำงานได้จริง 100%
   const saveAllSettings = async () => {
     setIsSaving(true);
     try {
-      // 1. เซฟชื่อเล่น (เรา/เขา)
       if (myNick !== chatData.my_nickname) {
         await supabase.from('chat_nicknames').upsert({ chat_id: chatId, target_user_id: currentUser.id, nickname: myNick }, { onConflict: 'chat_id,target_user_id' });
         await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} เปลี่ยนชื่อเล่นตัวเองเป็น ${myNick}`, event: 'system' });
@@ -73,16 +88,14 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         await supabase.from('chat_nicknames').upsert({ chat_id: chatId, target_user_id: otherUser.id, nickname: theirNick }, { onConflict: 'chat_id,target_user_id' });
         await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} เปลี่ยนชื่อเล่นให้เพื่อนเป็น ${theirNick}`, event: 'system' });
       }
-      // 2. เซฟสีธีม
       if (tempColor !== chatData.theme_color) {
         await supabase.from('chats').update({ theme_color: tempColor }).eq('id', chatId);
         await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} เปลี่ยนสีธีมแชท`, event: 'system' });
       }
-
       alert('บันทึกเรียบร้อย!');
       setShowSettings(false);
-      onRefreshChats(); // อัปเดตเมนูซ้าย
-      loadMessages(); // อัปเดตประวัติแชท
+      onRefreshChats();
+      loadMessages();
     } catch (e) { console.error(e); } finally { setIsSaving(false); }
   };
 
@@ -107,6 +120,8 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     }
   };
 
+  const otherUser = chatData.other_user;
+
   return (
     <div className="flex flex-col h-full bg-white w-full relative overflow-hidden">
       {/* Header */}
@@ -121,7 +136,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         <button onClick={() => setShowSettings(!showSettings)} className="p-2 text-gray-400 hover:bg-gray-100 rounded-full"><Settings size={20} /></button>
       </div>
 
-      {/* Messages Area */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fcfdfe]">
         {messages.map((m) => {
           if (m.event === 'system') return <div key={m.id} className="text-center text-[10px] text-gray-400 font-bold uppercase py-4 tracking-widest">{m.content}</div>;
@@ -147,39 +162,42 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         <div ref={scrollRef} />
       </div>
 
-      {/* Settings Panel */}
+      {/* Settings Modal */}
       {showSettings && (
         <div className="absolute right-0 top-0 bottom-0 w-full sm:w-80 bg-white border-l z-30 shadow-2xl flex flex-col animate-in slide-in-from-right">
           <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-            <span className="font-black text-xs uppercase text-gray-400">การตั้งค่า</span>
+            <span className="font-black text-xs uppercase text-gray-400">Settings</span>
             <button onClick={() => setShowSettings(false)}><X size={20}/></button>
           </div>
-          <div className="p-6 space-y-6 flex-1 overflow-y-auto pb-20">
+          <div className="p-6 space-y-6 flex-1 overflow-y-auto">
             <div className="space-y-3">
               <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><UserPen size={14}/> ชื่อเล่น</h4>
-              <input value={myNick} onChange={e => setMyNick(e.target.value)} placeholder="ชื่อเล่นคุณ..." className="w-full p-2.5 bg-gray-50 border rounded-xl text-sm" />
-              {!chatData.is_group && <input value={theirNick} onChange={e => setTheirNick(e.target.value)} placeholder="ชื่อเล่นเพื่อน..." className="w-full p-2.5 bg-gray-50 border rounded-xl text-sm" />}
+              <input value={myNick} onChange={e => setMyNick(e.target.value)} placeholder="ชื่อเล่นคุณ..." className="w-full p-2.5 bg-gray-50 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-frog-200" />
+              {!chatData.is_group && <input value={theirNick} onChange={e => setTheirNick(e.target.value)} placeholder="ชื่อเล่นเพื่อน..." className="w-full p-2.5 bg-gray-50 border rounded-xl text-sm outline-none focus:ring-2 focus:ring-frog-200" />}
             </div>
 
             <div className="space-y-3">
               <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Palette size={14}/> สีธีม</h4>
               <div className="grid grid-cols-5 gap-2">
                 {['#22c55e', '#3b82f6', '#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#000000', '#64748b', '#f97316'].map(c => (
-                  <button key={c} onClick={() => setTempColor(c)} className={`aspect-square rounded-full border-2 ${tempColor === c ? 'border-black scale-110' : 'border-white'}`} style={{ backgroundColor: c }} />
+                  <button key={c} onClick={() => setTempColor(c)} className={`aspect-square rounded-full border-2 transition-transform ${tempColor === c ? 'border-black scale-110' : 'border-white'}`} style={{ backgroundColor: c }} />
                 ))}
               </div>
-              <input type="color" value={tempColor} onChange={e => setTempColor(e.target.value)} className="w-full h-10 rounded-xl cursor-pointer bg-transparent" />
+              <div className="flex items-center gap-2 pt-2">
+                <span className="text-[10px] font-bold text-gray-400 uppercase">Custom:</span>
+                <input type="color" value={tempColor} onChange={e => setTempColor(e.target.value)} className="w-10 h-8 rounded cursor-pointer bg-transparent" />
+              </div>
             </div>
 
-            <button onClick={clearHistoryForMe} className="w-full p-3 bg-red-50 text-red-600 rounded-2xl text-xs font-bold flex items-center justify-center gap-2">
+            <button onClick={clearHistoryForMe} className="w-full p-3 bg-red-50 text-red-600 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-red-100 transition-colors">
               <Eraser size={16}/> ล้างประวัติการแชท (ฝั่งคุณ)
             </button>
           </div>
           
           <div className="p-4 bg-gray-50 border-t">
-            {/* ✅ ใช้ !bg-frog-600 เพื่อทับค่าใน globals.css */}
-            <button onClick={saveAllSettings} disabled={isSaving} className="w-full py-3 !bg-frog-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all disabled:opacity-50">
-              {isSaving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
+            {/* ✅ ใส่ !bg เพื่อให้เห็นปุ่มชัดเจน ไม่โดน globals.css กลืน */}
+            <button onClick={saveAllSettings} disabled={isSaving} className="w-full py-3 !bg-frog-600 !text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg hover:brightness-110 active:scale-95 disabled:opacity-50">
+              {isSaving ? 'Saving...' : 'ยืนยันการเปลี่ยน'}
             </button>
           </div>
         </div>
@@ -187,14 +205,8 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
 
       {/* Input */}
       <form onSubmit={handleSend} className="p-4 border-t bg-white flex items-center gap-3 relative">
-        {editingId && (
-          <div className="absolute -top-12 left-4 right-4 bg-blue-500 text-white p-2 rounded-t-xl text-[10px] font-bold flex justify-between animate-in slide-in-from-bottom-2">
-            <span>กำลังแก้ไข...</span>
-            <button type="button" onClick={() => { setEditingId(null); setInput(''); }}><X size={14}/></button>
-          </div>
-        )}
-        <input value={input} onChange={e => setInput(e.target.value)} placeholder="พิมพ์ข้อความ..." className="flex-1 p-3.5 bg-gray-100 rounded-2xl text-sm outline-none" />
-        <button type="submit" className="p-3.5 text-white rounded-2xl shadow-lg" style={{ backgroundColor: chatData.theme_color || '#22c55e' }}><Send size={20} /></button>
+        <input value={input} onChange={e => setInput(e.target.value)} placeholder="พิมพ์ข้อความ..." className="flex-1 p-3.5 bg-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-frog-200" />
+        <button type="submit" className="p-3.5 !bg-frog-600 text-white rounded-2xl shadow-lg" style={{ backgroundColor: chatData.theme_color || '#22c55e' }}><Send size={20} /></button>
       </form>
     </div>
   );
