@@ -36,7 +36,6 @@ export default function FriendsPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   
-  // ✅ เก็บรายชื่อเพื่อนทั้งหมดไว้ใน State เดียวเพื่อไม่ให้หน่วงตอนค้นหา
   const [allFriends, setAllFriends] = useState<any[]>([]); 
   const [pendingRequests, setPendingRequests] = useState<Friendship[]>([]);
   const [sentRequests, setSentRequests] = useState<Friendship[]>([]);
@@ -50,16 +49,14 @@ export default function FriendsPage() {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [selectedFriendshipId, setSelectedFriendshipId] = useState<string | null>(null);
 
-  // 1. Debounce Search (หน่วงเวลาพิมพ์)
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery);
-      setCurrentPage(1); // กลับไปหน้าแรกเสมอเวลาค้นหา
+      setCurrentPage(1);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // 2. โหลดข้อมูลทุกอย่าง "ครั้งเดียวจบ" ตอนเข้าหน้าเว็บ
   useEffect(() => {
     const loadAllData = async () => {
       setIsLoading(true);
@@ -75,7 +72,6 @@ export default function FriendsPage() {
         
         setCurrentUser(userData as any);
 
-        // โหลด คำขอเข้า, คำขอออก, และ เพื่อนทั้งหมด พร้อมกัน
         const [pending, sent, accepted] = await Promise.all([
           supabase.from('friendships')
             .select('*, sender:sender_id(id, username, display_name, profile_img_url)')
@@ -91,12 +87,12 @@ export default function FriendsPage() {
             .order('created_at', { ascending: false })
             .limit(30),
 
-          // ✅ ดึงเพื่อนทั้งหมดแบบไม่จำกัดหน้า (ดึงสูงสุด 3000 คน ซึ่งเกินพอ)
+          // ✅ เปลี่ยนมาดึง last_active แทน is_online เพื่อคำนวณสดๆ ให้เป๊ะเหมือนหน้า Home
           supabase.from('friendships')
             .select(`
               id, sender_id, receiver_id,
-              sender:users!friendships_sender_id_fkey(id, username, display_name, profile_img_url, is_online),
-              receiver:users!friendships_receiver_id_fkey(id, username, display_name, profile_img_url, is_online)
+              sender:users!friendships_sender_id_fkey(id, username, display_name, profile_img_url, last_active),
+              receiver:users!friendships_receiver_id_fkey(id, username, display_name, profile_img_url, last_active)
             `)
             .eq('status', 'accepted')
             .or(`sender_id.eq.${session.user.id},receiver_id.eq.${session.user.id}`)
@@ -106,10 +102,16 @@ export default function FriendsPage() {
         setPendingRequests(pending.data || []);
         setSentRequests(sent.data || []);
 
-        // สกัดเฉพาะข้อมูลเพื่อนออกมา
         const friendsList = (accepted.data || []).map((f: any) => {
           const friendData = f.sender_id === session.user.id ? f.receiver : f.sender;
-          return friendData ? { ...friendData, friendshipId: f.id } : null;
+          if (friendData) {
+            // ✅ คำนวณออนไลน์ 10 นาที เหมือนหน้าแรกเป๊ะๆ
+            const isUserOnline = friendData.last_active 
+              ? (Date.now() - new Date(friendData.last_active).getTime()) < 10 * 60 * 1000 
+              : false;
+            return { ...friendData, is_online: isUserOnline, friendshipId: f.id };
+          }
+          return null;
         }).filter(Boolean);
 
         setAllFriends(friendsList);
@@ -124,11 +126,8 @@ export default function FriendsPage() {
     loadAllData();
   }, [router]);
 
-  // ✅ 3. กรองชื่อเพื่อนจาก RAM และสั่งเรียง ก-ฮ / A-Z (โคตรเร็ว ค้นหาเจอ 100%)
   const filteredFriends = useMemo(() => {
     let list = allFriends;
-    
-    // ถ้ามีการพิมพ์ค้นหา ให้กรองก่อน
     if (debouncedSearch) {
       const lowerSearch = debouncedSearch.toLowerCase();
       list = list.filter(f => 
@@ -136,13 +135,9 @@ export default function FriendsPage() {
         f.username.toLowerCase().includes(lowerSearch)
       );
     }
-
-    // ✅ เรียงลำดับตัวอักษรภาษาไทยและอังกฤษด้วย localeCompare
     return [...list].sort((a, b) => a.display_name.localeCompare(b.display_name, 'th'));
-    
   }, [allFriends, debouncedSearch]);
 
-  // ✅ 4. ตัดแบ่งหน้า (Pagination) จากข้อมูลที่กรองและเรียงแล้ว
   const displayedFriends = useMemo(() => {
     const from = (currentPage - 1) * FRIENDS_PER_PAGE;
     return filteredFriends.slice(from, from + FRIENDS_PER_PAGE);
@@ -156,27 +151,21 @@ export default function FriendsPage() {
     try {
       const { error } = await supabase.from('friendships').update({ status: 'accepted' }).eq('id', id);
       if (error) throw error;
-      
       await notifyFriendAccept(senderId, currentUser.id);
       
       const acceptedUser = pendingRequests.find(r => r.id === id);
       setPendingRequests(prev => prev.filter(r => r.id !== id));
-      
       if (acceptedUser?.sender) {
-        // เพิ่มเข้า allFriends ทันที (useMemo จะจับเรียงตัวอักษรให้อัตโนมัติ)
-        setAllFriends(prev => [{ ...acceptedUser.sender, friendshipId: id }, ...prev]);
+        setAllFriends(prev => [{ ...acceptedUser.sender, is_online: true, friendshipId: id }, ...prev]);
       }
-    } catch (error) { console.error('Error accepting friend:', error); }
+    } catch (error) { console.error(error); }
   };
 
   const handleCancelRequest = async (id: string, type: 'pending' | 'sent') => {
     try {
       await supabase.from('friendships').delete().eq('id', id);
-      if (type === 'pending') {
-        setPendingRequests(prev => prev.filter(r => r.id !== id));
-      } else {
-        setSentRequests(prev => prev.filter(r => r.id !== id));
-      }
+      if (type === 'pending') setPendingRequests(prev => prev.filter(r => r.id !== id));
+      else setSentRequests(prev => prev.filter(r => r.id !== id));
     } catch (error) { console.error(error); }
   };
 
@@ -185,11 +174,10 @@ export default function FriendsPage() {
     try {
       const { error } = await supabase.from('friendships').delete().eq('id', selectedFriendshipId);
       if (error) throw error;
-      
       setAllFriends(prev => prev.filter(f => f.friendshipId !== selectedFriendshipId));
       setShowRemoveConfirm(false);
       setSelectedFriendshipId(null);
-    } catch (error) { console.error('Error removing friend:', error); }
+    } catch (error) { console.error(error); }
   };
 
   if (isLoading) {
@@ -215,30 +203,18 @@ export default function FriendsPage() {
           </div>
           <div className="relative w-full md:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="ค้นหาชื่อเพื่อน..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-gray-100 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-frog-500 outline-none transition-all text-sm font-bold shadow-inner"
-            />
+            <input type="text" placeholder="ค้นหาชื่อเพื่อน..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-9 pr-4 py-2.5 bg-gray-100 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-frog-500 outline-none transition-all text-sm font-bold shadow-inner" />
           </div>
         </div>
 
-        {/* Pending Requests */}
         {pendingRequests.length > 0 && !debouncedSearch && (
           <div className="space-y-3 animate-in slide-in-from-bottom-2">
-            <h2 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] flex items-center gap-2 px-1">
-              <UserPlus size={14} /> คำขอเป็นเพื่อน ({pendingRequests.length})
-            </h2>
+            <h2 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] flex items-center gap-2 px-1"><UserPlus size={14} /> คำขอเป็นเพื่อน ({pendingRequests.length})</h2>
             <div className="bg-indigo-50/50 rounded-[2rem] p-4 border border-indigo-100 grid grid-cols-1 sm:grid-cols-2 gap-3 shadow-inner">
                {pendingRequests.map(r => (
                  <div key={r.id} className="flex items-center gap-3 p-3 bg-white rounded-2xl shadow-sm border border-indigo-50 group hover:scale-[1.02] transition-transform">
                    <img src={r.sender?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-indigo-100 shadow-sm" alt="" />
-                   <div className="flex-1 min-w-0">
-                     <p className="font-bold text-xs truncate text-gray-900">{r.sender?.display_name}</p>
-                     <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">ส่งคำขอมาถึงคุณ</p>
-                   </div>
+                   <div className="flex-1 min-w-0"><p className="font-bold text-xs truncate text-gray-900">{r.sender?.display_name}</p><p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">ส่งคำขอมาถึงคุณ</p></div>
                    <div className="flex gap-1.5">
                       <button onClick={() => handleAcceptRequest(r.id, r.sender_id)} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-md active:scale-90"><Check size={14} strokeWidth={3} /></button>
                       <button onClick={() => handleCancelRequest(r.id, 'pending')} className="p-2 bg-gray-100 text-gray-400 rounded-xl hover:bg-red-50 hover:text-red-500 transition active:scale-90"><X size={14} strokeWidth={3} /></button>
@@ -249,19 +225,14 @@ export default function FriendsPage() {
           </div>
         )}
 
-        {/* Sent Requests */}
         {sentRequests.length > 0 && !debouncedSearch && (
           <div className="space-y-3 animate-in slide-in-from-bottom-2">
-            <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2 px-1">
-              <Send size={14} /> คำขอที่ส่งไปแล้ว ({sentRequests.length})
-            </h2>
+            <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2 px-1"><Send size={14} /> คำขอที่ส่งไปแล้ว ({sentRequests.length})</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                {sentRequests.map(r => (
                  <div key={r.id} className="flex items-center gap-3 p-3 bg-gray-50/50 rounded-2xl border border-gray-100 opacity-80 hover:opacity-100 transition-opacity">
                    <img src={r.receiver?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover opacity-60 grayscale" alt="" />
-                   <div className="flex-1 min-w-0">
-                     <p className="font-bold text-[10px] truncate text-gray-500">{r.receiver?.display_name}</p>
-                   </div>
+                   <div className="flex-1 min-w-0"><p className="font-bold text-[10px] truncate text-gray-500">{r.receiver?.display_name}</p></div>
                    <button onClick={() => handleCancelRequest(r.id, 'sent')} className="text-[9px] font-black text-gray-400 hover:text-red-500 uppercase tracking-widest transition-colors">ยกเลิก</button>
                  </div>
                ))}
@@ -269,26 +240,23 @@ export default function FriendsPage() {
           </div>
         )}
 
-        {/* Friends List Grid */}
         <div className="space-y-4 relative">
           <h2 className="text-[10px] font-black text-gray-900 uppercase tracking-[0.2em] px-1 flex items-center gap-2">
             <Users size={14} /> {debouncedSearch ? 'ผลการค้นหา' : 'รายชื่อเพื่อน'} ({totalFriendsCount})
           </h2>
-          
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {displayedFriends.length === 0 ? (
               <div className="col-span-full py-20 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-gray-100 shadow-sm animate-in zoom-in">
                 <Users size={40} className="mx-auto mb-4 text-gray-100" />
-                <p className="text-gray-400 text-xs font-black uppercase tracking-widest">
-                  {debouncedSearch ? 'ไม่พบชื่อเพื่อนที่ค้นหา' : 'ไม่พบรายชื่อเพื่อน'}
-                </p>
+                <p className="text-gray-400 text-xs font-black uppercase tracking-widest">{debouncedSearch ? 'ไม่พบชื่อเพื่อนที่ค้นหา' : 'ไม่พบรายชื่อเพื่อน'}</p>
               </div>
             ) : (
               displayedFriends.map(f => (
                 <div key={f.id} className="p-3 bg-white border border-gray-100 rounded-[1.5rem] hover:border-frog-200 hover:shadow-xl hover:shadow-frog-500/5 transition-all group flex items-center gap-3 animate-in slide-in-from-bottom-2">
                   <Link href={`/profile/${f.username}`} className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
                     <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border border-gray-50 shadow-sm" loading="lazy" alt="" />
-                    <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 border-2 border-white rounded-full shadow-sm ${f.is_online ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                    {/* ✅ แก้ไข CSS จุดเขียวให้เป็นมาตรฐานเดียวกับหน้า Home และซ่อนถ้าไม่ออนไลน์ */}
+                    {f.is_online && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full shadow-sm z-10"></div>}
                   </Link>
                   <div className="flex-1 min-w-0">
                     <Link href={`/profile/${f.username}`} className="font-black text-sm hover:text-frog-600 truncate block transition-colors leading-tight">{f.display_name}</Link>
@@ -303,7 +271,6 @@ export default function FriendsPage() {
           </div>
         </div>
 
-        {/* Pagination Controls */}
         {totalPages > 1 && (
           <div className="mt-8 flex items-center justify-center gap-3 pb-10">
             <button disabled={currentPage === 1} onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-3 bg-white border border-gray-100 rounded-2xl disabled:opacity-20 shadow-sm hover:bg-gray-50 active:scale-90 transition-all"><ChevronLeft size={18} /></button>
@@ -313,16 +280,7 @@ export default function FriendsPage() {
         )}
       </div>
 
-      <ConfirmModal
-        isOpen={showRemoveConfirm}
-        onClose={() => setShowRemoveConfirm(false)}
-        onConfirm={handleRemoveFriend}
-        title="เลิกเป็นเพื่อน?"
-        message="การลบเพื่อนจะทำให้คุณไม่เห็นโพสต์ของเขาในหน้า Feed อีกต่อไป"
-        confirmText="ยืนยันการลบ"
-        cancelText="ยกเลิก"
-        variant="danger"
-      />
+      <ConfirmModal isOpen={showRemoveConfirm} onClose={() => setShowRemoveConfirm(false)} onConfirm={handleRemoveFriend} title="เลิกเป็นเพื่อน?" message="การลบเพื่อนจะทำให้คุณไม่เห็นโพสต์ของเขาในหน้า Feed อีกต่อไป" confirmText="ยืนยันการลบ" cancelText="ยกเลิก" variant="danger" />
     </NavLayout>
   );
 }
