@@ -1,13 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase'; 
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Home, Users, User, Settings, LogOut, Menu, X, MessageCircle, Bell, ArrowLeft } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-
-const CACHE_KEY = 'ribbi_v4_nav_cache';
 
 export default function NavLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -19,44 +17,54 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
+  // ✅ ใช้ useRef เก็บตัวเล่นเสียงเพื่อประสิทธิภาพสูงสุดและลดโอกาสเกิด Leak
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
 
-  // ✅ ฟังก์ชันเล่นเสียงแจ้งเตือน
+  useEffect(() => {
+    setIsMounted(true);
+    // ✅ Preload เสียงเตรียมไว้ครั้งเดียวตอนโหลดแอป
+    audioRef.current = new Audio('/ribbi.wav');
+    audioRef.current.load();
+  }, []);
+
+  // ✅ ฟังก์ชันเล่นเสียงที่เรียกใช้จาก Memory โดยตรง (ลื่นแน่นอน)
   const playNotificationSound = () => {
-    try {
-      const audio = new Audio('/ribbi.wav');
-      audio.volume = 0.6; // ปรับความดัง 60%
-      audio.play().catch(e => console.log('เบราว์เซอร์บล็อกเสียง รอผู้ใช้คลิกหน้าเว็บก่อน:', e));
-    } catch (err) {
-      console.error('เล่นเสียงไม่สำเร็จ:', err);
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0; 
+      audioRef.current.volume = 0.5;
+      audioRef.current.play().catch(() => {
+        // บล็อกกรณี User ยังไม่เคย Interaction กับหน้าเว็บ
+      });
     }
   };
 
   useEffect(() => {
-    setIsMounted(true);
     setShowMobileMenu(false); 
     fetchLatestData();
   }, [pathname]);
 
-  // ✅ ระบบ Realtime Listener ที่แก้ 'postgres_changes' แล้ว
+  // ✅ ระบบ Realtime เฉพาะจุดที่จำเป็น (แจ้งเตือน & เพื่อน)
   useEffect(() => {
     if (!currentUser?.id) return;
 
+    // เปิด Channel เฉพาะตารางที่มีผลกระทบต่อ Notification โดยตรง
     const channel = supabase.channel('realtime_nav_alerts')
       .on(
-        'postgres_changes', // 🟢 แก้เป็น postgres_changes ตามที่ Supabase ต้องการ
+        'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `receiver_id=eq.${currentUser.id}` }, 
-        (payload: any) => {
-          setUnreadNotif((prev) => prev + 1);
+        () => {
+          setUnreadNotif(prev => prev + 1);
           playNotificationSound();
         }
       )
       .on(
-        'postgres_changes', // 🟢 แก้เป็น postgres_changes
+        'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'friendships', filter: `receiver_id=eq.${currentUser.id}` }, 
         (payload: any) => {
           if (payload.new.status === 'pending') {
-            setFriendReq((prev) => prev + 1);
+            setFriendReq(prev => prev + 1);
             playNotificationSound();
           }
         }
@@ -64,6 +72,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => {
+      // ✅ ลบ Channel ทิ้งทันทีเมื่อเลิกใช้ เพื่อป้องกัน Memory Leak 100%
       supabase.removeChannel(channel);
     };
   }, [currentUser?.id]);
@@ -166,7 +175,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         <button onClick={() => setShowMobileMenu(true)} className="p-2 bg-gray-50 rounded-xl active:scale-90 transition-all"><Menu size={24} className="text-gray-600"/></button>
       </header>
 
-      {/* 📱 Mobile Drawer Menu (Burger Menu) */}
+      {/* 📱 Mobile Drawer Menu */}
       {showMobileMenu && (
         <div className="lg:hidden fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)} />
@@ -205,7 +214,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* 🟢 Main Content */}
       <main className="flex-1 lg:ml-64 pt-16 pb-20 lg:pt-0 lg:pb-0 min-h-[100dvh]">
         <div className="max-w-7xl mx-auto p-4 md:p-6">{children}</div>
       </main>
