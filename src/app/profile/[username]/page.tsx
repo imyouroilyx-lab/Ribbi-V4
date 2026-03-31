@@ -17,11 +17,13 @@ import { calculateAge } from '../../../lib/utils';
 
 const POSTS_PER_PAGE = 10;
 
+// ✅ แก้ไข Interface ให้รองรับตัวแปรคนที่แสดงผล (display_user)
 interface FamilyMember {
   id: string;
+  user_id: string;
   member_user_id: string;
   relationship_label: string;
-  member: User;
+  display_user: User; 
 }
 
 const formatDate = (dateString: string) => {
@@ -85,10 +87,24 @@ export default function ProfilePage() {
       if (!profileData) { router.push('/'); return; }
       setProfileUser(profileData);
 
-      const [currentUserRes, postsRes, familyRes, friendsRes, friendStatusRes, checkFamilyRes, viewsRes] = await Promise.all([
+      // ✅ ดึงข้อมูลแบบไป-กลับ (ทั้งคนที่ profile นี้เพิ่ม และ คนอื่นที่เพิ่ม profile นี้)
+      const [
+        currentUserRes, 
+        postsRes, 
+        familyAddedByMeRes, 
+        familyAddedByThemRes, 
+        friendsRes, 
+        friendStatusRes, 
+        checkFamilyRes, 
+        viewsRes
+      ] = await Promise.all([
         supabase.from('users').select('*').eq('id', authUser.id).single(),
         supabase.from('posts').select('*, author:author_id(*), target:target_id(*)').eq('target_id', profileData.id).order('created_at', { ascending: false }).range(0, POSTS_PER_PAGE - 1),
+        // 1. คนที่โปรไฟล์นี้เพิ่มเป็นครอบครัว
         supabase.from('family_members').select('*, member:member_user_id(*)').eq('user_id', profileData.id),
+        // 2. คนอื่นที่เพิ่มโปรไฟล์นี้เป็นครอบครัว
+        supabase.from('family_members').select('*, owner:user_id(*)').eq('member_user_id', profileData.id),
+        
         supabase.from('friendships').select('*, sender:sender_id(*), receiver:receiver_id(*)').eq('status', 'accepted').or(`sender_id.eq.${profileData.id},receiver_id.eq.${profileData.id}`).order('created_at', { ascending: false }).limit(6),
         supabase.from('friendships').select('*').or(`and(sender_id.eq.${authUser.id},receiver_id.eq.${profileData.id}),and(sender_id.eq.${profileData.id},receiver_id.eq.${authUser.id})`).maybeSingle(),
         supabase.from('family_members').select('id').eq('user_id', authUser.id).eq('member_user_id', profileData.id).maybeSingle(),
@@ -98,10 +114,24 @@ export default function ProfilePage() {
       setCurrentUser(currentUserRes.data);
       setPosts(postsRes.data || []);
       setHasMore((postsRes.data?.length || 0) === POSTS_PER_PAGE);
-      setFamilyMembers(familyRes.data || []);
       setFriends((friendsRes.data || []).map((f: any) => f.sender_id === profileData.id ? f.receiver : f.sender));
-      
       setIsAddedToFamily(!!checkFamilyRes.data);
+
+      // ✅ ประมวลผลและกรองข้อมูลครอบครัวไม่ให้ซ้ำซ้อน
+      const myFamily = (familyAddedByMeRes.data || []).map((fm: any) => ({ ...fm, display_user: fm.member }));
+      const theirFamily = (familyAddedByThemRes.data || []).map((fm: any) => ({ ...fm, display_user: fm.owner }));
+      
+      const combinedFamily = [...myFamily, ...theirFamily];
+      const uniqueFamily: FamilyMember[] = [];
+      const seenFamilyIds = new Set();
+      
+      for (const fm of combinedFamily) {
+        if (fm.display_user && !seenFamilyIds.has(fm.display_user.id)) {
+          seenFamilyIds.add(fm.display_user.id);
+          uniqueFamily.push(fm);
+        }
+      }
+      setFamilyMembers(uniqueFamily);
 
       if (friendStatusRes.data) {
         setFriendshipId(friendStatusRes.data.id); 
@@ -113,7 +143,6 @@ export default function ProfilePage() {
         setFriendshipStatus('none'); 
       }
 
-      // กรองคนเข้าชมซ้ำ เอาแค่ 5 คน
       const viewsData = viewsRes.data || [];
       const uniqueVisitors: any[] = [];
       const seenIds = new Set();
@@ -127,7 +156,6 @@ export default function ProfilePage() {
       }
       setRecentVisitors(uniqueVisitors);
 
-      // บันทึก View 
       const viewKey = `v_${profileData.id}`;
       if (!sessionStorage.getItem(viewKey) && authUser.id !== profileData.id) {
         await supabase.from('profile_views').insert({ profile_id: profileData.id, visitor_id: authUser.id });
@@ -299,14 +327,20 @@ export default function ProfilePage() {
           <div className="space-y-3">
             <p className="text-xs font-bold text-gray-500 px-1">ครอบครัวและคนสำคัญ</p>
             <div className="space-y-2">
+              {/* ✅ โชว์ข้อมูลคนที่แสดงผล (display_user) แทน member เฉยๆ */}
               {familyMembers.map((fm) => (
                 <div key={fm.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl group transition-all hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100">
-                  <img src={fm.member?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-xl object-cover shadow-sm" />
+                  <img src={fm.display_user?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-xl object-cover shadow-sm" />
                   <div className="flex-1 min-w-0">
-                    <Link href={`/profile/${fm.member?.username}`} className="font-bold text-sm hover:underline block truncate text-gray-900">{fm.member?.display_name}</Link>
+                    <Link href={`/profile/${fm.display_user?.username}`} className="font-bold text-sm hover:underline block truncate text-gray-900">{fm.display_user?.display_name}</Link>
                     <p className="text-[10px] text-gray-500 font-bold uppercase">{fm.relationship_label}</p>
                   </div>
-                  {isOwnProfile && <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2"><Trash2 size={16} /></button>}
+                  {/* ✅ ลบได้เฉพาะความสัมพันธ์ที่ตัวเองเป็นคนตั้งต้นเพิ่ม (owner) เท่านั้น */}
+                  {currentUser.id === fm.user_id && (
+                    <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2">
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -321,28 +355,19 @@ export default function ProfilePage() {
       <div className="max-w-7xl mx-auto px-4 md:px-6 pb-24">
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
           
-          {/* --- Main Content Area --- */}
           <div className="flex-1 min-w-0 space-y-6 lg:space-y-8">
-            
-            {/* Profile Header */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm bg-white rounded-[3rem]">
               
-              {/* ✅ Cover Image (หน้าปกแสดงเต็ม ไม่โดนพื้นขาวบัง) */}
               <div className="h-48 md:h-80 relative w-full bg-slate-100" style={{ backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
               </div>
               
-              {/* ✅ กล่องเนื้อหา (พื้นขาว) */}
               <div className="px-6 md:px-10 pb-8 relative bg-white z-10">
                 
-                {/* 🌟 ย้าย -mt มาใส่ที่ตัวรูปภาพ (Avatar) โดยตรง แทนที่จะใส่ที่กรอบรวม */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 relative z-20 mb-4">
-                  
-                  {/* ✅ Avatar (ตัวนี้เท่านั้นที่จะดึงทะลุขึ้นไปทับปก) */}
                   <div className="w-36 h-36 md:w-48 md:h-48 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px] -mt-20 md:-mt-28" style={{ borderColor: themeColor }}>
                     <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover bg-gray-50" />
                   </div>
                   
-                  {/* Action Buttons (อยู่ในพื้นที่สีขาว ไม่ลอยขึ้นไป) */}
                   <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 pb-2 pt-2 md:pt-0">
                     {isOwnProfile ? (
                       <Link href="/profile/edit" className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 text-white shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><Edit size={16} /> แก้ไขโปรไฟล์</Link>
@@ -360,7 +385,6 @@ export default function ProfilePage() {
                         {friendshipStatus === 'sent' && (
                           <button className="px-5 py-3 rounded-xl bg-gray-50 text-gray-500 font-black text-xs flex items-center gap-2 cursor-default border border-gray-200"><Clock size={16} /> ส่งคำขอแล้ว</button>
                         )}
-                        {/* ปุ่มเพื่อนกันแล้ว (สามารถกดเพื่อลบเพื่อนได้) */}
                         {friendshipStatus === 'accepted' && (
                           <button 
                             onClick={() => setShowUnfriendConfirm(true)} 
@@ -415,7 +439,6 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Mobile-only Widgets */}
             <div className="lg:hidden space-y-6">
               <MusicWidget />
               <RecentVisitorsWidget />
@@ -423,7 +446,6 @@ export default function ProfilePage() {
               <RelationshipWidget />
             </div>
 
-            {/* Posts Feed */}
             {(friendshipStatus === 'accepted' || isOwnProfile) ? (
               <div className="space-y-6 lg:space-y-8">
                 <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={() => setRefreshTrigger(t => t + 1)} />
@@ -436,7 +458,6 @@ export default function ProfilePage() {
             ) : <div className="card-minimal bg-white/50 border-2 border-dashed border-gray-200 p-20 text-center rounded-[3rem] text-gray-500 font-bold">เพิ่มเพื่อนเพื่อดูโพสต์ของ {profileUser.display_name}</div>}
           </div>
 
-          {/* --- Right Sidebar (Desktop) --- */}
           <div className="hidden lg:flex flex-col w-[320px] xl:w-[340px] flex-shrink-0 space-y-6">
             <MusicWidget />
             <RecentVisitorsWidget />
@@ -448,7 +469,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Modal: เพิ่มคนสำคัญ */}
       {showAddFamilyModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl p-8 text-center animate-in zoom-in duration-200">
