@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ChatList from './chat/ChatList';
@@ -34,6 +34,9 @@ export default function MessagesPage() {
 
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
 
+  // ✅ หาข้อมูลแชทที่เลือกอยู่ เพื่อเอาชื่อไปแสดงใน Header
+  const currentSelectedChat = chats.find(c => c.id === selectedChatId);
+
   useEffect(() => {
     const chatIdFromUrl = searchParams.get('chat');
     if (chatIdFromUrl) setSelectedChatId(chatIdFromUrl);
@@ -41,8 +44,7 @@ export default function MessagesPage() {
     const init = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
-      
-      const { data: userData } = await supabase.from('users').select('id, username, display_name, profile_img_url').eq('id', authUser.id).single();
+      const { data: userData } = await supabase.from('users').select('*').eq('id', authUser.id).single();
       if (userData) {
         setCurrentUser(userData);
         await loadChats(userData.id);
@@ -52,58 +54,32 @@ export default function MessagesPage() {
     init();
   }, [searchParams]);
 
-  // ✅ ดักจับข้อความใหม่ Realtime (เพื่อให้รายการแชทอัปเดตทันที)
+  // ✅ ฟัง Realtime เพื่ออัปเดตรายการแชท
   useEffect(() => {
     if (!currentUser?.id) return;
-    const channel = supabase.channel('global-chat-updates')
+    const channel = supabase.channel('global-chats')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
-        loadChats(currentUser.id); // โหลดรายการแชทใหม่เมื่อมีการเคลื่อนไหว
+        loadChats(currentUser.id);
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { void supabase.removeChannel(channel); };
   }, [currentUser?.id]);
 
   const loadChats = async (userId: string) => {
-    if (!userId) return;
     try {
-      // ✅ ท่าไม้ตาย: Join ข้อมูลจบใน Query เดียว (ลด Connection Pool)
-      const { data, error } = await supabase
-        .from('chat_participants')
-        .select(`
-          unread_count,
-          chats:chat_id (
-            *,
-            members:chat_participants (
-              user:user_id (id, display_name, profile_img_url)
-            )
-          )
-        `)
-        .eq('user_id', userId);
-
-      if (error || !data) return;
-
-      const formatted: Chat[] = data.map((p: any) => {
+      const { data } = await supabase.from('chat_participants').select(`unread_count, chats:chat_id (*, members:chat_participants (user:user_id (id, display_name, profile_img_url)))`).eq('user_id', userId);
+      if (!data) return;
+      const formatted = data.map((p: any) => {
         const c = p.chats;
         if (!c) return null;
-        
-        // หาคู่สนทนา (คนที่ไม่ใช่เรา)
         const otherMember = c.is_group ? null : c.members.find((m: any) => m.user?.id !== userId)?.user;
-        
-        return {
-          ...c,
-          unread_count: p.unread_count || 0,
-          other_user: otherMember ? {
-            ...otherMember,
-            is_online: !!onlineUsers[otherMember.id]
-          } : undefined
-        };
+        return { ...c, unread_count: p.unread_count || 0, other_user: otherMember ? { ...otherMember, is_online: !!onlineUsers[otherMember.id] } : undefined };
       }).filter(Boolean);
-
-      setChats(formatted.sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
+      setChats(formatted.sort((a: any, b: any) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
     } catch (e) { console.error(e); }
   };
 
-  if (isLoading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-frog-500 w-10 h-10" /></div>;
+  if (isLoading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-frog-500" /></div>;
   if (!currentUser) return null;
 
   return (
@@ -112,10 +88,11 @@ export default function MessagesPage() {
         <ChatList chats={chats} currentUserId={currentUser.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={() => loadChats(currentUser.id)} />
       </div>
       <div className={`${selectedChatId ? 'flex' : 'hidden md:flex'} flex-1`}>
-        {selectedChatId ? (
+        {selectedChatId && currentSelectedChat ? (
           <ChatWindow 
-            key={selectedChatId} // ✅ ใส่ Key เพื่อให้ React รีเซ็ตคอมโพเนนต์เมื่อสลับห้อง
+            key={selectedChatId} 
             chatId={selectedChatId} 
+            chatData={currentSelectedChat} // ✅ ส่งข้อมูลแชทเข้าไป
             currentUser={currentUser} 
             onBack={() => setSelectedChatId(null)} 
             onRefreshChats={() => loadChats(currentUser.id)} 
@@ -123,7 +100,7 @@ export default function MessagesPage() {
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
             <MessageSquare size={48} className="opacity-10 mb-4" />
-            <p className="font-black text-xs tracking-widest uppercase">Select a chat</p>
+            <p className="font-black text-xs uppercase tracking-widest">Select conversation</p>
           </div>
         )}
       </div>
