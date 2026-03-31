@@ -36,7 +36,7 @@ export default function FriendsPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   
-  // ✅ เปลี่ยนมาเก็บรายชื่อเพื่อนทั้งหมดไว้ใน State เดียว
+  // ✅ เก็บรายชื่อเพื่อนทั้งหมดไว้ใน State เดียวเพื่อไม่ให้หน่วงตอนค้นหา
   const [allFriends, setAllFriends] = useState<any[]>([]); 
   const [pendingRequests, setPendingRequests] = useState<Friendship[]>([]);
   const [sentRequests, setSentRequests] = useState<Friendship[]>([]);
@@ -124,17 +124,25 @@ export default function FriendsPage() {
     loadAllData();
   }, [router]);
 
-  // ✅ 3. กรองชื่อเพื่อนจาก RAM (โคตรเร็ว ค้นหาเจอ 100%)
+  // ✅ 3. กรองชื่อเพื่อนจาก RAM และสั่งเรียง ก-ฮ / A-Z (โคตรเร็ว ค้นหาเจอ 100%)
   const filteredFriends = useMemo(() => {
-    if (!debouncedSearch) return allFriends;
-    const lowerSearch = debouncedSearch.toLowerCase();
-    return allFriends.filter(f => 
-      f.display_name.toLowerCase().includes(lowerSearch) || 
-      f.username.toLowerCase().includes(lowerSearch)
-    );
+    let list = allFriends;
+    
+    // ถ้ามีการพิมพ์ค้นหา ให้กรองก่อน
+    if (debouncedSearch) {
+      const lowerSearch = debouncedSearch.toLowerCase();
+      list = list.filter(f => 
+        f.display_name.toLowerCase().includes(lowerSearch) || 
+        f.username.toLowerCase().includes(lowerSearch)
+      );
+    }
+
+    // ✅ เรียงลำดับตัวอักษรภาษาไทยและอังกฤษด้วย localeCompare
+    return [...list].sort((a, b) => a.display_name.localeCompare(b.display_name, 'th'));
+    
   }, [allFriends, debouncedSearch]);
 
-  // ✅ 4. ตัดแบ่งหน้า (Pagination) จากข้อมูลที่กรองแล้ว
+  // ✅ 4. ตัดแบ่งหน้า (Pagination) จากข้อมูลที่กรองและเรียงแล้ว
   const displayedFriends = useMemo(() => {
     const from = (currentPage - 1) * FRIENDS_PER_PAGE;
     return filteredFriends.slice(from, from + FRIENDS_PER_PAGE);
@@ -155,7 +163,7 @@ export default function FriendsPage() {
       setPendingRequests(prev => prev.filter(r => r.id !== id));
       
       if (acceptedUser?.sender) {
-        // เพิ่มเข้า allFriends ทันที
+        // เพิ่มเข้า allFriends ทันที (useMemo จะจับเรียงตัวอักษรให้อัตโนมัติ)
         setAllFriends(prev => [{ ...acceptedUser.sender, friendshipId: id }, ...prev]);
       }
     } catch (error) { console.error('Error accepting friend:', error); }
