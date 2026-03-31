@@ -10,10 +10,12 @@ import ConfirmModal from '../../../components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, Music, 
-  MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock
+  MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
+
+const POSTS_PER_PAGE = 10;
 
 interface FamilyMember {
   id: string;
@@ -22,7 +24,6 @@ interface FamilyMember {
   member: User;
 }
 
-// ✅ จัดรูปแบบวันที่ให้เป็น dd-mm-yyyy ทั้งหมด
 const formatDate = (dateString: string) => {
   if (!dateString) return '';
   try {
@@ -46,6 +47,10 @@ export default function ProfilePage() {
   const [friendshipStatus, setFriendshipStatus] = useState<'none' | 'pending' | 'accepted' | 'sent'>('none');
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [friends, setFriends] = useState<User[]>([]);
+  
+  // ✅ State สำหรับเก็บคนที่มาส่องโปรไฟล์
+  const [recentVisitors, setRecentVisitors] = useState<User[]>([]);
+  
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isAddedToFamily, setIsAddedToFamily] = useState(false);
 
@@ -79,14 +84,15 @@ export default function ProfilePage() {
       if (!profileData) { router.push('/'); return; }
       setProfileUser(profileData);
 
-      // ✅ ดึงเพื่อน 6 คนล่าสุด (order by created_at descending)
-      const [currentUserRes, postsRes, familyRes, friendsRes, friendStatusRes, checkFamilyRes] = await Promise.all([
+      // ✅ เพิ่มการดึง profile_views มาด้วย (ดึงมาเผื่อ 20 คนเพื่อมากรองคนซ้ำ)
+      const [currentUserRes, postsRes, familyRes, friendsRes, friendStatusRes, checkFamilyRes, viewsRes] = await Promise.all([
         supabase.from('users').select('*').eq('id', authUser.id).single(),
         supabase.from('posts').select('*, author:author_id(*), target:target_id(*)').eq('target_id', profileData.id).order('created_at', { ascending: false }).range(0, POSTS_PER_PAGE - 1),
         supabase.from('family_members').select('*, member:member_user_id(*)').eq('user_id', profileData.id),
         supabase.from('friendships').select('*, sender:sender_id(*), receiver:receiver_id(*)').eq('status', 'accepted').or(`sender_id.eq.${profileData.id},receiver_id.eq.${profileData.id}`).order('created_at', { ascending: false }).limit(6),
         supabase.from('friendships').select('*').or(`and(sender_id.eq.${authUser.id},receiver_id.eq.${profileData.id}),and(sender_id.eq.${profileData.id},receiver_id.eq.${authUser.id})`).maybeSingle(),
-        supabase.from('family_members').select('id').eq('user_id', authUser.id).eq('member_user_id', profileData.id).maybeSingle()
+        supabase.from('family_members').select('id').eq('user_id', authUser.id).eq('member_user_id', profileData.id).maybeSingle(),
+        supabase.from('profile_views').select('visitor_id, viewed_at, visitor:visitor_id(id, username, display_name, profile_img_url)').eq('profile_id', profileData.id).order('viewed_at', { ascending: false }).limit(20)
       ]);
 
       setCurrentUser(currentUserRes.data);
@@ -101,6 +107,27 @@ export default function ProfilePage() {
         else if (friendStatusRes.data.sender_id === authUser.id) setFriendshipStatus('sent');
         else setFriendshipStatus('pending');
       } else { setFriendshipStatus('none'); }
+
+      // ✅ กรองรายชื่อคนเข้าชมล่าสุดให้เหลือแค่ 5 คนที่ไม่ซ้ำกัน
+      const viewsData = viewsRes.data || [];
+      const uniqueVisitors: any[] = [];
+      const seenIds = new Set();
+      
+      for (const row of viewsData) {
+        if (row.visitor && !seenIds.has(row.visitor_id)) {
+          seenIds.add(row.visitor_id);
+          uniqueVisitors.push(row.visitor);
+          if (uniqueVisitors.length === 5) break; // เอาแค่ 5 คน
+        }
+      }
+      setRecentVisitors(uniqueVisitors);
+
+      // บันทึกการเข้าชมของตัวเอง (ถ้าไม่ได้ดูโปรไฟล์ตัวเอง)
+      const viewKey = `v_${profileData.id}`;
+      if (!sessionStorage.getItem(viewKey) && authUser.id !== profileData.id) {
+        await supabase.from('profile_views').insert({ profile_id: profileData.id, visitor_id: authUser.id });
+        sessionStorage.setItem(viewKey, '1');
+      }
 
     } catch (err) { console.error(err); } 
     finally { setIsLoading(false); }
@@ -207,6 +234,27 @@ export default function ProfilePage() {
     </div>
   );
 
+  // ✅ Widget: ผู้เข้าชมล่าสุด
+  const RecentVisitorsWidget = () => {
+    if (recentVisitors.length === 0) return null;
+
+    return (
+      <div className="card-minimal bg-white p-6 md:p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-5">
+        <h3 className="font-black text-gray-900 text-sm flex items-center gap-2">
+          <Eye className="w-5 h-5 text-blue-500" /> ผู้เข้าชมล่าสุด
+        </h3>
+        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
+          {recentVisitors.map((v, i) => (
+            <Link key={i} href={`/profile/${v.username}`} className="group flex flex-col items-center gap-1.5 flex-shrink-0 w-16 transition-all hover:scale-105">
+              <img src={v.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-100" />
+              <p className="text-[10px] font-black text-center truncate w-full text-gray-500 uppercase group-hover:text-gray-900">{v.display_name.split(' ')[0]}</p>
+            </Link>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const RelationshipWidget = () => {
     const hasFamily = familyMembers.length > 0;
     if (!profileUser.relationship_status && !hasFamily) return null;
@@ -262,7 +310,6 @@ export default function ProfilePage() {
               <div className="h-48 md:h-72 relative" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
               
               <div className="px-6 md:px-10 pb-8">
-                {/* ✅ เปลี่ยนเป็น Flexbox ที่จัดเรียง Avatar และ Info ไปทางซ้าย ส่วนปุ่มไปทางขวา */}
                 <div className="flex flex-col md:flex-row md:items-end gap-6 -mt-20 md:-mt-24 relative z-10">
                   
                   {/* Avatar */}
@@ -274,7 +321,6 @@ export default function ProfilePage() {
                   <div className="flex-1 flex flex-col gap-4 text-center md:text-left mb-2 md:mb-4">
                     <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight leading-none">{profileUser.display_name}</h1>
                     
-                    {/* ✅ Flexbox สำหรับ @username, วันที่สมัคร และ ปุ่มต่างๆ */}
                     <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
                       
                       <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-sm font-bold text-gray-600">
@@ -312,7 +358,6 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="mt-8 space-y-8">
-                  {/* ✅ Bio หลายบรรทัด ตัวหนังสือชัดเจน ไม่เว้นห่าง */}
                   {profileUser.bio && (
                     <div className="border-l-4 pl-4 py-1" style={{ borderColor: themeColor }}>
                       <p className="text-gray-800 font-medium whitespace-pre-wrap break-words text-base leading-relaxed">
@@ -321,7 +366,6 @@ export default function ProfilePage() {
                     </div>
                   )}
 
-                  {/* ✅ ข้อมูลส่วนตัว Grid (กู้สถานที่ทำงานกลับมา) */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm font-bold text-gray-700">
                     {profileUser.birthday && <div className="flex items-center gap-3"><Calendar className="w-5 h-5 text-frog-500" /> เกิดวันที่ {formatDate(profileUser.birthday)} (อายุ {calculateAge(profileUser.birthday)} ปี)</div>}
                     {profileUser.occupation && <div className="flex items-center gap-3"><Briefcase className="w-5 h-5 text-frog-500" /> {profileUser.occupation}</div>}
@@ -329,7 +373,6 @@ export default function ProfilePage() {
                     {profileUser.address && <div className="flex items-center gap-3"><MapPin className="w-5 h-5 text-red-500" /> {profileUser.address}</div>}
                   </div>
 
-                  {/* ✅ งานอดิเรกเป็นบับเบิ้ลเฉยๆ ไม่มี # */}
                   {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
                     <div className="pt-6 border-t border-gray-100">
                       <p className="text-xs font-bold text-gray-500 mb-3">สิ่งที่สนใจ</p>
@@ -349,6 +392,7 @@ export default function ProfilePage() {
             {/* Mobile-only Widgets */}
             <div className="lg:hidden space-y-6">
               <MusicWidget />
+              <RecentVisitorsWidget />
               <FriendsWidget />
               <RelationshipWidget />
             </div>
@@ -369,6 +413,7 @@ export default function ProfilePage() {
           {/* --- Right Sidebar (Desktop) --- */}
           <div className="hidden lg:flex flex-col w-[320px] xl:w-[340px] flex-shrink-0 space-y-6">
             <MusicWidget />
+            <RecentVisitorsWidget />
             <FriendsWidget />
             <RelationshipWidget />
             <div className="text-center py-8"><p className="text-xs font-bold text-gray-300">Ribbi Community 2026</p></div>
