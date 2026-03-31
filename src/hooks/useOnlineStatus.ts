@@ -1,19 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 export function useOnlineStatus(userId: string | null) {
   const [onlineUsers, setOnlineUsers] = useState<Record<string, any>>({});
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || channelRef.current) return;
 
-    const channel = supabase.channel('online-status-v4', {
+    const channel = supabase.channel('online-status-v5', {
       config: { presence: { key: userId } },
     });
 
-    // ✅ ขั้นตอนที่ 1: ตั้งค่า Callback ให้เสร็จก่อนเชื่อมต่อ
+    // ✅ บังคับลำดับ: .on ต้องมาก่อน .subscribe เสมอ
     channel
       .on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState();
@@ -23,13 +25,6 @@ export function useOnlineStatus(userId: string | null) {
         }
         setOnlineUsers(simplified);
       })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        // Log ตอนคนเข้าถ้าต้องการ
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        // Log ตอนคนออกถ้าต้องการ
-      })
-      // ✅ ขั้นตอนที่ 2: สั่ง Subscribe หลังจากตั้งค่าเสร็จแล้วเท่านั้น
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({
@@ -39,8 +34,13 @@ export function useOnlineStatus(userId: string | null) {
         }
       });
 
+    channelRef.current = channel;
+
     return () => {
-      void channel.unsubscribe();
+      if (channelRef.current) {
+        channelRef.current.unsubscribe();
+        channelRef.current = null;
+      }
     };
   }, [userId]);
 
