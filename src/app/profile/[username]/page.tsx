@@ -45,15 +45,15 @@ export default function ProfilePage() {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [friendshipStatus, setFriendshipStatus] = useState<'none' | 'pending' | 'accepted' | 'sent'>('none');
-  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
-  const [friends, setFriends] = useState<User[]>([]);
+  const [friendshipId, setFriendshipId] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   
-  // ✅ State สำหรับเก็บคนที่มาส่องโปรไฟล์
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [isAlreadyInMyFamily, setIsAlreadyInMyFamily] = useState(false);
+  const [blockStatus, setBlockStatus] = useState<'none' | 'blocked' | 'ignored'>('none');
+  const [friends, setFriends] = useState<User[]>([]);
   const [recentVisitors, setRecentVisitors] = useState<User[]>([]);
   
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [isAddedToFamily, setIsAddedToFamily] = useState(false);
-
   const [showDeletePostConfirm, setShowDeletePostConfirm] = useState(false);
   const [postToDelete, setPostToDelete] = useState<string | null>(null);
   const [showAddFamilyModal, setShowAddFamilyModal] = useState(false);
@@ -84,7 +84,6 @@ export default function ProfilePage() {
       if (!profileData) { router.push('/'); return; }
       setProfileUser(profileData);
 
-      // ✅ เพิ่มการดึง profile_views มาด้วย (ดึงมาเผื่อ 20 คนเพื่อมากรองคนซ้ำ)
       const [currentUserRes, postsRes, familyRes, friendsRes, friendStatusRes, checkFamilyRes, viewsRes] = await Promise.all([
         supabase.from('users').select('*').eq('id', authUser.id).single(),
         supabase.from('posts').select('*, author:author_id(*), target:target_id(*)').eq('target_id', profileData.id).order('created_at', { ascending: false }).range(0, POSTS_PER_PAGE - 1),
@@ -108,7 +107,7 @@ export default function ProfilePage() {
         else setFriendshipStatus('pending');
       } else { setFriendshipStatus('none'); }
 
-      // ✅ กรองรายชื่อคนเข้าชมล่าสุดให้เหลือแค่ 5 คนที่ไม่ซ้ำกัน
+      // กรองคนเข้าชมซ้ำ เอาแค่ 5 คน
       const viewsData = viewsRes.data || [];
       const uniqueVisitors: any[] = [];
       const seenIds = new Set();
@@ -117,12 +116,12 @@ export default function ProfilePage() {
         if (row.visitor && !seenIds.has(row.visitor_id)) {
           seenIds.add(row.visitor_id);
           uniqueVisitors.push(row.visitor);
-          if (uniqueVisitors.length === 5) break; // เอาแค่ 5 คน
+          if (uniqueVisitors.length === 5) break; 
         }
       }
       setRecentVisitors(uniqueVisitors);
 
-      // บันทึกการเข้าชมของตัวเอง (ถ้าไม่ได้ดูโปรไฟล์ตัวเอง)
+      // นับ View (Throttled 1 session)
       const viewKey = `v_${profileData.id}`;
       if (!sessionStorage.getItem(viewKey) && authUser.id !== profileData.id) {
         await supabase.from('profile_views').insert({ profile_id: profileData.id, visitor_id: authUser.id });
@@ -213,6 +212,25 @@ export default function ProfilePage() {
     );
   };
 
+  const RecentVisitorsWidget = () => {
+    if (recentVisitors.length === 0) return null;
+    return (
+      <div className="card-minimal bg-white p-6 md:p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-5">
+        <h3 className="font-black text-gray-900 text-sm flex items-center gap-2">
+          <Eye className="w-5 h-5 text-blue-500" /> ผู้เข้าชมล่าสุด
+        </h3>
+        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
+          {recentVisitors.map((v, i) => (
+            <Link key={i} href={`/profile/${v.username}`} className="group flex flex-col items-center gap-1.5 flex-shrink-0 w-16 transition-all hover:scale-105">
+              <img src={v.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-100" />
+              <p className="text-[10px] font-black text-center truncate w-full text-gray-500 uppercase group-hover:text-gray-900">{v.display_name.split(' ')[0]}</p>
+            </Link>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const FriendsWidget = () => (
     <div className="card-minimal bg-white p-6 md:p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
       <div className="flex items-center justify-between mb-6">
@@ -233,27 +251,6 @@ export default function ProfilePage() {
       )}
     </div>
   );
-
-  // ✅ Widget: ผู้เข้าชมล่าสุด
-  const RecentVisitorsWidget = () => {
-    if (recentVisitors.length === 0) return null;
-
-    return (
-      <div className="card-minimal bg-white p-6 md:p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-5">
-        <h3 className="font-black text-gray-900 text-sm flex items-center gap-2">
-          <Eye className="w-5 h-5 text-blue-500" /> ผู้เข้าชมล่าสุด
-        </h3>
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-          {recentVisitors.map((v, i) => (
-            <Link key={i} href={`/profile/${v.username}`} className="group flex flex-col items-center gap-1.5 flex-shrink-0 w-16 transition-all hover:scale-105">
-              <img src={v.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-100" />
-              <p className="text-[10px] font-black text-center truncate w-full text-gray-500 uppercase group-hover:text-gray-900">{v.display_name.split(' ')[0]}</p>
-            </Link>
-          ))}
-        </div>
-      </div>
-    );
-  };
 
   const RelationshipWidget = () => {
     const hasFamily = familyMembers.length > 0;
@@ -305,58 +302,60 @@ export default function ProfilePage() {
           {/* --- Main Content Area --- */}
           <div className="flex-1 min-w-0 space-y-6 lg:space-y-8">
             
-            {/* Profile Header */}
+            {/* ✅ PROFILE HEADER - REDESIGNED FOR PERFECT READABILITY */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm bg-white rounded-[3rem]">
-              <div className="h-48 md:h-72 relative" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
               
-              <div className="px-6 md:px-10 pb-8">
-                <div className="flex flex-col md:flex-row md:items-end gap-6 -mt-20 md:-mt-24 relative z-10">
-                  
-                  {/* Avatar */}
-                  <div className="w-36 h-36 md:w-48 md:h-48 rounded-full p-2 shadow-xl bg-white flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px]" style={{ borderColor: themeColor }}>
-                    <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover shadow-inner" />
+              {/* Cover Image */}
+              <div className="h-48 md:h-72 relative bg-gray-100" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }}>
+                {/* 🌟 Gradient ไล่สีขาวจากขอบล่างขึ้นไป เพื่อให้ภาพกลืนกับพื้นหลัง */}
+                <div className="absolute inset-x-0 bottom-0 h-32 md:h-48 bg-gradient-to-t from-white via-white/70 to-transparent"></div>
+              </div>
+              
+              <div className="px-6 md:px-10 pb-8 bg-white relative z-10">
+                
+                {/* Row 1: รูปภาพโปรไฟล์ และ ปุ่ม Action (ทับรูปหน้าปก) */}
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 -mt-20 md:-mt-24 relative z-20 mb-4">
+                  <div className="w-36 h-36 md:w-48 md:h-48 rounded-full p-2 shadow-2xl bg-white flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px]" style={{ borderColor: themeColor }}>
+                    <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover shadow-inner bg-gray-50" />
                   </div>
                   
-                  {/* Text & Action Buttons Wrapper */}
-                  <div className="flex-1 flex flex-col gap-4 text-center md:text-left mb-2 md:mb-4">
-                    <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight leading-none">{profileUser.display_name}</h1>
-                    
-                    <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-                      
-                      <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-sm font-bold text-gray-600">
-                        <span>@{profileUser.username}</span>
-                        <span className="hidden md:inline-block w-1.5 h-1.5 rounded-full bg-gray-300"></span>
-                        <span className="flex items-center gap-1.5"><Calendar size={16} style={{ color: themeColor }} /> วันที่สมัคร {formatDate(profileUser.created_at)}</span>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="flex flex-wrap items-center justify-center md:justify-end gap-2">
-                        {isOwnProfile ? (
-                          <Link href="/profile/edit" className="font-black text-xs px-5 py-2.5 rounded-xl flex items-center gap-2 text-white shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><Edit size={16} /> แก้ไขโปรไฟล์</Link>
-                        ) : (
-                          <>
-                            <button onClick={handleSendMessage} className="font-black text-xs px-5 py-2.5 rounded-xl flex items-center gap-2 border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 transition-all shadow-sm"><MessageCircle size={16} /> ข้อความ</button>
-                            
-                            {!isOwnProfile && friendshipStatus === 'accepted' && !isAddedToFamily && (
-                              <button onClick={() => setShowAddFamilyModal(true)} className="font-black text-xs px-5 py-2.5 rounded-xl border flex items-center gap-2 transition-all shadow-sm" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: themeColor }}><Plus size={16} /> เพิ่มคนสำคัญ</button>
-                            )}
-                            
-                            {friendshipStatus === 'none' && (
-                              <button onClick={handleAddFriend} className="text-white font-black text-xs px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><UserPlus size={16} /> เพิ่มเพื่อน</button>
-                            )}
-                            {friendshipStatus === 'sent' && (
-                              <button className="px-5 py-2.5 rounded-xl bg-gray-50 text-gray-500 font-black text-xs flex items-center gap-2 cursor-default border border-gray-200"><Clock size={16} /> ส่งคำขอแล้ว</button>
-                            )}
-                            {friendshipStatus === 'accepted' && (
-                              <button className="px-5 py-2.5 rounded-xl border font-black text-xs flex items-center gap-2 cursor-default bg-gray-50 text-gray-600 border-gray-200"><UserCheck size={16} /> เพื่อนกัน</button>
-                            )}
-                          </>
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 pb-2">
+                    {isOwnProfile ? (
+                      <Link href="/profile/edit" className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 text-white shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><Edit size={16} /> แก้ไขโปรไฟล์</Link>
+                    ) : (
+                      <>
+                        <button onClick={handleSendMessage} className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 transition-all shadow-sm"><MessageCircle size={16} /> ข้อความ</button>
+                        
+                        {!isOwnProfile && friendshipStatus === 'accepted' && !isAddedToFamily && (
+                          <button onClick={() => setShowAddFamilyModal(true)} className="font-black text-xs px-5 py-3 rounded-xl border flex items-center gap-2 transition-all shadow-sm" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: themeColor }}><Plus size={16} /> เพิ่มคนสำคัญ</button>
                         )}
-                      </div>
-                    </div>
+                        
+                        {friendshipStatus === 'none' && (
+                          <button onClick={handleAddFriend} className="text-white font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><UserPlus size={16} /> เพิ่มเพื่อน</button>
+                        )}
+                        {friendshipStatus === 'sent' && (
+                          <button className="px-5 py-3 rounded-xl bg-gray-50 text-gray-500 font-black text-xs flex items-center gap-2 cursor-default border border-gray-200"><Clock size={16} /> ส่งคำขอแล้ว</button>
+                        )}
+                        {friendshipStatus === 'accepted' && (
+                          <button className="px-5 py-3 rounded-xl border font-black text-xs flex items-center gap-2 cursor-default bg-gray-50 text-gray-600 border-gray-200"><UserCheck size={16} /> เพื่อนกัน</button>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
 
+                {/* Row 2: ชื่อและข้อมูล (ดึงลงมาอยู่บนพื้นขาว อ่านง่าย 100%) */}
+                <div className="text-center md:text-left space-y-1 relative z-20">
+                  <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 tracking-tight leading-none mb-2">{profileUser.display_name}</h1>
+                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-sm font-bold text-gray-500">
+                    <span>@{profileUser.username}</span>
+                    <span className="hidden md:inline-block w-1.5 h-1.5 rounded-full bg-gray-300"></span>
+                    <span className="flex items-center gap-1.5"><Calendar size={16} style={{ color: themeColor }} /> วันที่สมัคร {formatDate(profileUser.created_at)}</span>
+                  </div>
+                </div>
+
+                {/* Row 3: Bio & Grid Details */}
                 <div className="mt-8 space-y-8">
                   {profileUser.bio && (
                     <div className="border-l-4 pl-4 py-1" style={{ borderColor: themeColor }}>
