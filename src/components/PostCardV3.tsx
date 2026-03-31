@@ -12,8 +12,7 @@ import {
   Send, 
   Loader2, 
   ChevronRight, 
-  MapPin,
-  Check
+  MapPin
 } from 'lucide-react';
 import { getRelativeTime } from '../lib/utils';
 import Link from 'next/link';
@@ -83,16 +82,17 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [showComments, setShowComments] = useState(false);
   const [isCommentsLoading, setIsCommentsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const [likeCount, setLikeCount] = useState(0);
   const [commentCount, setCommentCount] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // ✅ States สำหรับแก้ไขโพสต์
+  // States สำหรับแก้ไขโพสต์
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [editContent, setEditContent] = useState(post.content || '');
 
-  // ✅ States สำหรับดูคนกดไลก์
+  // States สำหรับดูคนกดไลก์
   const [showLikersModal, setShowLikersModal] = useState(false);
   const [likers, setLikers] = useState<User[]>([]);
   const [isLoadingLikers, setIsLoadingLikers] = useState(false);
@@ -112,8 +112,17 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
-  const canDeletePost = post.author_id === currentUserId || profileOwnerId === currentUserId;
-  const canEditPost = post.author_id === currentUserId;
+  // ✅ เพิ่ม useEffect เพื่อรับรู้ข้อมูลใหม่เวลาแม่ส่งโพสต์ใหม่ๆ มา
+  useEffect(() => {
+    setPost(initialPost);
+    setEditContent(initialPost.content || '');
+  }, [initialPost]);
+
+  // ✅ เช็กสิทธิ์ลบ/แก้ ให้ฉลาดขึ้น รองรับกรณีที่ author เป็น ID ธรรมดา หรือเป็น Object
+  const authorId = post.author?.id || post.author_id;
+  const targetId = post.target?.id || post.target_id;
+  const canDeletePost = authorId === currentUserId || profileOwnerId === currentUserId || targetId === currentUserId;
+  const canEditPost = authorId === currentUserId;
 
   useEffect(() => {
     const loadStats = async () => {
@@ -130,9 +139,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   }, [post.id, currentUserId]);
 
   useEffect(() => {
-    if (showComments) {
-      loadComments();
-    }
+    if (showComments) loadComments();
   }, [showComments]);
 
   const handleLike = async () => {
@@ -143,28 +150,39 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     else await supabase.from('likes').delete().eq('post_id', post.id).eq('user_id', currentUserId);
   };
 
-  // ✅ ฟังก์ชันดึงรายชื่อคนกดไลก์
+  // ✅ ฟังก์ชันดึงรายชื่อคนกดไลก์แบบ 2 สเต็ป (แก้ปัญหาการ Join ของ Supabase)
   const handleViewLikers = async () => {
     if (likeCount === 0) return;
     setShowLikersModal(true);
     setIsLoadingLikers(true);
     try {
-      const { data, error } = await supabase
+      const { data: likesData, error: likesError } = await supabase
         .from('likes')
-        .select('user:user_id(id, username, display_name, profile_img_url)')
+        .select('user_id')
         .eq('post_id', post.id);
       
-      if (error) throw error;
-      const likerUsers = data.map((item: any) => item.user).filter(Boolean);
-      setLikers(likerUsers);
-    } catch (error) {
+      if (likesError) throw likesError;
+      
+      if (likesData && likesData.length > 0) {
+        const userIds = likesData.map((d: any) => d.user_id);
+        const { data: usersData, error: userError } = await supabase
+          .from('users')
+          .select('id, username, display_name, profile_img_url')
+          .in('id', userIds);
+          
+        if (userError) throw userError;
+        setLikers(usersData || []);
+      } else {
+        setLikers([]);
+      }
+    } catch (error: any) {
       console.error('Error fetching likers:', error);
     } finally {
       setIsLoadingLikers(false);
     }
   };
 
-  // ✅ ฟังก์ชันสำหรับบันทึกการแก้ไขโพสต์
+  // ✅ ฟังก์ชันแก้ไขโพสต์แบบมี Error Catching
   const handleUpdatePost = async () => {
     if (!editContent.trim() || isSubmitting) return;
     setIsSubmitting(true);
@@ -177,8 +195,9 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       
       setPost(prev => ({ ...prev, content: editContent.trim() }));
       setIsEditingPost(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating post:', error);
+      alert('ไม่สามารถแก้ไขโพสต์ได้: ' + error.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -312,12 +331,12 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                 <textarea 
                   value={editCommentContent} 
                   onChange={(e) => setEditCommentContent(e.target.value)}
-                  className="input-minimal w-full text-sm p-3 bg-white border border-frog-200 rounded-2xl outline-none focus:ring-2 focus:ring-frog-100"
+                  className="input-minimal w-full text-sm p-3 bg-white border border-frog-200 rounded-2xl outline-none focus:ring-2 focus:ring-frog-100 min-h-[80px]"
                   autoFocus
                 />
                 <div className="flex gap-2">
-                  <button onClick={() => handleUpdateComment(c.id)} className="text-[10px] font-black text-frog-600 bg-frog-50 px-3 py-1 rounded-lg">บันทึก</button>
-                  <button onClick={() => setEditingCommentId(null)} className="text-[10px] font-black text-gray-400 bg-gray-50 px-3 py-1 rounded-lg">ยกเลิก</button>
+                  <button onClick={() => handleUpdateComment(c.id)} disabled={isSubmitting} className="text-[10px] font-black text-frog-600 bg-frog-50 px-3 py-1.5 rounded-lg disabled:opacity-50">บันทึก</button>
+                  <button onClick={() => setEditingCommentId(null)} className="text-[10px] font-black text-gray-500 bg-gray-100 px-3 py-1.5 rounded-lg">ยกเลิก</button>
                 </div>
               </div>
             ) : (
@@ -366,50 +385,70 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
 
   return (
     <div className="card-minimal border border-gray-100 shadow-sm relative">
-      {/* ✅ ส่วนหัวโพสต์ (เพิ่ม Mood และ Location) */}
+      {/* ส่วนหัวโพสต์ */}
       <div className="flex items-start gap-3 mb-4">
-        {post.author && <Link href={`/profile/${post.author.username}`} className="flex-shrink-0"><img src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-gray-50 shadow-sm" alt="" /></Link>}
+        {post.author && (
+          <Link href={`/profile/${post.author.username}`} className="flex-shrink-0">
+            <img src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-gray-50 shadow-sm" alt="" />
+          </Link>
+        )}
+        
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {post.author && <Link href={`/profile/${post.author.username}`} className="font-black text-sm text-gray-900 hover:text-frog-600">{post.author.display_name}</Link>}
+          <div className="flex items-center gap-1.5 flex-wrap text-sm">
+            {post.author && <Link href={`/profile/${post.author.username}`} className="font-black text-gray-900 hover:text-frog-600">{post.author.display_name}</Link>}
             
-            {/* โชว์ลูกศรถ้าโพสต์ไปที่โปรไฟล์คนอื่น */}
             {post.target && post.target.id !== post.author?.id && (
               <>
                 <ChevronRight size={14} className="text-gray-400" />
-                <Link href={`/profile/${post.target.username}`} className="font-black text-sm text-gray-900 hover:text-frog-600">{post.target.display_name}</Link>
+                <Link href={`/profile/${post.target.username}`} className="font-black text-gray-900 hover:text-frog-600">{post.target.display_name}</Link>
               </>
             )}
           </div>
+          
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <p className="text-[10px] text-gray-400 font-bold uppercase">{getRelativeTime(post.created_at)}</p>
             
-            {/* แสดงสถานที่ */}
+            {/* ✅ ดึงสถานที่มาโชว์ */}
             {post.location && (
               <>
                 <span className="w-1 h-1 rounded-full bg-gray-300"></span>
-                <span className="text-[10px] text-red-500 font-bold flex items-center gap-0.5 uppercase"><MapPin size={10} /> {post.location}</span>
+                <span className="text-[10px] text-red-500 font-bold flex items-center gap-0.5 uppercase tracking-tight">
+                  <MapPin size={10} /> {post.location}
+                </span>
               </>
             )}
-
-            {/* แสดง Mood */}
+            
+            {/* ✅ ดึงอารมณ์ (Mood) มาโชว์ */}
             {post.mood && (
               <>
                 <span className="w-1 h-1 rounded-full bg-gray-300"></span>
-                <span className="text-[10px] bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-bold border border-yellow-100">รู้สึก {post.mood}</span>
+                <span className="text-[10px] bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-bold border border-yellow-100">
+                  {post.mood.includes('รู้สึก') ? post.mood : `รู้สึก ${post.mood}`}
+                </span>
+              </>
+            )}
+
+            {/* ✅ ดึงกิจกรรม (Activity) มาโชว์ */}
+            {post.activity && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-gray-300"></span>
+                <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold border border-blue-100">
+                  {post.activity.includes('กำลัง') ? post.activity : `กำลัง ${post.activity}`}
+                </span>
               </>
             )}
           </div>
         </div>
+
         {(canEditPost || canDeletePost) && (
           <div className="flex gap-1">
             {canEditPost && <button onClick={() => { setIsEditingPost(!isEditingPost); setEditContent(post.content || ''); }} className={`p-2 transition-colors rounded-full ${isEditingPost ? 'bg-frog-50 text-frog-600' : 'text-gray-300 hover:text-frog-600 hover:bg-gray-50'}`}><Edit2 size={16} /></button>}
-            {canDeletePost && <button onClick={() => onDelete?.(post.id)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors rounded-full"><Trash2 size={16} /></button>}
+            {canDeletePost && <button onClick={() => onDelete?.(post.id)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"><Trash2 size={16} /></button>}
           </div>
         )}
       </div>
 
-      {/* ✅ เนื้อหาโพสต์ (รองรับการแก้ไข) */}
+      {/* เนื้อหาโพสต์ (โหมดปกติ หรือ โหมดแก้ไข) */}
       {isEditingPost ? (
         <div className="mb-4 space-y-3 animate-in fade-in">
           <textarea
@@ -417,14 +456,15 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             onChange={(e) => setEditContent(e.target.value)}
             className="w-full text-sm p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-frog-500 focus:bg-white min-h-[120px] transition-all"
             autoFocus
+            placeholder="คุณกำลังคิดอะไรอยู่..."
           />
           <div className="flex gap-2 justify-end">
             <button onClick={() => setIsEditingPost(false)} className="px-5 py-2 text-xs font-black text-gray-500 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">ยกเลิก</button>
-            <button onClick={handleUpdatePost} disabled={isSubmitting || !editContent.trim()} className="px-5 py-2 text-xs font-black text-white bg-frog-500 rounded-xl hover:bg-frog-600 disabled:opacity-50 transition-colors shadow-sm">บันทึก</button>
+            <button onClick={handleUpdatePost} disabled={isSubmitting || !editContent.trim()} className="px-5 py-2 text-xs font-black text-white bg-frog-500 rounded-xl hover:bg-frog-600 disabled:opacity-50 transition-colors shadow-sm">บันทึกการแก้ไข</button>
           </div>
         </div>
       ) : (
-        <div className="text-sm text-gray-800 mb-4 whitespace-pre-wrap leading-relaxed">{renderTextWithTags(post.content || '')}</div>
+        <div className="text-sm text-gray-900 mb-4 whitespace-pre-wrap leading-relaxed">{renderTextWithTags(post.content || '')}</div>
       )}
 
       {!isEditingPost && post.content && (
@@ -440,7 +480,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       {post.images && post.images.length > 0 && (
         <div className={`grid gap-2 mb-4 ${post.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {post.images.map((img, i) => (
-            <div key={i} className={`relative overflow-hidden rounded-3xl bg-gray-50 border border-gray-100 cursor-pointer hover:opacity-95 transition-all ${post.images!.length === 3 && i === 2 ? 'col-span-2 aspect-[16/8]' : 'aspect-[4/3]'}`} onClick={() => setSelectedImage(img)}>
+            <div key={i} className={`relative overflow-hidden rounded-3xl bg-gray-50 border border-gray-100 cursor-pointer hover:opacity-95 transition-transform active:scale-95 ${post.images!.length === 3 && i === 2 ? 'col-span-2 aspect-[16/8]' : 'aspect-[4/3]'}`} onClick={() => setSelectedImage(img)}>
               <img src={img} className="w-full h-full object-cover" loading="lazy" alt="" />
             </div>
           ))}
@@ -453,8 +493,8 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           <button onClick={handleLike} className={`transition-all active:scale-75 p-1 -ml-1 rounded-full ${isLiked ? 'text-red-500' : 'text-gray-400 hover:bg-red-50 hover:text-red-400'}`}>
             <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
           </button>
-          {/* ✅ กดที่ตัวเลขเพื่อดูว่าใครไลก์บ้าง */}
-          <button onClick={handleViewLikers} className="text-xs font-black text-gray-500 hover:text-gray-900 hover:underline transition-colors py-1 pr-2">
+          {/* ✅ กดที่ตัวเลขเพื่อเปิดดูหน้าต่างรายชื่อคนกดไลก์ */}
+          <button onClick={handleViewLikers} className={`text-xs font-black transition-colors py-1 pr-2 ${likeCount > 0 ? 'text-gray-500 hover:text-gray-900 hover:underline cursor-pointer' : 'text-gray-400 cursor-default'}`}>
             {likeCount}
           </button>
         </div>
@@ -472,15 +512,15 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               <form onSubmit={handleComment} className="space-y-2">
                 <div className="flex gap-2 relative">
                   <div className="relative flex-1">
-                    <input type="text" value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="เขียนความคิดเห็น..." className="input-minimal w-full text-sm py-2 px-4 bg-gray-50 border-gray-100 rounded-xl outline-none shadow-inner" disabled={isSubmitting} />
+                    <input type="text" value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder="เขียนความคิดเห็น..." className="input-minimal w-full text-sm py-2 px-4 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-frog-200 transition-all" disabled={isSubmitting} />
                   </div>
                   <button type="button" onClick={() => setShowCommentImageInput(!showCommentImageInput)} className={`p-2 rounded-xl transition-all ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}><ImageIcon size={18} /></button>
-                  <button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2 bg-frog-500 text-white rounded-xl hover:bg-frog-600 transition-all shadow-md active:scale-95 disabled:opacity-50"><Send size={18} /></button>
+                  <button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2 bg-frog-500 text-white rounded-xl hover:bg-frog-600 transition-all shadow-sm active:scale-95 disabled:opacity-50"><Send size={18} /></button>
                 </div>
                 {showCommentImageInput && (
                   <div className="relative animate-in slide-in-from-top-2">
                     <input type="url" value={commentImageUrl} onChange={(e) => setCommentImageUrl(e.target.value)} placeholder="ใส่ลิงก์รูปภาพ (https://...)" className="w-full text-xs py-2 px-4 bg-white border border-dashed border-frog-200 rounded-xl outline-none focus:border-frog-500" />
-                    {commentImageUrl && <img src={commentImageUrl} className="mt-2 h-20 rounded-lg object-cover" alt="Preview" />}
+                    {commentImageUrl && <img src={commentImageUrl} className="mt-2 h-20 rounded-lg object-cover shadow-sm" alt="Preview" />}
                   </div>
                 )}
               </form>
@@ -497,7 +537,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </div>
       )}
 
-      {/* ✅ Modal แสดงรายชื่อคนกดไลก์ */}
+      {/* ✅ หน้าต่างรายชื่อคนกดไลก์ */}
       {showLikersModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowLikersModal(false)}>
           <div className="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl p-6 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
@@ -528,9 +568,9 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       )}
 
       {selectedImage && (
-        <div className="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedImage(null)}>
-          <img src={selectedImage} className="max-w-full max-h-full rounded-lg shadow-2xl object-contain" alt="" />
-          <button className="absolute top-6 right-6 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white"><X size={24} /></button>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[120] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedImage(null)}>
+          <img src={selectedImage} className="max-w-[95vw] max-h-[90vh] rounded-2xl shadow-2xl object-contain" alt="" />
+          <button className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-colors"><X size={24} /></button>
         </div>
       )}
     </div>
