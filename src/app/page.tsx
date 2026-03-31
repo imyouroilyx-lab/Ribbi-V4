@@ -10,14 +10,14 @@ import ConfirmModal from '@/components/ConfirmModal';
 import Link from 'next/link';
 import { Users, Circle, ChevronRight, RefreshCw, Loader2, ArrowRight } from 'lucide-react';
 
-const POSTS_PER_PAGE = 15;
+const POSTS_PER_PAGE = 10; // ✅ ลดจำนวนต่อหน้าลงเหลือ 10 เพื่อให้แสดงผลครั้งแรกไวขึ้น
 
 export default function HomePage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
-  const [totalOnlineCount, setTotalOnlineCount] = useState(0); // ✅ เพิ่ม State นี้นับจำนวนทั้งหมด
+  const [totalOnlineCount, setTotalOnlineCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isOnlineLoading, setIsOnlineLoading] = useState(false);
@@ -30,15 +30,17 @@ export default function HomePage() {
 
   const observer = useRef<IntersectionObserver | null>(null);
   
+  // ✅ ปรับ Observer ให้ดักจับได้แม่นยำขึ้น
   const lastPostElementRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoading || isLoadingMore) return;
     if (observer.current) observer.current.disconnect();
 
     observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) {
+      // ถ้าเลื่อนมาถึงจุดสุดท้าย และยังมีข้อมูลให้โหลดต่อ และไม่ได้กำลังโหลดอยู่
+      if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
         setPage(prevPage => prevPage + 1);
       }
-    });
+    }, { threshold: 0.5 }); // ทำงานเมื่อเห็นอิลิเมนต์ไปแล้วครึ่งหนึ่ง
 
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
@@ -53,6 +55,7 @@ export default function HomePage() {
     }
   }, [page]);
 
+  // ระบบอัปเดตกิจกรรมออนไลน์ (แยกกันไม่เกี่ยวกับการดึงข้อมูลโพสต์)
   useEffect(() => {
     if (!currentUser) return;
     const updateActivity = async () => {
@@ -81,10 +84,7 @@ export default function HomePage() {
       if (!authUser) { router.push('/login'); return; }
 
       const [userDataRes, postsDataRes] = await Promise.all([
-        supabase.from('users')
-          .select('id, username, display_name, profile_img_url')
-          .eq('id', authUser.id)
-          .single(),
+        supabase.from('users').select('id, username, display_name, profile_img_url').eq('id', authUser.id).single(),
         supabase
           .from('posts')
           .select(`
@@ -111,10 +111,13 @@ export default function HomePage() {
   const loadMorePosts = async () => {
     if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
+    
     const start = page * POSTS_PER_PAGE;
     const end = start + POSTS_PER_PAGE - 1;
+
     try {
-      const { data: newPosts } = await supabase
+      // ✅ ดึงข้อมูลแบบเจาะจงฟิลด์ เพื่อลดขนาดข้อมูลที่วิ่งผ่าน Network
+      const { data: newPosts, error } = await supabase
         .from('posts')
         .select(`
           id, content, images, created_at, author_id, target_id, location, mood, activity,
@@ -123,6 +126,8 @@ export default function HomePage() {
         `)
         .order('created_at', { ascending: false })
         .range(start, end);
+
+      if (error) throw error;
 
       if (newPosts && newPosts.length > 0) {
         setPosts(prev => [...prev, ...newPosts] as any);
@@ -133,7 +138,8 @@ export default function HomePage() {
     } catch (error) {
       console.error('Error loading more posts:', error);
     } finally {
-      setIsLoadingMore(false);
+      // หน่วงเวลาเล็กน้อยเพื่อให้ UI ไม่กะพริบเร็วเกินไป
+      setTimeout(() => setIsLoadingMore(false), 300);
     }
   };
 
@@ -142,7 +148,6 @@ export default function HomePage() {
     setIsOnlineLoading(true);
     try {
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      // ✅ เพิ่ม { count: 'exact' } เพื่อขอนับจำนวนคนออนทั้งหมด
       const { data, count } = await supabase
         .from('users')
         .select('id, username, display_name, profile_img_url, last_active', { count: 'exact' }) 
@@ -151,7 +156,7 @@ export default function HomePage() {
         .limit(12);
       
       setOnlineUsers((data as any) || []);
-      setTotalOnlineCount(count || 0); // ✅ เซฟจำนวนเต็มลง State
+      setTotalOnlineCount(count || 0);
     } catch (error) { 
       console.error(error); 
     } finally {
@@ -162,6 +167,7 @@ export default function HomePage() {
   const handlePostCreated = () => {
     setPage(0);
     setRefreshTrigger(prev => prev + 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDeletePost = async () => {
@@ -179,7 +185,7 @@ export default function HomePage() {
       <NavLayout>
         <div className="flex flex-col items-center justify-center h-64">
           <Loader2 className="w-12 h-12 text-frog-500 animate-spin mb-4" />
-          <p className="text-gray-400 font-black uppercase text-[10px] tracking-widest">กำลังเตรียมฟีด...</p>
+          <p className="text-gray-400 font-black uppercase text-[10px] tracking-widest animate-pulse">กำลังจัดเตรียมฟีด...</p>
         </div>
       </NavLayout>
     );
@@ -200,7 +206,6 @@ export default function HomePage() {
                 <div className="flex items-center gap-2">
                   <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                     <Circle className="w-2 h-2 fill-green-500 text-green-500" />
-                    {/* ✅ โชว์จำนวนออนทั้งหมดตรงนี้ */}
                     ออนไลน์ขณะนี้ ({totalOnlineCount})
                   </h3>
                 </div>
@@ -257,10 +262,17 @@ export default function HomePage() {
                       />
                     </div>
                   ))}
+                  
+                  {/* กล่อง Loading ตอนเลื่อนลง */}
                   {isLoadingMore && (
-                    <div className="text-center py-6">
-                      <Loader2 className="w-8 h-8 text-frog-500 animate-spin mx-auto" />
+                    <div className="flex flex-col items-center justify-center py-10 bg-white/50 rounded-[2rem] border border-dashed border-gray-200">
+                      <Loader2 className="w-8 h-8 text-frog-500 animate-spin mb-2" />
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">กำลังดึงโพสต์เพิ่มเติม...</p>
                     </div>
+                  )}
+
+                  {!hasMore && posts.length > 0 && (
+                    <p className="text-center py-10 text-[10px] font-black text-gray-300 uppercase tracking-[0.3em]">สิ้นสุดฟีดข่าว</p>
                   )}
                 </>
               )}
@@ -275,7 +287,6 @@ export default function HomePage() {
                   <div className="flex items-center gap-2">
                     <h3 className="font-black text-[10px] uppercase tracking-[0.2em] flex items-center gap-2 text-gray-500">
                       <Circle className="w-2 h-2 fill-green-500 text-green-500 animate-pulse" />
-                      {/* ✅ โชว์จำนวนออนทั้งหมดตรงนี้ */}
                       ออนไลน์ขณะนี้ ({totalOnlineCount})
                     </h3>
                   </div>
