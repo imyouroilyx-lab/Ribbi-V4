@@ -36,35 +36,57 @@ export default function MessagesPage() {
     init();
   }, [searchParams]);
 
+  // ✅ ฟัง Realtime: ชื่อเล่น และ สีแชท
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const channel = supabase.channel('msg-page-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => loadChats(currentUser.id))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_nicknames' }, () => loadChats(currentUser.id))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => loadChats(currentUser.id))
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [currentUser?.id]);
+
   const loadChats = async (userId: string) => {
     try {
-      // ✅ เพิ่มการดึง username เพื่อให้ลิงก์โปรไฟล์ทำงานได้
-      const { data } = await supabase.from('chat_participants').select(`
+      // 1. ดึงแชทและสมาชิก
+      const { data: partData } = await supabase.from('chat_participants').select(`
         unread_count, 
-        chats:chat_id (
-          *, 
-          members:chat_participants (
-            user:user_id (id, username, display_name, profile_img_url)
-          )
-        )
+        chats:chat_id (*, members:chat_participants (user:user_id (id, username, display_name, profile_img_url, is_online)))
       `).eq('user_id', userId);
 
-      if (!data) return;
-      const formatted = data.map((p: any) => {
+      if (!partData) return;
+
+      // 2. ดึงชื่อเล่นทั้งหมดในแชทเหล่านั้น
+      const chatIds = partData.map(p => p.chat_id);
+      const { data: nicknames } = await supabase.from('chat_nicknames').select('*').in('chat_id', chatIds);
+
+      const formatted = partData.map((p: any) => {
         const c = p.chats;
         if (!c) return null;
         const otherMember = c.is_group ? null : c.members.find((m: any) => m.user?.id !== userId)?.user;
+        
+        // ค้นหาชื่อเล่น
+        const myNick = nicknames?.find(n => n.chat_id === c.id && n.target_user_id === userId)?.nickname;
+        const otherNick = otherMember ? nicknames?.find(n => n.chat_id === c.id && n.target_user_id === otherMember.id)?.nickname : null;
+
         return { 
           ...c, 
           unread_count: p.unread_count || 0, 
-          other_user: otherMember ? { ...otherMember, is_online: !!onlineUsers[otherMember.id] } : undefined 
+          my_nickname: myNick,
+          other_user: otherMember ? { 
+            ...otherMember, 
+            display_name: otherNick || otherMember.display_name, // ✅ ใช้ชื่อเล่นถ้ามี
+            is_online: !!onlineUsers[otherMember.id] || otherMember.is_online 
+          } : undefined 
         };
       }).filter(Boolean);
+
       setChats(formatted.sort((a: any, b: any) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
     } catch (e) { console.error(e); }
   };
 
-  if (isLoading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-frog-500" /></div>;
+  if (isLoading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-frog-500" /></div>;
   if (!currentUser) return null;
 
   return (
