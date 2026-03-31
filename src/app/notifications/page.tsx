@@ -9,7 +9,7 @@ import { Bell, Clock, Trash2, Loader2, UserCheck, Heart, MessageCircle, AtSign }
 import Link from 'next/link';
 import { getRelativeTime } from '@/lib/utils';
 
-// ✅ ปรับเหลือ 10 แจ้งเตือนต่อการโหลด 1 ครั้ง
+// ✅ ตั้งค่าให้โหลดทีละ 10 รายการตามโจทย์
 const NOTIFS_PER_PAGE = 10;
 
 const getNotifIcon = (type: string) => {
@@ -54,18 +54,18 @@ export default function NotificationsPage() {
   const [page, setPage] = useState(0);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
 
-  // ✅ ระบบ Infinite Scroll: ดักจับอิลิเมนต์สุดท้ายเพื่อโหลดเพิ่ม
+  // ✅ ระบบ Infinite Scroll ที่แม่นยำ
   const observer = useRef<IntersectionObserver | null>(null);
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoading || isLoadingMore) return;
     if (observer.current) observer.current.disconnect();
 
     observer.current = new IntersectionObserver(entries => {
-      // ถ้าเลื่อนมาเจออันสุดท้าย และยังมีข้อมูลให้โหลดต่อ (hasMore)
+      // เมื่อเลื่อนมาเจอไอเทมสุดท้าย และยังมีข้อมูลให้โหลด
       if (entries[0].isIntersecting && hasMore) {
         setPage(prev => prev + 1);
       }
-    }, { threshold: 0.8 }); // ต้องเห็นอิลิเมนต์เกือบทั้งหมดถึงจะโหลด
+    }, { threshold: 0.8 }); 
 
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
@@ -102,6 +102,7 @@ export default function NotificationsPage() {
     loadInitialData();
   }, []);
 
+  // ✅ โหลดหน้าใหม่เมื่อเลข page เปลี่ยน
   useEffect(() => {
     if (page > 0) loadMoreData();
   }, [page]);
@@ -119,7 +120,6 @@ export default function NotificationsPage() {
       if (data) {
         const uniqueData = deduplicateNotifications(data);
         setNotifications(uniqueData);
-        // เช็คว่ายอดที่ดึงมา (ก่อนกรอง) ครบจำนวนต่อหน้าไหม ถ้าไม่ครบแสดงว่าหมดแล้ว
         setHasMore(data.length === NOTIFS_PER_PAGE);
         silentMarkAllAsRead(user.id);
       }
@@ -204,7 +204,7 @@ export default function NotificationsPage() {
       <NavLayout>
         <div className="flex flex-col items-center justify-center py-20">
           <Loader2 className="w-10 h-10 text-frog-500 animate-spin mb-4" />
-          <p className="text-gray-400 font-bold uppercase tracking-widest text-xs animate-pulse">กำลังโหลดการแจ้งเตือน...</p>
+          <p className="text-gray-400 font-bold uppercase tracking-widest text-xs animate-pulse">กำลังดึงข้อมูลล่าสุด...</p>
         </div>
       </NavLayout>
     );
@@ -212,17 +212,17 @@ export default function NotificationsPage() {
 
   return (
     <NavLayout>
-      <div className="max-w-2xl mx-auto px-4">
+      <div className="max-w-2xl mx-auto px-4 animate-in fade-in duration-500">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl md:text-3xl font-black text-gray-900 tracking-tight">การแจ้งเตือน</h1>
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Recent Activity</p>
+            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">Recent Activity</p>
           </div>
           
           {notifications.length > 0 && (
             <button 
               onClick={() => setShowDeleteAllModal(true)}
-              className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all"
+              className="p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all active:scale-90"
               title="ลบทั้งหมด"
             >
               <Trash2 size={22} />
@@ -232,7 +232,6 @@ export default function NotificationsPage() {
 
         <div className="space-y-3">
           {notifications.map((n, index) => {
-            // ✅ ใช้ ref กับอันสุดท้ายในลิสต์เพื่อสั่ง Infinite Scroll
             const isLast = notifications.length === index + 1;
             return (
               <div key={n.id} ref={isLast ? lastElementRef : null} className="group relative">
@@ -240,7 +239,7 @@ export default function NotificationsPage() {
                   href={n.post_id ? `/post/${n.post_id}` : `/profile/${n.sender?.username}`} 
                   className={`flex items-start gap-4 p-4 rounded-[1.5rem] border transition-all duration-300 ${
                     !n.is_read 
-                    ? 'bg-white border-indigo-200 shadow-md ring-1 ring-indigo-50' 
+                    ? 'bg-white border-frog-200 shadow-md ring-1 ring-frog-50' 
                     : 'bg-white/50 border-gray-100 hover:bg-white hover:border-gray-200'
                   }`}
                 >
@@ -262,8 +261,8 @@ export default function NotificationsPage() {
                     </p>
                     
                     {n.post && (
-                      <div className="mt-2 p-2 bg-gray-50 rounded-xl border border-gray-100/50">
-                        <p className="text-xs text-gray-400 line-clamp-1 italic">
+                      <div className="mt-2 p-2 bg-gray-50/50 rounded-xl border border-gray-100/50">
+                        <p className="text-xs text-gray-400 line-clamp-1 italic font-medium">
                           "{n.post.content}"
                         </p>
                       </div>
@@ -274,7 +273,7 @@ export default function NotificationsPage() {
                         <Clock size={10} /> {getRelativeTime(n.created_at)}
                       </p>
                       {!n.is_read && (
-                        <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></span>
+                        <span className="w-1.5 h-1.5 bg-frog-500 rounded-full animate-pulse"></span>
                       )}
                     </div>
                   </div>
@@ -290,15 +289,13 @@ export default function NotificationsPage() {
             );
           })}
           
-          {/* ✅ แสดง Loader เฉพาะตอนกำลังดึงหน้าถัดไป */}
           {isLoadingMore && (
             <div className="flex flex-col items-center justify-center py-6">
-              <Loader2 className="w-6 h-6 text-indigo-500 animate-spin mb-2" />
-              <p className="text-[9px] font-black uppercase text-gray-400 tracking-[0.2em]">กำลังโหลดเพิ่ม...</p>
+              <Loader2 className="w-6 h-6 text-frog-500 animate-spin mb-2" />
+              <p className="text-[9px] font-black uppercase text-gray-400 tracking-[0.2em]">กำลังดึงข้อมูลเพิ่ม...</p>
             </div>
           )}
           
-          {/* ✅ เมื่อโหลดจนสุดแล้ว */}
           {!hasMore && notifications.length > 0 && (
             <p className="text-center py-10 text-[9px] font-black uppercase text-gray-300 tracking-[0.3em]">
               สิ้นสุดการแจ้งเตือน
