@@ -33,9 +33,14 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   }, [initialChatData, chatId, showSettings]);
 
   const loadMessages = async () => {
-    const { data } = await supabase.from('messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true });
+    // ✅ ดึงข้อมูลผู้ส่ง (sender) มาด้วย เพื่อเอารูปโปรไฟล์ไปโชว์
+    const { data } = await supabase
+      .from('messages')
+      .select('*, sender:users!messages_sender_id_fkey(id, display_name, profile_img_url)')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: true });
+
     if (data) {
-      // ดึงมาเฉพาะข้อความที่ไม่มี ID เราใน deleted_by
       setMessages(data.filter(m => !(m.deleted_by || []).includes(currentUser.id)));
     }
     setIsLoading(false);
@@ -83,7 +88,6 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     } catch (e) { console.error(e); } finally { setIsSaving(false); }
   };
 
-  // ✅ ล้างประวัติ (หายเฉพาะเราเท่านั้น 100%)
   const clearHistoryForMe = async () => {
     if (!confirm('ล้างประวัติการแชท (หายเฉพาะฝั่งคุณ)?')) return;
     
@@ -91,13 +95,10 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     if (data) {
       const updates = data.map(m => {
         const current = m.deleted_by || [];
-        // เอา ID เราไปยัดใส่ array deleted_by ของข้อความนี้ (ไม่ได้ลบทิ้งจริงๆ เพื่อนเลยยังเห็นอยู่)
         return supabase.from('messages').update({ deleted_by: [...current, currentUser.id] }).eq('id', m.id);
       });
       await Promise.all(updates);
       
-      // ❌ ลบคำสั่งที่ไปอัปเดตตาราง chats ทิ้งไปแล้ว เพื่อไม่ให้กระทบหน้าจอของอีกฝั่ง!
-
       loadMessages();
       setShowSettings(false);
     }
@@ -142,15 +143,32 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
             <p className="text-xs font-black uppercase mt-2 text-gray-900">ยังไม่มีข้อความ</p>
           </div>
         )}
+        
         {messages.map((m) => {
           if (m.event === 'system') return <div key={m.id} className="text-center text-[10px] text-gray-400 font-bold uppercase py-4 tracking-widest">{m.content}</div>;
+          
           const isMe = m.sender_id === currentUser.id;
+          
           return (
-            <div key={m.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} group`}>
-              <div className="flex flex-col max-w-[80%] gap-1">
+            <div key={m.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} group items-end gap-2`}>
+              
+              {/* ✅ เพิ่มรูปโปรไฟล์ของเพื่อน (ถ้าไม่ใช่ข้อความเรา) */}
+              {!isMe && (
+                <div className="flex-shrink-0 mb-1">
+                  <img 
+                    src={m.sender?.profile_img_url || 'https://iili.io/qbtgKBt.png'} 
+                    alt={m.sender?.display_name || 'User'} 
+                    title={m.sender?.display_name || 'User'}
+                    className="w-8 h-8 rounded-full object-cover border border-gray-100 shadow-sm"
+                  />
+                </div>
+              )}
+
+              <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'} gap-1`}>
                 <div className={`relative px-4 py-2.5 rounded-2xl text-[14px] shadow-sm break-words ${isMe ? 'text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'}`} 
                      style={{ backgroundColor: isMe ? (initialChatData.theme_color || '#22c55e') : undefined }}>
                   {renderMessageContent(m.content || '')}
+                  
                   {isMe && (
                     <div className="absolute -left-16 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 bg-white border rounded-lg p-1 shadow-lg">
                        <button onClick={() => { setEditingId(m.id); setInput(m.content); }} className="p-1 text-blue-500 hover:bg-blue-50 rounded" title="แก้ไข"><Edit2 size={12}/></button>
@@ -158,7 +176,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                     </div>
                   )}
                 </div>
-                {m.updated_at && <span className="text-[9px] text-gray-400 self-end italic">แก้ไขแล้ว</span>}
+                {m.updated_at && <span className="text-[9px] text-gray-400 italic">แก้ไขแล้ว</span>}
               </div>
             </div>
           );
