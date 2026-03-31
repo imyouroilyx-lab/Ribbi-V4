@@ -271,29 +271,44 @@ export default function ProfilePage() {
   const themeColor = profileUser.theme_color || '#9de5a8';
   const isOwnProfile = currentUser.id === profileUser.id;
 
-  // ✅ ส่วนของ Animation แผ่นเสียงที่พี่อยากได้ (เบาและลื่น)
+  // ✅ แก้ภาพลวงตาวงกลมสมมาตร เพิ่มความชัดเจนตอนหมุน
   const MusicWidget = () => {
     if (isWidgetsLoading) return <div className="card-minimal h-24 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
     if (!profileUser.music_url) return null;
     return (
       <div className="card-minimal bg-white p-6 rounded-[2.5rem] border border-gray-100 flex items-center gap-4 transition-all shadow-sm">
-        {/* ✅ SVG แผ่นเสียงแบบหมุนได้ (GPU Accelerated) */}
         <div className="relative w-14 h-14 shrink-0">
+          
+          {/* 1. ตัวแผ่นเสียง (หมุนติ้วๆ) */}
           <svg 
             viewBox="0 0 24 24" 
-            className="w-full h-full animate-[spin_3s_linear_infinite] drop-shadow-sm" 
+            className="w-full h-full animate-[spin_3s_linear_infinite] drop-shadow-sm absolute inset-0" 
             fill="none" 
             xmlns="http://www.w3.org/2000/svg"
           >
-            {/* ตัวแผ่นสีดำ */}
+            {/* แผ่นสีดำ */}
             <circle cx="12" cy="12" r="10" fill="#18181b" />
-            {/* เส้นร่องแผ่นเสียง */}
-            <circle cx="12" cy="12" r="7" stroke="white" strokeWidth="0.5" strokeOpacity="0.1" />
-            <circle cx="12" cy="12" r="5" stroke="white" strokeWidth="0.5" strokeOpacity="0.1" />
-            {/* แกนกลางที่เปลี่ยนสีตามธีม */}
-            <circle cx="12" cy="12" r="3" fill={themeColor} />
-            <circle cx="12" cy="12" r="0.8" fill="white" fillOpacity="0.8" />
+            {/* ร่องแผ่นเสียง */}
+            <circle cx="12" cy="12" r="7.5" stroke="white" strokeWidth="0.3" strokeOpacity="0.15" />
+            <circle cx="12" cy="12" r="5.5" stroke="white" strokeWidth="0.3" strokeOpacity="0.15" />
+            
+            {/* เลเบลวงใน */}
+            <circle cx="12" cy="12" r="3.2" fill={themeColor} />
+            
+            {/* 🎯 ลายเส้นและจุดบนเลเบล เพื่อให้ตาเราเห็นจังหวะการหมุนชัดเจน */}
+            <path d="M12 8.8 A 3.2 3.2 0 0 1 15.2 12" stroke="white" strokeWidth="0.5" strokeOpacity="0.6" strokeLinecap="round" />
+            <circle cx="10" cy="10" r="0.4" fill="white" fillOpacity="0.6" />
+            
+            {/* รูแกนกลาง */}
+            <circle cx="12" cy="12" r="0.8" fill="#f8fafc" />
           </svg>
+
+          {/* 2. เงาสะท้อนแสงแผ่นเสียง (ไม่หมุน แปะทับไว้เฉยๆ) เพื่อความเงางาม */}
+          <svg viewBox="0 0 24 24" className="w-full h-full absolute inset-0 pointer-events-none opacity-50" fill="none">
+            <path d="M12 2 A 10 10 0 0 1 19.07 4.93 L 12 12 Z" fill="white" fillOpacity="0.2" />
+            <path d="M4.93 19.07 A 10 10 0 0 1 12 22 L 12 12 Z" fill="white" fillOpacity="0.05" />
+          </svg>
+
         </div>
 
         <div className="flex-1 min-w-0">
