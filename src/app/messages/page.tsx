@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import NavLayout from '@/components/NavLayout';
 import MessagesPage from '@/components/MessagesPage';
 
-// ✅ บังคับให้ Next.js ไม่ทำ Static แคชหน้าเว็บนี้ (แก้ปัญหา This page couldn't load)
+// ✅ บังคับให้ Next.js ไม่ทำ Static แคชหน้าเว็บนี้ (แก้หน้าขาว 100%)
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 
