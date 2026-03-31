@@ -9,11 +9,14 @@ import { Search, Users, ChevronLeft, ChevronRight, UserPlus, UserCheck, Clock, L
 const USERS_PER_PAGE = 20;
 const ALPHABETS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-interface UserWithFriendship extends Omit<User, 'updated_at'> {
-  friendshipStatus?: 'none' | 'pending' | 'accepted' | 'sent';
-  friendshipId?: string;
-  updated_at?: string;
+interface UserWithFriendship {
+  id: string;
+  username: string;
+  display_name: string;
+  profile_img_url?: string;
   is_online?: boolean;
+  friendshipStatus: 'none' | 'pending' | 'accepted' | 'sent';
+  friendshipId?: string;
 }
 
 export default function UsersPage() {
@@ -54,54 +57,32 @@ export default function UsersPage() {
       else setInitialLoading(true);
 
       try {
-        let query = supabase
-          .from('users')
-          .select('id, username, display_name, profile_img_url, is_online, created_at, updated_at', { count: 'exact' })
-          .neq('id', currentUserId);
-
-        if (selectedLetter) {
-          query = query.ilike('display_name', `${selectedLetter}%`);
-        }
-        if (debouncedSearch) {
-          query = query.or(`display_name.ilike.%${debouncedSearch}%,username.ilike.%${debouncedSearch}%`);
-        }
-
         const from = (currentPage - 1) * USERS_PER_PAGE;
-        const { data: userData, count, error } = await query
-          .order('display_name', { ascending: true })
-          .range(from, from + USERS_PER_PAGE - 1);
+
+        // ✅ 1 round trip เท่านั้น
+        const { data, error } = await supabase.rpc('get_users_with_friendship', {
+          p_current_user_id: currentUserId,
+          p_search: debouncedSearch || null,
+          p_letter: selectedLetter || null,
+          p_from: from,
+          p_to: from + USERS_PER_PAGE - 1
+        });
 
         if (error) throw error;
-        setTotalCount(count || 0);
 
-        if (!userData?.length) {
-          setUsers([]);
-          return;
-        }
-
-        const { data: friendshipData } = await supabase
-          .from('friendships')
-          .select('id, sender_id, receiver_id, status')
-          .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
-
-        const friendshipMap = new Map<string, any>();
-        friendshipData?.forEach(f => {
-          const otherId = f.sender_id === currentUserId ? f.receiver_id : f.sender_id;
-          friendshipMap.set(otherId, f);
-        });
-
-        const finalUsers: UserWithFriendship[] = userData.map(u => {
-          const rel = friendshipMap.get(u.id);
-          let status: 'none' | 'pending' | 'accepted' | 'sent' = 'none';
-          if (rel) {
-            if (rel.status === 'accepted') status = 'accepted';
-            else if (rel.sender_id === currentUserId) status = 'sent';
-            else status = 'pending';
-          }
-          return { ...u, friendshipStatus: status, friendshipId: rel?.id };
-        });
-
-        setUsers(finalUsers);
+        const result = data as { count: number; users: any[] };
+        setTotalCount(result.count);
+        setUsers(
+          result.users.map(u => ({
+            id: u.id,
+            username: u.username,
+            display_name: u.display_name,
+            profile_img_url: u.profile_img_url,
+            is_online: u.is_online,
+            friendshipStatus: u.friendship_status,
+            friendshipId: u.friendship_id ?? undefined,
+          }))
+        );
       } catch (err: any) {
         console.error('Fetch error:', err.message);
       } finally {
