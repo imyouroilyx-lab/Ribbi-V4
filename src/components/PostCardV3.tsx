@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase, Post, User } from '../lib/supabase';
 import { 
   Heart, 
@@ -119,7 +119,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
-  // ✅ ระบบแท็กเพื่อน
+  // ✅ ระบบแท็กเพื่อน (Mention System) แบบ Optimized
   const [friends, setFriends] = useState<User[]>([]);
   const [mentionSearch, setMentionSearch] = useState('');
   const [showMentionMenu, setShowMentionMenu] = useState(false);
@@ -128,7 +128,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   useEffect(() => {
     setPost(initialPost);
     setEditContent(initialPost.content || '');
-    loadFriends(); // โหลดรายชื่อเพื่อนรอไว้เลย
+    loadFriends(); 
   }, [initialPost]);
 
   const loadFriends = async () => {
@@ -139,16 +139,23 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     }
   };
 
+  // ✅ กรองรายชื่อใน Memory (ใช้เวลา 0.001 วินาที ไม่หน่วงแน่นอน)
   const filteredFriends = useMemo(() => {
-    return friends.filter(f => f.display_name.toLowerCase().includes(mentionSearch.toLowerCase()) || f.username.toLowerCase().includes(mentionSearch.toLowerCase())).slice(0, 5);
-  }, [friends, mentionSearch]);
+    if (!mentionSearch && showMentionMenu) return friends.slice(0, 5);
+    return friends
+      .filter(f => 
+        f.display_name.toLowerCase().includes(mentionSearch.toLowerCase()) || 
+        f.username.toLowerCase().includes(mentionSearch.toLowerCase())
+      )
+      .slice(0, 5);
+  }, [friends, mentionSearch, showMentionMenu]);
 
   const handleInputChange = (val: string, type: 'comment' | 'reply' | 'edit_comment') => {
     if (type === 'comment') setNewComment(val);
     else if (type === 'reply') setReplyContent(val);
     else setEditCommentContent(val);
 
-    const lastChar = val.slice(-1);
+    // ดักจับการพิมพ์ @
     const mentionMatch = val.match(/@([a-zA-Z0-9_ก-๙]*)$/);
 
     if (mentionMatch) {
@@ -157,6 +164,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       setActiveInput(type);
     } else {
       setShowMentionMenu(false);
+      setActiveInput(null);
     }
   };
 
@@ -170,7 +178,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     setActiveInput(null);
   };
 
-  // ✅ ฟังชั่นสแกนแท็กแล้วส่ง Notification
   const sendTagNotifications = async (content: string) => {
     const mentionRegex = /@\[.*?\]\(([a-zA-Z0-9_]+)\)/g;
     const matches = [...content.matchAll(mentionRegex)];
@@ -184,7 +191,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           .map(u => ({
             receiver_id: u.id,
             sender_id: currentUserId,
-            type: 'tag_comment', // ประเภทใหม่ที่พี่ต้องการ
+            type: 'tag_comment', 
             post_id: post.id,
             is_read: false
           }));
@@ -293,10 +300,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         image_url: commentImageUrl.trim() || null 
       });
       if (error) throw error;
-      
-      // ✅ ส่งแจ้งเตือนแท็ก
       await sendTagNotifications(newComment);
-
       setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); 
       await loadComments(); 
       setCommentCount(prev => prev + 1);
@@ -316,10 +320,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         image_url: replyImageUrl.trim() || null
       });
       if (error) throw error;
-
-      // ✅ ส่งแจ้งเตือนแท็ก
       await sendTagNotifications(replyContent);
-
       setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false);
       await loadComments(); 
       setCommentCount(prev => prev + 1);
@@ -361,7 +362,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     });
   }, []);
 
-  // ✅ UI สำหรับ Mention Menu
   const MentionMenu = () => {
     if (!showMentionMenu || filteredFriends.length === 0) return null;
     return (
