@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase'; 
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { Home, Users, User, Settings, LogOut, Menu, X, MessageCircle, Bell, ChevronRight } from 'lucide-react';
+import { Home, Users, User, Settings, LogOut, Menu, X, MessageCircle, Bell, ArrowLeft } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 const CACHE_KEY = 'ribbi_v4_nav_cache';
@@ -19,12 +19,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
-  // ระบบ Presence (ออนไลน์) ยังทำงานปกติ
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
 
   useEffect(() => {
     setIsMounted(true);
-    setShowMobileMenu(false); // ปิดเมนูอัตโนมัติเมื่อเปลี่ยนหน้า
+    setShowMobileMenu(false); 
     fetchLatestData();
   }, [pathname]);
 
@@ -47,11 +46,19 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
+  // ✅ ฟังก์ชันดักการกดปุ่มหน้าหลัก / โลโก้
+  const handleHomeClick = (e: React.MouseEvent) => {
+    if (pathname === '/') {
+      e.preventDefault(); // ยกเลิกลิงก์ปกติ
+      window.location.reload(); // บังคับโหลดหน้าใหม่แบบไม่หน่วง
+    }
+    // ถ้าอยู่หน้าอื่น Next.js จะพากลับหน้าแรกปกติ
+  };
+
   if (!isMounted) return null;
 
   const profileLink = currentUser?.username ? `/profile/${currentUser.username}` : '#';
   
-  // ✅ กำหนด Interface ให้ชัดเจนกัน TS เอ๋อ
   interface NavItem {
     label: string;
     icon: any;
@@ -70,7 +77,8 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-[100dvh] bg-gray-50 flex flex-col lg:flex-row overflow-x-hidden">
       {/* 💻 Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 fixed inset-y-0 bg-white border-r z-50 p-4">
-        <Link href="/" className="mb-8 px-2 flex items-center gap-2 group">
+        {/* โลโก้ กดแล้วรีเฟรชได้ถ้าอยู่หน้าแรก */}
+        <Link href="/" onClick={handleHomeClick} className="mb-8 px-2 flex items-center gap-2 group">
           <img src="https://iili.io/qbtgKBt.png" className="w-10 h-10 group-hover:rotate-12 transition-transform" alt=""/>
           <span className="text-2xl font-black text-frog-600 tracking-tighter">Ribbi</span>
         </Link>
@@ -78,10 +86,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           {navItems.map(item => {
             const active = pathname === item.href;
             return (
-              <Link key={item.label} href={item.href} className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${active ? 'bg-frog-500 text-white font-bold shadow-lg shadow-frog-100' : 'text-gray-500 hover:bg-gray-50'}`}>
+              <Link 
+                key={item.label} 
+                href={item.href} 
+                onClick={item.href === '/' ? handleHomeClick : undefined}
+                className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${active ? 'bg-frog-500 text-white font-bold shadow-lg shadow-frog-100' : 'text-gray-500 hover:bg-gray-50'}`}
+              >
                 <item.icon size={20}/> 
                 <span className="text-sm font-medium">{item.label}</span>
-                {/* ✅ แก้จุดที่ Build พัง: ใช้ (item.count ?? 0) */}
                 {(item.count ?? 0) > 0 && (
                   <span className={`ml-auto text-[10px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full font-black ${active ? 'bg-white text-frog-600' : 'bg-red-500 text-white'}`}>
                     {item.count}
@@ -93,17 +105,27 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           <Link href={profileLink} className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${pathname.startsWith('/profile') ? 'bg-frog-500 text-white font-bold' : 'text-gray-500 hover:bg-gray-50'}`}>
             <User size={20}/> <span>โปรไฟล์</span>
           </Link>
+          <Link href="/settings" className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${pathname === '/settings' ? 'bg-frog-500 text-white font-bold' : 'text-gray-500 hover:bg-gray-50'}`}>
+             <Settings size={20}/> <span>ตั้งค่า</span>
+          </Link>
         </nav>
-        <div className="mt-auto pt-4 border-t">
+        <div className="mt-auto pt-4 border-t space-y-2">
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-red-500 hover:bg-red-50 font-black text-xs transition-all">
             <LogOut size={16}/> <span>ออกจากระบบ</span>
           </button>
+          {/* ✅ ปุ่มกลับเว็บบอร์ด (Desktop) */}
+          <a href="https://roleplayth.com" target="_blank" rel="noopener noreferrer" className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-gray-500 hover:bg-gray-100 font-black text-xs transition-all">
+            <ArrowLeft size={16}/> <span>กลับ RoleplayTH</span>
+          </a>
         </div>
       </aside>
 
       {/* 📱 Mobile Top Bar */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b flex items-center justify-between px-4 z-40">
-        <Link href="/" className="flex items-center gap-2"><img src="https://iili.io/qbtgKBt.png" className="w-8 h-8" alt=""/><span className="text-xl font-black text-frog-600">Ribbi</span></Link>
+        <Link href="/" onClick={handleHomeClick} className="flex items-center gap-2">
+          <img src="https://iili.io/qbtgKBt.png" className="w-8 h-8" alt=""/>
+          <span className="text-xl font-black text-frog-600">Ribbi</span>
+        </Link>
         <button onClick={() => setShowMobileMenu(true)} className="p-2 bg-gray-50 rounded-xl active:scale-90 transition-all"><Menu size={24} className="text-gray-600"/></button>
       </header>
 
@@ -118,7 +140,12 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="space-y-2">
               {navItems.map(item => (
-                <Link key={item.label} href={item.href} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
+                <Link 
+                  key={item.label} 
+                  href={item.href} 
+                  onClick={item.href === '/' ? handleHomeClick : undefined}
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl"
+                >
                   <div className="flex items-center gap-3">
                     <item.icon size={20} className="text-gray-400"/>
                     <span className="font-bold text-sm text-gray-700">{item.label}</span>
@@ -129,7 +156,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               <Link href="/settings" className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl">
                 <Settings size={20} className="text-gray-400"/> <span className="font-bold text-sm text-gray-700">ตั้งค่า</span>
               </Link>
-              <button onClick={handleLogout} className="w-full mt-6 p-4 border-2 border-red-50 text-red-500 rounded-2xl font-black text-xs flex items-center justify-center gap-2"><LogOut size={16}/> ออกจากระบบ</button>
+              
+              <div className="pt-4 mt-4 border-t space-y-2">
+                <button onClick={handleLogout} className="w-full p-4 border-2 border-red-50 text-red-500 rounded-2xl font-black text-xs flex items-center justify-center gap-2"><LogOut size={16}/> ออกจากระบบ</button>
+                {/* ✅ ปุ่มกลับเว็บบอร์ด (Mobile) */}
+                <a href="https://roleplayth.com" target="_blank" rel="noopener noreferrer" className="w-full p-4 bg-gray-100 text-gray-600 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-gray-200 transition-colors">
+                  <ArrowLeft size={16}/> กลับ RoleplayTH
+                </a>
+              </div>
             </div>
           </div>
         </div>
@@ -140,12 +174,17 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         <div className="max-w-7xl mx-auto p-4 md:p-6">{children}</div>
       </main>
 
-      {/* 📱 Mobile Bottom Navigation (แทบล่างที่หายไป) */}
+      {/* 📱 Mobile Bottom Navigation */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-100 flex items-center justify-around z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
         {navItems.map((item) => {
           const active = pathname === item.href;
           return (
-            <Link key={item.label} href={item.href} className={`flex flex-col items-center gap-0.5 relative ${active ? 'text-frog-500' : 'text-gray-400'}`}>
+            <Link 
+              key={item.label} 
+              href={item.href} 
+              onClick={item.href === '/' ? handleHomeClick : undefined}
+              className={`flex flex-col items-center gap-0.5 relative ${active ? 'text-frog-500' : 'text-gray-400'}`}
+            >
               <div className="relative p-1">
                 <item.icon size={22} className={active ? 'stroke-[2.5px]' : 'stroke-[1.5px]'} />
                 {(item.count ?? 0) > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] min-w-[16px] h-[16px] flex items-center justify-center rounded-full border-2 border-white font-black">{item.count}</span>}
