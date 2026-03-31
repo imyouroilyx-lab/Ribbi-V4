@@ -10,36 +10,48 @@ export function useOnlineStatus(userId: string | null) {
   useEffect(() => {
     if (!userId) return;
 
-    // ✅ ใช้ชื่อท่อแบบสุ่มเพื่อป้องกัน Error: cannot add presence callbacks
-    const channelName = `presence-${userId}-${Math.random().toString(36).substring(7)}`;
-    const channel = supabase.channel(channelName, {
-      config: { presence: { key: userId } },
-    });
+    // 1. ฟังก์ชันสร้างการเชื่อมต่อ
+    const initPresence = async () => {
+      // เคลียร์ของเก่าถ้ามีค้างอยู่
+      if (channelRef.current) {
+        await supabase.removeChannel(channelRef.current);
+      }
 
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const newState = channel.presenceState();
-        const simplified: Record<string, any> = {};
-        for (const key in newState) {
-          if (newState[key]?.[0]) simplified[key] = newState[key][0];
-        }
-        setOnlineUsers(simplified);
-      })
-      // ✅ คงระบบ Presence ไว้เพื่อให้ "ดูคนหน้าเว็บ" ได้แบบเรียลไทม์
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({ 
-            user_id: userId, 
-            online_at: new Date().toISOString() 
-          });
-        }
+      // ✅ สุ่มชื่อท่อใหม่ทุกครั้ง + ใส่ timestamp กันจองชื่อซ้ำ
+      const uniqueRoomName = `presence_${userId}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const channel = supabase.channel(uniqueRoomName, {
+        config: { presence: { key: userId } },
       });
 
-    channelRef.current = channel;
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          const newState = channel.presenceState();
+          const simplified: Record<string, any> = {};
+          for (const key in newState) {
+            if (newState[key]?.[0]) simplified[key] = newState[key][0];
+          }
+          setOnlineUsers(simplified);
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await channel.track({ 
+              user_id: userId, 
+              online_at: new Date().toISOString() 
+            });
+          }
+        });
 
+      channelRef.current = channel;
+    };
+
+    initPresence();
+
+    // 2. Cleanup: ปิดท่อทันทีเมื่อปิดหน้าเว็บหรือ Component หายไป
     return () => {
       if (channelRef.current) {
-        void supabase.removeChannel(channelRef.current);
+        const currentChannel = channelRef.current;
+        channelRef.current = null;
+        supabase.removeChannel(currentChannel);
       }
     };
   }, [userId]);
