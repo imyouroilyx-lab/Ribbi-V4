@@ -211,12 +211,17 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
             </button>
           </div>
           
-          {/* ✅ ปุ่มบันทึก: ปรับสีให้เข้มขึ้น และข้อความชัดเจน ไม่หายเหมือนในรูปพี่แล้ว */}
-          <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t z-40">
+          {/* ส่วนล่างสุดของเมนูตั้งค่า */}
+          <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t z-50">
             <button 
               onClick={saveAllSettings} 
               disabled={isSaving} 
-              className="w-full py-4 bg-frog-600 text-white rounded-[1.25rem] text-[11px] font-black uppercase tracking-[0.2em] shadow-xl shadow-frog-100 hover:bg-frog-700 active:scale-95 transition-all disabled:opacity-50"
+              className="w-full py-4 rounded-[1.25rem] text-[12px] font-black uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all disabled:opacity-50"
+              style={{ 
+                backgroundColor: '#16a34a', // สีเขียว Frog-600 แบบบังคับ
+                color: '#ffffff',           // สีขาวแบบบังคับ
+                display: 'block'            // กันมันหาย
+              }}
             >
               {isSaving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
             </button>
