@@ -10,7 +10,7 @@ import ConfirmModal from '../../../components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, Music, 
-  MessageCircle, Clock, Loader2, ExternalLink
+  MessageCircle, Loader2, ExternalLink
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -113,7 +113,7 @@ export default function ProfilePage() {
     setFriendshipStatus('sent');
   };
 
-  if (isLoading && page === 0) return <NavLayout><div className="flex flex-col items-center justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" /><p className="text-gray-400 font-black text-[10px] uppercase tracking-widest">กำลังโหลดโปรไฟล์...</p></div></NavLayout>;
+  if (isLoading && page === 0) return <NavLayout><div className="flex flex-col items-center justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" /><p className="text-gray-400 font-black text-[10px] uppercase tracking-widest">RIBBI PROFILE</p></div></NavLayout>;
   if (!profileUser || !currentUser) return null;
 
   const themeColor = profileUser.theme_color || '#9de5a8';
@@ -209,71 +209,64 @@ export default function ProfilePage() {
     <NavLayout>
       <div className="max-w-7xl mx-auto px-4 md:px-6 pb-20">
         <div className="flex flex-col lg:flex-row gap-8">
+          
           <div className="flex-1 min-w-0 space-y-8">
-            {/* Header Section */}
+            
+            {/* --- Profile Header V4: แยก Layout คอม/มือถือ แบบเด็ดขาด --- */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-soft bg-white rounded-[3rem]">
-              <div className="h-44 md:h-80" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
-              <div className="p-6 md:p-12">
-                <div className="flex flex-col lg:flex-row items-center lg:items-end gap-6 -mt-28 md:-mt-48 mb-10 text-center lg:text-left">
-                  <div className="w-36 h-36 md:w-60 md:h-60 rounded-full p-2.5 shadow-2xl bg-white flex-shrink-0" style={{ borderColor: themeColor, borderWidth: '10px' }}>
+              {/* Cover Image */}
+              <div className="h-44 md:h-80 relative" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
+              
+              <div className="px-6 md:px-12 pb-10">
+                {/* Avatar & Action Section */}
+                <div className="relative flex flex-col lg:flex-row items-center lg:items-end gap-6 mb-10">
+                  {/* Avatar: ลอยทับ Banner แบบเป๊ะๆ */}
+                  <div className="w-40 h-40 md:w-60 md:h-60 rounded-full p-2.5 shadow-2xl bg-white -mt-20 md:-mt-30 shrink-0 z-10" style={{ borderColor: themeColor, borderWidth: '10px' }}>
                     <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover shadow-inner" alt="" />
                   </div>
-                  <div className="flex-1 flex flex-col lg:flex-row lg:items-center justify-between gap-6 w-full">
+                  
+                  {/* Name & Basic Info: ปรับให้ไม่ทับรูปใน Desktop */}
+                  <div className="flex-1 flex flex-col lg:flex-row lg:items-center justify-between gap-6 w-full lg:pb-4 text-center lg:text-left">
                     <div className="space-y-1">
-                      <h1 className="text-4xl md:text-7xl font-black text-slate-900 tracking-tight">{profileUser.display_name}</h1>
+                      <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight leading-none">{profileUser.display_name}</h1>
                       <p className="text-gray-400 font-black uppercase text-[11px] tracking-[0.4em]">@{profileUser.username}</p>
                     </div>
+                    
+                    {/* Buttons: จัดระเบียบใหม่ไม่ให้เบียด */}
                     <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
                       {currentUser.id === profileUser.id ? (
-                        <Link 
-                          href="/profile/edit" 
-                          className="flex-1 justify-center font-black text-xs uppercase tracking-widest px-8 py-4 rounded-2xl flex items-center gap-2 text-white hover:opacity-90 transition-all"
-                          style={{ backgroundColor: themeColor }}
-                        >
+                        <Link href="/profile/edit" className="flex-1 justify-center font-black text-xs uppercase tracking-widest px-8 py-4 rounded-2xl flex items-center gap-2 text-white shadow-lg shadow-black/5 hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}>
                           <Edit size={18} /> แก้ไขโปรไฟล์
                         </Link>
                       ) : (
                         <>
                           <button onClick={handleSendMessage} className="flex-1 justify-center btn-secondary font-black text-xs uppercase tracking-widest px-8 py-4 rounded-2xl flex items-center gap-2 border border-gray-200 hover:bg-slate-900 hover:text-white transition-all"><MessageCircle size={18} /> ข้อความ</button>
-                          {friendshipStatus === 'none' && (
-                            <button 
-                              onClick={handleAddFriend} 
-                              className="flex-1 justify-center font-black text-xs uppercase tracking-widest px-8 py-4 rounded-2xl flex items-center gap-2 text-white shadow-lg active:scale-95 transition-all"
-                              style={{ backgroundColor: themeColor }}
-                            >
-                              <UserPlus size={18} /> เพิ่มเพื่อน
-                            </button>
-                          )}
-                          {friendshipStatus === 'accepted' && (
-                            <button 
-                              className="flex-1 justify-center font-black text-xs uppercase tracking-widest px-8 py-4 rounded-2xl flex items-center gap-2 border"
-                              style={{ backgroundColor: `${themeColor}10`, borderColor: themeColor, color: themeColor }}
-                            >
-                              <UserCheck size={18} /> เพื่อนกันแล้ว
-                            </button>
-                          )}
+                          {friendshipStatus === 'none' && <button onClick={handleAddFriend} className="flex-1 justify-center font-black text-xs uppercase tracking-widest px-8 py-4 rounded-2xl flex items-center gap-2 text-white shadow-lg active:scale-95 transition-all" style={{ backgroundColor: themeColor }}><UserPlus size={18} /> เพิ่มเพื่อน</button>}
+                          {friendshipStatus === 'accepted' && <button className="flex-1 justify-center font-black text-xs uppercase tracking-widest px-8 py-4 rounded-2xl flex items-center gap-2 border" style={{ backgroundColor: `${themeColor}10`, borderColor: themeColor, color: themeColor }}><UserCheck size={18} /> เพื่อนกันแล้ว</button>}
                         </>
                       )}
                     </div>
                   </div>
                 </div>
                 
+                {/* Details Section: กระจายตัวออกไม่ให้กระจุก */}
                 <div className="space-y-10">
-                  {profileUser.bio && <p className="text-gray-600 font-medium leading-relaxed whitespace-pre-wrap break-words border-l-8 pl-8 text-xl md:text-3xl italic" style={{ borderColor: `${themeColor}30` }}>{profileUser.bio}</p>}
+                  {profileUser.bio && <p className="text-gray-600 font-medium leading-relaxed whitespace-pre-wrap break-words border-l-8 pl-8 text-xl md:text-2xl italic" style={{ borderColor: `${themeColor}30` }}>{profileUser.bio}</p>}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-5 gap-x-10 text-sm md:text-base text-gray-500 font-bold uppercase tracking-tight">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-6 gap-x-10 text-sm md:text-base text-gray-500 font-bold uppercase tracking-tight">
                     {profileUser.birthday && <div className="flex items-center gap-4"><Calendar className="w-5 h-5" style={{ color: themeColor }} /> เกิด {formatDate(profileUser.birthday)} ({calculateAge(profileUser.birthday)} ปี)</div>}
                     {profileUser.occupation && <div className="flex items-center gap-4"><Briefcase className="w-5 h-5" style={{ color: themeColor }} /> {profileUser.occupation}</div>}
-                    {profileUser.workplace && <div className="flex items-center gap-4"><HomeIcon className="w-5 h-5" style={{ color: themeColor }} /> ที่ {profileUser.workplace}</div>}
+                    {profileUser.workplace && <div className="flex items-center gap-4"><HomeIcon className="w-5 h-5" style={{ color: themeColor }} /> {profileUser.workplace}</div>}
                     {profileUser.address && <div className="flex items-center gap-4"><MapPin className="w-5 h-5 text-red-400" /> {profileUser.address}</div>}
                   </div>
 
+                  {/* Hobbies Bubble Section */}
                   {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
                     <div className="pt-8 border-t border-gray-50">
                       <p className="text-[11px] font-black text-gray-300 uppercase tracking-[0.2em] mb-5">งานอดิเรกและความสนใจ</p>
                       <div className="flex flex-wrap gap-3">
                         {profileUser.hobbies.map((h: any, i: number) => (
-                          <span key={i} className="px-6 py-3 rounded-full text-xs font-black border transition-all hover:translate-y-[-2px] hover:shadow-md tracking-wide uppercase" style={{ backgroundColor: `${themeColor}15`, color: themeColor, borderColor: `${themeColor}25` }}>
+                          <span key={i} className="px-6 py-3 rounded-full text-xs font-black border transition-all hover:translate-y-[-2px] hover:shadow-md tracking-wide uppercase shadow-sm" style={{ backgroundColor: `${themeColor}15`, color: themeColor, borderColor: `${themeColor}25` }}>
                             {typeof h === 'string' ? h : h.name}
                           </span>
                         ))}
@@ -284,14 +277,14 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Mobile Sidebar */}
-            <div className="lg:hidden space-y-8 px-2">
+            {/* Mobile Sidebar Content */}
+            <div className="lg:hidden space-y-8">
               <MusicWidget />
               <FriendsWidget />
               <RelationshipWidget />
             </div>
 
-            {/* Posts Area */}
+            {/* Posts Feed */}
             {(friendshipStatus === 'accepted' || currentUser.id === profileUser.id) ? (
               <div className="space-y-8">
                 <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={() => setRefreshTrigger(t => t + 1)} />
@@ -304,13 +297,14 @@ export default function ProfilePage() {
             ) : <div className="card-minimal bg-white/50 border-2 border-dashed border-gray-200 p-24 text-center rounded-[3rem]"><p className="text-gray-400 font-black text-xs uppercase tracking-[0.3em]">Become friends to see posts</p></div>}
           </div>
 
-          {/* Desktop Sidebar */}
-          <div className="hidden lg:block w-96 space-y-8">
+          {/* Desktop Sidebar Content */}
+          <div className="hidden lg:block w-[400px] space-y-8">
             <MusicWidget />
             <FriendsWidget />
             <RelationshipWidget />
             <div className="text-center opacity-20 py-10"><p className="text-[10px] font-black uppercase tracking-[0.6em]">Ribbi Community 2026</p></div>
           </div>
+
         </div>
       </div>
       <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => setShowDeletePostConfirm(false)} onConfirm={async () => { if(postToDelete) { await supabase.from('posts').delete().eq('id', postToDelete); setPosts(prev => prev.filter(p => p.id !== postToDelete)); setShowDeletePostConfirm(false); } }} title="ลบโพสต์?" message="ต้องการลบโพสต์นี้ถาวรใช่หรือไม่" variant="danger" />
