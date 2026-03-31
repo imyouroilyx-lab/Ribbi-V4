@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import PresenceClient from "@/components/PresenceClient"; // ✅ เพิ่มการเชื่อมต่อระบบเช็กสถานะออนไลน์
 
-// ✅ ตั้งค่า Google Sans แบบ Variable Font
+// ✅ ตั้งค่า Google Sans แบบ Variable Font ตามที่พี่ตั้งไว้
 const googleSans = localFont({
   src: [
     {
@@ -14,8 +15,6 @@ const googleSans = localFont({
       style: "italic",
     },
   ],
-  // เนื่องจากเป็น Variable Font เราไม่ต้องระบุ weight แยกทีละอัน
-  // ระบบจะดึงความหนาได้ตั้งแต่ 100 - 900 อัตโนมัติ
   variable: "--font-google-sans",
   display: "swap",
 });
@@ -33,7 +32,14 @@ export default function RootLayout({
   return (
     <html lang="th" className={googleSans.variable}>
       <body className="antialiased">
+        {/* ส่วนเนื้อหาของหน้าเว็บ */}
         {children}
+
+        {/* ✅ ระบบ Global Presence 
+           วางไว้ตรงนี้เพื่อให้มันเริ่มทำงานทันทีที่เข้าเว็บ 
+           ไม่ว่าจะอยู่หน้าไหน จุดเขียวก็จะซิงก์ตรงความจริงครับ
+        */}
+        <PresenceClient />
       </body>
     </html>
   );
