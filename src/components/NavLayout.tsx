@@ -126,7 +126,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-xl object-cover border-2 border-white shadow-sm" alt=""/>
               <div className="min-w-0">
                 <p className="text-sm font-black text-gray-900 truncate">{currentUser.display_name}</p>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate group-hover:text-frog-500">My Profile</p>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate group-hover:text-frog-500">โปรไฟล์ของฉัน</p>
               </div>
             </Link>
           ) : (
