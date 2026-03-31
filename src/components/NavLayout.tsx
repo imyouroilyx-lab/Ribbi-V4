@@ -25,8 +25,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const playNotificationSound = () => {
     try {
       const audio = new Audio('/ribbi.wav');
-      audio.volume = 0.6; // ปรับความดัง 60% จะได้ไม่ตกใจ
-      // .catch เอาไว้ดัก Error กรณีเบราว์เซอร์บล็อกเสียงตอนยังไม่เคยกดหน้าเว็บ
+      audio.volume = 0.6; // ปรับความดัง 60%
       audio.play().catch(e => console.log('เบราว์เซอร์บล็อกเสียง รอผู้ใช้คลิกหน้าเว็บก่อน:', e));
     } catch (err) {
       console.error('เล่นเสียงไม่สำเร็จ:', err);
@@ -39,28 +38,25 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     fetchLatestData();
   }, [pathname]);
 
-  // ✅ ระบบ Realtime Listener สำหรับแจ้งเตือนและเพื่อน
+  // ✅ ระบบ Realtime Listener ที่แก้ 'postgres_changes' แล้ว
   useEffect(() => {
     if (!currentUser?.id) return;
 
-    // สร้างช่องทางรับข้อมูลสดจาก Database (ไม่หน่วงแน่นอน เพราะเป็น WebSocket เบาๆ)
     const channel = supabase.channel('realtime_nav_alerts')
       .on(
-        'postgres', 
+        'postgres_changes', // 🟢 แก้เป็น postgres_changes ตามที่ Supabase ต้องการ
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `receiver_id=eq.${currentUser.id}` }, 
-        (payload) => {
-          // ถ้ามีการแจ้งเตือนใหม่เข้า ให้เพิ่มเลข +1 และเล่นเสียง
-          setUnreadNotif(prev => prev + 1);
+        (payload: any) => {
+          setUnreadNotif((prev) => prev + 1);
           playNotificationSound();
         }
       )
       .on(
-        'postgres', 
+        'postgres_changes', // 🟢 แก้เป็น postgres_changes
         { event: 'INSERT', schema: 'public', table: 'friendships', filter: `receiver_id=eq.${currentUser.id}` }, 
-        (payload) => {
-          // ถ้ามีคนแอดเพื่อนมา (สถานะ pending) ให้เพิ่มเลข +1 และเล่นเสียง
+        (payload: any) => {
           if (payload.new.status === 'pending') {
-            setFriendReq(prev => prev + 1);
+            setFriendReq((prev) => prev + 1);
             playNotificationSound();
           }
         }
