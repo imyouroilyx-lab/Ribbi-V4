@@ -10,20 +10,20 @@ export default function PresenceHandler({ userId }: { userId: string | undefined
       config: { presence: { key: userId } },
     });
 
-    // ✅ สำคัญ: ต้องใส่ .on ก่อน .subscribe เสมอ (ห้ามสลับ!)
+    // ✅ แก้ไขลำดับ: .on('presence') ก่อนเสมอ!
     channel
       .on('presence', { event: 'sync' }, () => {
         // Sync สถานะใน RAM
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          // แจ้งระบบ Realtime ว่าเราออนไลน์
+          // แจ้งระบบว่าเราออนไลน์
           await channel.track({ 
             user_id: userId, 
             online_at: new Date().toISOString() 
           });
           
-          // ✅ อัปเดต Database แค่ "ครั้งเดียว" ตอนเชื่อมต่อสำเร็จ
+          // ✅ อัปเดต Database แค่ "ครั้งเดียว"
           await supabase.from('users').update({ 
             last_seen: new Date().toISOString() 
           }).eq('id', userId);
