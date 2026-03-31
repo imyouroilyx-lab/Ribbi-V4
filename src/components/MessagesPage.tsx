@@ -33,7 +33,7 @@ export default function MessagesPage() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // ✅ ระบบดูคนออนไลน์ยังทำงานอยู่ (เรียลไทม์)
+  // ✅ ระบบดูคนออนไลน์ยังทำงาน (ผ่าน Hook ที่เราสุ่มชื่อท่อแก้ Error แดงแล้ว)
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
   const currentSelectedChat = chats.find(c => c.id === selectedChatId);
 
@@ -54,8 +54,6 @@ export default function MessagesPage() {
     init();
   }, [searchParams]);
 
-  // ❌ ลบ useEffect ที่ฟัง realtime messages ออกหมดแล้วเพื่อปิดระบบแชทเรียลไทม์
-
   const loadChats = async (userId: string) => {
     try {
       const { data: partData } = await supabase.from('chat_participants').select(`
@@ -74,23 +72,23 @@ export default function MessagesPage() {
           unread_count: p.unread_count || 0, 
           other_user: otherMember ? { 
             ...otherMember, 
-            is_online: !!onlineUsers[otherMember.id] // ✅ สถานะออนไลน์ยังเรียลไทม์
+            is_online: !!onlineUsers[otherMember.id] // 🟢 ยังโชว์จุดเขียวแบบเรียลไทม์
           } : undefined 
         };
       }).filter(Boolean) as Chat[];
 
       setChats(formatted.sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Load error:", e); }
   };
 
-  if (isLoading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-frog-500" /></div>;
+  if (isLoading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-frog-500" /></div>;
 
   return (
     <div className="h-[calc(100dvh-64px)] w-full flex bg-white overflow-hidden">
-      <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 border-r flex-col`}>
+      <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r flex-col`}>
         <ChatList chats={chats} currentUserId={currentUser?.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={() => loadChats(currentUser?.id)} />
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 bg-gray-50/20">
         {selectedChatId && currentSelectedChat ? (
           <ChatWindow 
             key={selectedChatId} 
@@ -103,7 +101,7 @@ export default function MessagesPage() {
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-gray-300">
             <MessageSquare size={48} className="opacity-10 mb-4" />
-            <p className="font-bold text-xs uppercase tracking-widest">เลือกแชทเพื่อเริ่มคุย</p>
+            <p className="font-bold text-xs uppercase tracking-[0.3em]">RIBBI CHAT</p>
           </div>
         )}
       </div>
