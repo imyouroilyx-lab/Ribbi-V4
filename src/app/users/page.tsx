@@ -61,6 +61,8 @@ export default function UsersPage() {
 
       try {
         const from = (currentPage - 1) * USERS_PER_PAGE;
+        
+        // 1. ดึงรายชื่อ 20 คนจาก RPC เดิม
         const { data, error } = await supabase.rpc('get_users_with_friendship', {
           p_current_user_id: currentUserId,
           p_search: debouncedSearch || null,
@@ -74,12 +76,25 @@ export default function UsersPage() {
         const result = data as { count: number; users: any[] };
         setTotalCount(result.count);
         
+        // ✅ 2. ดึงเวลา last_active ของ 20 คนนี้มาคำนวณสดๆ (เร็วมาก ไม่หน่วง)
+        const userIds = result.users.map(u => u.id);
+        const { data: activeData } = await supabase
+          .from('users')
+          .select('id, last_active')
+          .in('id', userIds);
+
+        const activeMap = new Map();
+        if (activeData) {
+          activeData.forEach(u => activeMap.set(u.id, u.last_active));
+        }
+        
         setUsers(
           result.users.map(u => {
-            // ✅ ดักจับกรณีที่ RPC พ่น last_active กลับมา จะได้คำนวณสดๆ ให้ตรงกับหน้าโฮม
-            const isOnline = u.last_active 
-              ? (Date.now() - new Date(u.last_active).getTime()) < 10 * 60 * 1000 
-              : u.is_online;
+            // คำนวณเวลา 10 นาทีเป๊ะๆ แบบหน้า Home
+            const lastActive = activeMap.get(u.id);
+            const isOnline = lastActive 
+              ? (Date.now() - new Date(lastActive).getTime()) < 10 * 60 * 1000 
+              : false;
 
             return {
               id: u.id,
@@ -165,9 +180,9 @@ export default function UsersPage() {
                       <div className="w-full h-full rounded-2xl overflow-hidden bg-slate-100 border border-slate-50">
                         <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
                       </div>
-                      {/* ✅ แก้ไข CSS จุดเขียวให้เป๊ะเหมือนหน้า Home */ }
+                      {/* ✅ จุดเขียวเป๊ะเหมือนหน้า Home 100% */ }
                       {user.is_online && (
-                        <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full shadow-sm z-10"></div>
+                        <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
                       )}
                     </div>
 
