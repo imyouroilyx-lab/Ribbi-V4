@@ -8,7 +8,6 @@ import ChatWindow from './chat/ChatWindow';
 import { MessageSquare, Loader2 } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
-// ✅ บรรทัดนี้ห้ามลบเด็ดขาด! เอาไว้ให้ ChatList เรียกใช้
 export interface Chat {
   id: string;
   is_group: boolean;
@@ -17,8 +16,6 @@ export interface Chat {
   last_message_at: string | null;
   last_message_content: string | null;
   unread_count: number;
-  my_nickname?: string | null;
-  theme_color?: string | null;
   other_user?: {
     id: string;
     username: string;
@@ -36,6 +33,7 @@ export default function MessagesPage() {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ✅ ระบบดูคนออนไลน์ยังทำงานอยู่ (เรียลไทม์)
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
   const currentSelectedChat = chats.find(c => c.id === selectedChatId);
 
@@ -56,50 +54,27 @@ export default function MessagesPage() {
     init();
   }, [searchParams]);
 
-  useEffect(() => {
-    if (!currentUser?.id) return;
-    const channel = supabase.channel('msg-sync-v1')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => loadChats(currentUser.id))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_nicknames' }, () => loadChats(currentUser.id))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => loadChats(currentUser.id))
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [currentUser?.id]);
+  // ❌ ลบ useEffect ที่ฟัง realtime messages ออกหมดแล้วเพื่อปิดระบบแชทเรียลไทม์
 
   const loadChats = async (userId: string) => {
     try {
-      const { data: partData, error: partError } = await supabase.from('chat_participants').select(`
-        chat_id,
-        unread_count, 
-        chats:chat_id (
-          *, 
-          members:chat_participants (
-            user:user_id (id, username, display_name, profile_img_url)
-          )
-        )
+      const { data: partData } = await supabase.from('chat_participants').select(`
+        chat_id, unread_count, 
+        chats:chat_id (*, members:chat_participants (user:user_id (id, username, display_name, profile_img_url)))
       `).eq('user_id', userId);
 
-      if (partError || !partData) return;
-
-      const chatIds = partData.map((p: any) => p.chat_id);
-      const { data: nicknames } = await supabase.from('chat_nicknames').select('*').in('chat_id', chatIds);
+      if (!partData) return;
 
       const formatted = partData.map((p: any) => {
-        const c = p.chats as any;
+        const c = p.chats;
         if (!c) return null;
-        
         const otherMember = c.is_group ? null : c.members.find((m: any) => m.user?.id !== userId)?.user;
-        const myNick = nicknames?.find(n => n.chat_id === c.id && n.target_user_id === userId)?.nickname;
-        const otherNick = otherMember ? nicknames?.find(n => n.chat_id === c.id && n.target_user_id === otherMember.id)?.nickname : null;
-
         return { 
           ...c, 
           unread_count: p.unread_count || 0, 
-          my_nickname: myNick,
           other_user: otherMember ? { 
             ...otherMember, 
-            display_name: otherNick || otherMember.display_name,
-            is_online: !!onlineUsers[otherMember.id]
+            is_online: !!onlineUsers[otherMember.id] // ✅ สถานะออนไลน์ยังเรียลไทม์
           } : undefined 
         };
       }).filter(Boolean) as Chat[];
@@ -108,15 +83,14 @@ export default function MessagesPage() {
     } catch (e) { console.error(e); }
   };
 
-  if (isLoading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-frog-500" /></div>;
-  if (!currentUser) return null;
+  if (isLoading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-frog-500" /></div>;
 
   return (
     <div className="h-[calc(100dvh-64px)] w-full flex bg-white overflow-hidden">
-      <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r flex-col`}>
-        <ChatList chats={chats} currentUserId={currentUser.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={() => loadChats(currentUser.id)} />
+      <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 border-r flex-col`}>
+        <ChatList chats={chats} currentUserId={currentUser?.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={() => loadChats(currentUser?.id)} />
       </div>
-      <div className="flex-1 min-w-0 bg-gray-50/30">
+      <div className="flex-1 min-w-0">
         {selectedChatId && currentSelectedChat ? (
           <ChatWindow 
             key={selectedChatId} 
