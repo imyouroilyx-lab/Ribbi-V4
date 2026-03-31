@@ -191,9 +191,9 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
 
           {showMentions && filteredFriends.length > 0 && (
             <div className="absolute z-20 left-0 top-full mt-1 w-full md:w-64 bg-white border border-gray-100 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-2">
-              <div className="p-2 border-b bg-gray-50 flex items-center gap-2"><AtSign size={12} className="text-frog-500" /><span className="text-[10px] font-black uppercase text-gray-400">แท็กเพื่อน</span></div>
+              <div className="p-2 border-b bg-gray-50 flex items-center gap-2"><AtSign size={12} className="text-green-500" /><span className="text-[10px] font-black uppercase text-gray-400">แท็กเพื่อน</span></div>
               {filteredFriends.map(user => (
-                <button key={user.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertMention(user)} className="w-full flex items-center gap-3 p-3 hover:bg-frog-50 text-left transition-colors border-b border-gray-50 last:border-0">
+                <button key={user.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertMention(user)} className="w-full flex items-center gap-3 p-3 hover:bg-green-50 text-left transition-colors border-b border-gray-50 last:border-0">
                   <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" />
                   <div className="min-w-0"><p className="text-sm font-bold text-gray-900 truncate">{user.display_name}</p><p className="text-[10px] text-gray-400">@{user.username}</p></div>
                 </button>
@@ -252,10 +252,11 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
             <button type="button" onClick={() => setShowLocationInput(!showLocationInput)} className={`p-2 md:px-4 md:py-2 rounded-xl flex items-center gap-2 transition-all ${showLocationInput ? 'bg-red-50 text-red-600' : 'hover:bg-gray-50 text-gray-500'}`}><MapPin size={20} className="text-red-500" /><span className="hidden sm:inline text-xs font-bold uppercase tracking-widest">เช็คอิน</span></button>
           </div>
 
+          {/* ✅ เปลี่ยนปุ่มตรงนี้เป็นสีเขียวมาตรฐานของ Tailwind */}
           <button
             type="submit"
             disabled={!content.trim() || isSubmitting}
-            className="px-6 py-2.5 bg-frog-600 text-white rounded-2xl text-sm font-black uppercase tracking-[0.2em] shadow-lg shadow-frog-100 disabled:opacity-30 disabled:shadow-none transition-all active:scale-95 flex items-center gap-2"
+            className="px-6 py-2.5 bg-green-600 text-white rounded-2xl text-sm font-black uppercase tracking-[0.2em] shadow-lg shadow-green-200 disabled:opacity-30 disabled:shadow-none transition-all active:scale-95 flex items-center gap-2"
           >
             {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
             <span>{isSubmitting ? 'กำลังโพสต์...' : 'โพสต์'}</span>
