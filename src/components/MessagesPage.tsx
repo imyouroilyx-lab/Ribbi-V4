@@ -59,21 +59,28 @@ export default function MessagesPage() {
     try {
       const { data: partData, error: partError } = await supabase.from('chat_participants').select(`
         chat_id, unread_count, 
-        chats:chat_id (*, members:chat_participants (user:user_id (id, username, display_name, profile_img_url)))
+        chats:chat_id (*)
       `).eq('user_id', userId);
 
       if (partError || !partData) return;
 
       const chatIds = partData.map((p: any) => p.chat_id);
-      const { data: nicknames } = await supabase.from('chat_nicknames').select('*').in('chat_id', chatIds);
+      
+      // ดึงสมาชิกและชื่อเล่น
+      const [membersRes, nicknamesRes] = await Promise.all([
+        supabase.from('chat_participants').select('chat_id, user:user_id(id, username, display_name, profile_img_url)').in('chat_id', chatIds),
+        supabase.from('chat_nicknames').select('*').in('chat_id', chatIds)
+      ]);
 
       const formatted = partData.map((p: any) => {
         const c = p.chats as any;
         if (!c) return null;
         
-        const otherMember = c.is_group ? null : c.members.find((m: any) => m.user?.id !== userId)?.user;
-        const myNickEntry = nicknames?.find(n => n.chat_id === c.id && n.target_user_id === userId);
-        const otherNickEntry = otherMember ? nicknames?.find(n => n.chat_id === c.id && n.target_user_id === otherMember.id) : null;
+        const allMembers = membersRes.data?.filter(m => m.chat_id === c.id) || [];
+        const otherMember = c.is_group ? null : allMembers.find((m: any) => m.user?.id !== userId)?.user;
+        
+        const myNickEntry = nicknamesRes.data?.find(n => n.chat_id === c.id && n.target_user_id === userId);
+        const otherNickEntry = otherMember ? nicknamesRes.data?.find(n => n.chat_id === c.id && n.target_user_id === otherMember.id) : null;
 
         return { 
           ...c, 
@@ -88,7 +95,7 @@ export default function MessagesPage() {
       }).filter(Boolean) as Chat[];
 
       setChats(formatted.sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Load error:", e); }
   };
 
   if (isLoading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-frog-500" /></div>;
