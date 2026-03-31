@@ -17,6 +17,7 @@ export default function HomePage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
+  const [totalOnlineCount, setTotalOnlineCount] = useState(0); // ✅ เพิ่ม State นี้นับจำนวนทั้งหมด
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isOnlineLoading, setIsOnlineLoading] = useState(false);
@@ -79,7 +80,6 @@ export default function HomePage() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
 
-      // ✅ ดึง location, mood, activity มาด้วยเพื่อให้ PostCardV3 แสดงผลได้
       const [userDataRes, postsDataRes] = await Promise.all([
         supabase.from('users')
           .select('id, username, display_name, profile_img_url')
@@ -142,13 +142,16 @@ export default function HomePage() {
     setIsOnlineLoading(true);
     try {
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      const { data } = await supabase
+      // ✅ เพิ่ม { count: 'exact' } เพื่อขอนับจำนวนคนออนทั้งหมด
+      const { data, count } = await supabase
         .from('users')
-        .select('id, username, display_name, profile_img_url, last_active') 
+        .select('id, username, display_name, profile_img_url, last_active', { count: 'exact' }) 
         .gte('last_active', tenMinutesAgo)
         .order('last_active', { ascending: false })
         .limit(12);
+      
       setOnlineUsers((data as any) || []);
+      setTotalOnlineCount(count || 0); // ✅ เซฟจำนวนเต็มลง State
     } catch (error) { 
       console.error(error); 
     } finally {
@@ -194,10 +197,13 @@ export default function HomePage() {
             {/* ONLINE USERS (Mobile) */}
             <div className="lg:hidden">
               <div className="flex items-center justify-between mb-2 px-1">
-                <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                  <Circle className="w-2 h-2 fill-green-500 text-green-500" />
-                  ออนไลน์ขณะนี้ ({onlineUsers.length})
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                    <Circle className="w-2 h-2 fill-green-500 text-green-500" />
+                    {/* ✅ โชว์จำนวนออนทั้งหมดตรงนี้ */}
+                    ออนไลน์ขณะนี้ ({totalOnlineCount})
+                  </h3>
+                </div>
                 
                 <div className="flex items-center gap-1">
                   <Link href="/users" className="text-[9px] font-black uppercase text-frog-600 px-2 py-1 bg-frog-50 rounded-lg flex items-center gap-1">
@@ -266,10 +272,13 @@ export default function HomePage() {
             <div className="sticky top-4 space-y-6">
               <div className="card-minimal bg-white/90 border border-gray-100 shadow-soft overflow-hidden">
                 <div className="p-4 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
-                  <h3 className="font-black text-[10px] uppercase tracking-[0.2em] flex items-center gap-2 text-gray-500">
-                    <Circle className="w-2 h-2 fill-green-500 text-green-500 animate-pulse" />
-                    ออนไลน์ขณะนี้
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-[10px] uppercase tracking-[0.2em] flex items-center gap-2 text-gray-500">
+                      <Circle className="w-2 h-2 fill-green-500 text-green-500 animate-pulse" />
+                      {/* ✅ โชว์จำนวนออนทั้งหมดตรงนี้ */}
+                      ออนไลน์ขณะนี้ ({totalOnlineCount})
+                    </h3>
+                  </div>
                   <button onClick={loadOnlineUsers} disabled={isOnlineLoading} className="p-1.5 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-gray-200">
                     <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin' : ''} text-frog-600`} />
                   </button>
