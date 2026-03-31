@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { supabase, User } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import NavLayout from '@/components/Layouts/NavLayout'; // ปรับ path ให้ตรงตามโปรเจกต์พี่
-import AlertModal from '@/components/Modals/AlertModal';
+import NavLayout from '@/components/NavLayout'; // ✅ แก้ไข Path ให้ถูกต้อง
+import AlertModal from '@/components/AlertModal'; // ✅ แก้ไข Path ให้ถูกต้อง
 import { Save, User as UserIcon, Briefcase, Heart, Palette, Music, ChevronLeft, MapPin, Calendar, Home as HomeIcon } from 'lucide-react';
 
 const RELATIONSHIP_OPTIONS = [
@@ -92,7 +92,7 @@ export default function EditProfilePage() {
     <NavLayout>
       <div className="max-w-2xl mx-auto px-4 pb-20">
         <div className="flex items-center gap-4 mb-8 pt-6">
-          <button onClick={() => router.back()} className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-900 shadow-sm"><ChevronLeft size={20} /></button>
+          <button onClick={() => router.back()} className="w-10 h-10 rounded-xl bg-white border border-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-900 shadow-sm transition-all"><ChevronLeft size={20} /></button>
           <h1 className="text-3xl font-black text-gray-900">แก้ไขโปรไฟล์</h1>
         </div>
 
@@ -110,13 +110,13 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* ข้อมูลส่วนตัว - กู้คืนส่วนที่หายไป */}
+          {/* ประวัติและสถานที่ - กู้คืนครบทุกฟิลด์ */}
           <div className="card-minimal bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-soft">
             <h2 className="text-xl font-black mb-8 flex items-center gap-3 text-blue-500"><Briefcase size={24} /> ประวัติและสถานที่</h2>
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div><label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Calendar size={12} /> วันเกิด</label><input type="date" value={formData.birthday} onChange={(e) => setFormData({ ...formData, birthday: e.target.value })} className="input-minimal w-full" /></div>
-                <div><label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Briefcase size={12} /> อาชีพ</label><input type="text" value={formData.occupation} onChange={(e) => setFormData({ ...formData, occupation: e.target.value })} className="input-minimal w-full" placeholder="ระบุอาชีพของคุณ" /></div>
+                <div><label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Briefcase size={12} /> อาชีพ</label><input type="text" value={formData.occupation} onChange={(e) => setFormData({ ...formData, occupation: e.target.value })} className="input-minimal w-full" placeholder="ระบุอาชีพ" /></div>
               </div>
               <div><label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><HomeIcon size={12} /> สถานที่ทำงาน/เรียน</label><input type="text" value={formData.workplace} onChange={(e) => setFormData({ ...formData, workplace: e.target.value })} className="input-minimal w-full" placeholder="ชื่อที่ทำงานหรือโรงเรียน" /></div>
               <div><label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><MapPin size={12} /> ที่อยู่/จังหวัด</label><input type="text" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="input-minimal w-full" placeholder="เช่น กรุงเทพมหานคร" /></div>
@@ -146,7 +146,7 @@ export default function EditProfilePage() {
 
           <div className="sticky bottom-4 bg-white/80 backdrop-blur-md p-4 rounded-3xl shadow-2xl border border-gray-100 flex gap-4">
             <button type="submit" disabled={isSaving} className="btn-primary flex-1 py-4 font-black shadow-lg shadow-frog-200">{isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลทั้งหมด'}</button>
-            <button type="button" onClick={() => router.back()} className="px-8 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black">ยกเลิก</button>
+            <button type="button" onClick={() => router.back()} className="px-8 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black transition-all hover:bg-gray-200">ยกเลิก</button>
           </div>
         </form>
       </div>
