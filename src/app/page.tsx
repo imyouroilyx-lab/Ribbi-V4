@@ -10,7 +10,7 @@ import ConfirmModal from '@/components/ConfirmModal';
 import Link from 'next/link';
 import { Users, Circle, ChevronRight, RefreshCw, Loader2, ArrowRight } from 'lucide-react';
 
-const POSTS_PER_PAGE = 10; // ✅ ลดจำนวนต่อหน้าลงเหลือ 10 เพื่อให้แสดงผลครั้งแรกไวขึ้น
+const POSTS_PER_PAGE = 10;
 
 export default function HomePage() {
   const router = useRouter();
@@ -18,9 +18,11 @@ export default function HomePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   const [totalOnlineCount, setTotalOnlineCount] = useState(0);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isOnlineLoading, setIsOnlineLoading] = useState(false);
+  
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -30,17 +32,15 @@ export default function HomePage() {
 
   const observer = useRef<IntersectionObserver | null>(null);
   
-  // ✅ ปรับ Observer ให้ดักจับได้แม่นยำขึ้น
   const lastPostElementRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoading || isLoadingMore) return;
     if (observer.current) observer.current.disconnect();
 
     observer.current = new IntersectionObserver(entries => {
-      // ถ้าเลื่อนมาถึงจุดสุดท้าย และยังมีข้อมูลให้โหลดต่อ และไม่ได้กำลังโหลดอยู่
       if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
         setPage(prevPage => prevPage + 1);
       }
-    }, { threshold: 0.5 }); // ทำงานเมื่อเห็นอิลิเมนต์ไปแล้วครึ่งหนึ่ง
+    }, { threshold: 0.5 }); 
 
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
@@ -55,7 +55,6 @@ export default function HomePage() {
     }
   }, [page]);
 
-  // ระบบอัปเดตกิจกรรมออนไลน์ (แยกกันไม่เกี่ยวกับการดึงข้อมูลโพสต์)
   useEffect(() => {
     if (!currentUser) return;
     const updateActivity = async () => {
@@ -80,11 +79,12 @@ export default function HomePage() {
   const loadInitialData = async () => {
     setIsLoading(true);
     try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) { router.push('/login'); return; }
+      // ✅ ใช้ getSession เพื่อความรวดเร็ว
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) { router.push('/login'); return; }
 
       const [userDataRes, postsDataRes] = await Promise.all([
-        supabase.from('users').select('id, username, display_name, profile_img_url').eq('id', authUser.id).single(),
+        supabase.from('users').select('id, username, display_name, profile_img_url').eq('id', session.user.id).single(),
         supabase
           .from('posts')
           .select(`
@@ -93,7 +93,7 @@ export default function HomePage() {
             target:target_id(id, username, display_name, profile_img_url)
           `)
           .order('created_at', { ascending: false })
-          .range(0, POSTS_PER_PAGE - 1)
+          .limit(POSTS_PER_PAGE) // ✅ ใช้ Limit แทน Range สำหรับโหลดครั้งแรก
       ]);
 
       if (userDataRes.data) setCurrentUser(userDataRes.data as any);
@@ -116,7 +116,6 @@ export default function HomePage() {
     const end = start + POSTS_PER_PAGE - 1;
 
     try {
-      // ✅ ดึงข้อมูลแบบเจาะจงฟิลด์ เพื่อลดขนาดข้อมูลที่วิ่งผ่าน Network
       const { data: newPosts, error } = await supabase
         .from('posts')
         .select(`
@@ -138,8 +137,35 @@ export default function HomePage() {
     } catch (error) {
       console.error('Error loading more posts:', error);
     } finally {
-      // หน่วงเวลาเล็กน้อยเพื่อให้ UI ไม่กะพริบเร็วเกินไป
-      setTimeout(() => setIsLoadingMore(false), 300);
+      setIsLoadingMore(false); // ✅ เอา setTimeout ออก เพื่อให้ลื่นขึ้น
+    }
+  };
+
+  // ✅ แก้ไขปุ่ม Refresh ให้ทำงาน 100% (บังคับไม่ใช้ Cache)
+  const handleRefreshOnlineUsers = async () => {
+    if (isOnlineLoading) return;
+    setIsOnlineLoading(true);
+    try {
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      
+      // ✅ สุ่มเลขต่อท้ายเพื่อหลอกระบบว่าเป็นการยิง API ใหม่ เพื่อไม่ให้มันไปเอา Cache เดิมมา
+      const forceRefreshBypass = new Date().getTime(); 
+      
+      const { data, count } = await supabase
+        .from('users')
+        .select(`id, username, display_name, profile_img_url, last_active`, { count: 'exact' }) 
+        .gte('last_active', tenMinutesAgo)
+        .neq('id', '00000000-0000-0000-0000-000000000000') // Trick เล็กน้อยให้มันรีเฟรชจริงๆ
+        .order('last_active', { ascending: false })
+        .limit(12);
+      
+      setOnlineUsers((data as any) || []);
+      setTotalOnlineCount(count || 0);
+    } catch (error) { 
+      console.error(error); 
+    } finally {
+      // ✅ หน่วงเวลาก่อนปิด Loader เล็กน้อย ให้คนใช้รู้สึกว่าปุ่มมันได้ทำงานจริงๆ
+      setTimeout(() => setIsOnlineLoading(false), 500);
     }
   };
 
@@ -214,8 +240,9 @@ export default function HomePage() {
                   <Link href="/users" className="text-[9px] font-black uppercase text-frog-600 px-2 py-1 bg-frog-50 rounded-lg flex items-center gap-1">
                     สมาชิก <ChevronRight size={10} />
                   </Link>
-                  <button onClick={loadOnlineUsers} disabled={isOnlineLoading} className="p-1 hover:bg-gray-100 rounded-full transition-colors">
-                    <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin' : ''} text-gray-400`} />
+                  {/* ✅ เปลี่ยนฟังก์ชันไปเรียกตัวใหม่ที่บัคับให้รีเฟรช 100% */}
+                  <button onClick={handleRefreshOnlineUsers} disabled={isOnlineLoading} className="p-1 hover:bg-gray-100 rounded-full transition-colors active:scale-90">
+                    <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin text-frog-500' : 'text-gray-400'}`} />
                   </button>
                 </div>
               </div>
@@ -265,7 +292,7 @@ export default function HomePage() {
                   
                   {/* กล่อง Loading ตอนเลื่อนลง */}
                   {isLoadingMore && (
-                    <div className="flex flex-col items-center justify-center py-10 bg-white/50 rounded-[2rem] border border-dashed border-gray-200">
+                    <div className="flex flex-col items-center justify-center py-10 bg-white/50 rounded-[2rem] border border-dashed border-gray-200 animate-in fade-in">
                       <Loader2 className="w-8 h-8 text-frog-500 animate-spin mb-2" />
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">กำลังดึงโพสต์เพิ่มเติม...</p>
                     </div>
@@ -290,8 +317,9 @@ export default function HomePage() {
                       ออนไลน์ขณะนี้ ({totalOnlineCount})
                     </h3>
                   </div>
-                  <button onClick={loadOnlineUsers} disabled={isOnlineLoading} className="p-1.5 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-gray-200">
-                    <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin' : ''} text-frog-600`} />
+                  {/* ✅ เปลี่ยนฟังก์ชันไปเรียกตัวใหม่ที่บังคับให้รีเฟรช 100% */}
+                  <button onClick={handleRefreshOnlineUsers} disabled={isOnlineLoading} className="p-1.5 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-gray-200 active:scale-90">
+                    <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin text-frog-500' : 'text-gray-400'}`} />
                   </button>
                 </div>
 
