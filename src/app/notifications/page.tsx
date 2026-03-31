@@ -11,6 +11,39 @@ import { getRelativeTime } from '@/lib/utils';
 
 const NOTIFS_PER_PAGE = 20;
 
+// ✅ ย้ายฟังก์ชันข้อความและไอคอนมาไว้ด้านนอก เพื่อไม่ให้ถูกสร้างใหม่ทุกครั้งที่ Render (ช่วยลดความหน่วง)
+const getNotifIcon = (type: string) => {
+  switch (type) {
+    case 'like':
+    case 'comment_like': // ดักการกดไลก์คอมเมนต์
+      return <Heart size={12} className="fill-red-500 text-red-500" />;
+    case 'comment': 
+    case 'reply': 
+      return <MessageCircle size={12} className="fill-blue-500 text-blue-500" />;
+    case 'friend_accept': 
+      return <UserCheck size={12} className="text-frog-600" />;
+    case 'tag_post':
+    case 'tag_comment': 
+      return <AtSign size={12} className="text-purple-500" />;
+    default: 
+      return <Bell size={12} className="text-gray-400" />;
+  }
+};
+
+const getNotificationText = (type: string) => {
+  switch (type) {
+    case 'like': return 'ถูกใจโพสต์ของคุณ';
+    case 'comment_like': return 'ถูกใจความคิดเห็นของคุณ'; // ✅ แก้ให้ตรงจุดแล้วครับ
+    case 'comment': return 'แสดงความคิดเห็นในโพสต์ของคุณ';
+    case 'reply': return 'ตอบกลับความคิดเห็นของคุณ';
+    case 'friend_request': return 'ส่งคำขอเป็นเพื่อนถึงคุณ';
+    case 'friend_accept': return 'ตอบรับคำขอเป็นเพื่อนแล้ว';
+    case 'tag_post': return 'กล่าวถึงคุณในโพสต์';
+    case 'tag_comment': return 'กล่าวถึงคุณในความคิดเห็น';
+    default: return 'มีการเคลื่อนไหวใหม่ในบัญชีของคุณ';
+  }
+};
+
 export default function NotificationsPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -21,6 +54,7 @@ export default function NotificationsPage() {
   const [page, setPage] = useState(0);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
 
+  // ระบบ Intersection Observer สำหรับโหลดข้อมูลเพิ่มเวลาเลื่อนลงสุด (ไม่หน่วงแน่นอน)
   const observer = useRef<IntersectionObserver | null>(null);
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoading || isLoadingMore) return;
@@ -45,26 +79,22 @@ export default function NotificationsPage() {
     }
   };
 
-  // ✅ ระบบกรองแจ้งเตือนซ้ำซ้อน (Deduplication)
-  // กรองเอาแจ้งเตือนประเภทเดียวกันจากคนเดียวกันที่เกิดขึ้นซ้ำๆ ออกไปให้เหลือแค่อันเดียว
+  // ✅ ระบบกรองแจ้งเตือนซ้ำซ้อน (Deduplication) ช่วยลดจำนวนของที่ต้องเรนเดอร์บนจอ
   const deduplicateNotifications = (notifs: any[]) => {
     const seen = new Set();
     return notifs.filter(n => {
-      let key = n.id; // ใช้ ID เป็นค่าเริ่มต้น
+      let key = n.id;
       
-      // ถ้าเป็นคำขอเพื่อน หรือตอบรับเพื่อน ให้จำกัด 1 คนต่อ 1 แจ้งเตือน
+      // กรองคำขอเพื่อนซ้ำ
       if (n.type === 'friend_request' || n.type === 'friend_accept') {
         key = `${n.type}-${n.sender_id}`;
       } 
-      // ถ้าเป็นการกดถูกใจ ให้จำกัด 1 คนต่อ 1 โพสต์
-      else if (n.type === 'like') {
-        key = `${n.type}-${n.sender_id}-${n.post_id}`;
+      // กรองการกดไลก์รัวๆ ในโพสต์/คอมเมนต์เดียวกัน ให้เหลือแค่อันเดียว
+      else if (n.type === 'like' || n.type === 'comment_like') {
+        key = `${n.type}-${n.sender_id}-${n.post_id || n.id}`;
       }
 
-      if (seen.has(key)) {
-        return false; // ถ้าเจอคีย์นี้แล้ว (ซ้ำ) ให้ข้ามไป
-      }
-      
+      if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
@@ -89,7 +119,6 @@ export default function NotificationsPage() {
 
       const { data } = await fetchNotifications(user.id, 0);
       if (data) {
-        // ✅ นำข้อมูลไปกรองตัวซ้ำก่อนแสดงผล
         const uniqueData = deduplicateNotifications(data);
         setNotifications(uniqueData);
         setHasMore(data.length === NOTIFS_PER_PAGE);
@@ -109,7 +138,6 @@ export default function NotificationsPage() {
       const { data } = await fetchNotifications(currentUser.id, page);
       if (data && data.length > 0) {
         setNotifications(prev => {
-          // ✅ รวมของเก่าและใหม่เข้าด้วยกัน แล้วกรองตัวซ้ำออก
           const combined = [...prev, ...data];
           return deduplicateNotifications(combined);
         });
@@ -150,7 +178,6 @@ export default function NotificationsPage() {
         .eq('receiver_id', currentUser.id);
 
       if (error) throw error;
-
       setNotifications(prev => prev.filter(n => n.id !== id));
     } catch (error) {
       console.error('Failed to delete notification:', error);
@@ -166,7 +193,6 @@ export default function NotificationsPage() {
         .eq('receiver_id', currentUser.id);
 
       if (error) throw error;
-
       setNotifications([]);
       setShowDeleteAllModal(false);
     } catch (error) {
@@ -184,18 +210,6 @@ export default function NotificationsPage() {
       </NavLayout>
     );
   }
-
-  const getNotifIcon = (type: string) => {
-    switch (type) {
-      case 'like': return <Heart size={12} className="fill-red-500 text-red-500" />;
-      case 'comment': 
-      case 'reply': return <MessageCircle size={12} className="fill-blue-500 text-blue-500" />;
-      case 'friend_accept': return <UserCheck size={12} className="text-frog-600" />;
-      case 'tag_post':
-      case 'tag_comment': return <AtSign size={12} className="text-purple-500" />;
-      default: return <Bell size={12} className="text-gray-400" />;
-    }
-  };
 
   return (
     <NavLayout>
@@ -243,7 +257,7 @@ export default function NotificationsPage() {
 
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-900 leading-snug">
-                      <span className="font-black text-gray-900">{n.sender?.display_name || 'ใครบางคน'}</span>{' '}
+                      <span className="font-black text-gray-900">{n.sender?.display_name || 'ผู้ใช้ Ribbi'}</span>{' '}
                       <span className="text-gray-600">{getNotificationText(n.type)}</span>
                     </p>
                     
@@ -282,10 +296,10 @@ export default function NotificationsPage() {
             </div>
           )}
           
-          {notifications.length === 0 && (
+          {notifications.length === 0 && !isLoading && (
             <div className="text-center py-20 bg-white rounded-[2.5rem] border border-dashed border-gray-200 shadow-inner">
               <Bell className="w-16 h-16 mx-auto mb-4 text-gray-100" />
-              <p className="text-gray-400 text-sm font-black uppercase tracking-widest">No notifications yet</p>
+              <p className="text-gray-400 text-sm font-black uppercase tracking-widest">ยังไม่มีการแจ้งเตือน</p>
             </div>
           )}
         </div>
@@ -303,17 +317,4 @@ export default function NotificationsPage() {
       />
     </NavLayout>
   );
-
-  function getNotificationText(type: string) {
-    switch (type) {
-      case 'like': return 'ถูกใจโพสต์ของคุณ';
-      case 'comment': return 'แสดงความคิดเห็นในโพสต์ของคุณ';
-      case 'reply': return 'ตอบกลับความคิดเห็นของคุณ';
-      case 'friend_request': return 'ส่งคำขอเป็นเพื่อนถึงคุณ';
-      case 'friend_accept': return 'ตอบรับคำขอเป็นเพื่อนแล้ว';
-      case 'tag_post': return 'แท็กคุณในโพสต์ของพวกเขา';
-      case 'tag_comment': return 'แท็กคุณในความคิดเห็น';
-      default: return 'มีการเคลื่อนไหวใหม่ในบัญชีของคุณ';
-    }
-  }
 }
