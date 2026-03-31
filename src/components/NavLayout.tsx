@@ -23,19 +23,15 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setIsMounted(true);
     pathnameRef.current = pathname;
-    
-    // โหลด Cache ป้องกันกระตุก
     const cached = sessionStorage.getItem(CACHE_KEY);
     if (cached) {
       try {
         const data = JSON.parse(cached);
-        if (data.user) {
-          setCurrentUser(data.user);
-          setUnreadNotif(pathname === '/notifications' ? 0 : (data.notif || 0));
-          setFriendReq(pathname === '/friends' ? 0 : (data.friend || 0));
-          setUnreadMsg(pathname === '/messages' ? 0 : (data.message || 0));
-        }
-      } catch (e) { console.error("Cache error"); }
+        setCurrentUser(data.user);
+        setUnreadNotif(pathname === '/notifications' ? 0 : (data.notif || 0));
+        setFriendReq(pathname === '/friends' ? 0 : (data.friend || 0));
+        setUnreadMsg(pathname === '/messages' ? 0 : (data.message || 0));
+      } catch (e) { console.error(e); }
     }
     fetchLatestData();
   }, [pathname]);
@@ -45,16 +41,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!currentUser?.id) return;
     const channel = supabase.channel(`nav-realtime-${currentUser.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `receiver_id=eq.${currentUser.id}` }, (p) => {
-        if (p.new.type !== 'friend_request' && pathnameRef.current !== '/notifications') setUnreadNotif(v => v + 1);
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'friendships', filter: `receiver_id=eq.${currentUser.id}` }, (p) => {
-        if (p.new.status === 'pending' && pathnameRef.current !== '/friends') setFriendReq(v => v + 1);
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `receiver_id=eq.${currentUser.id}` }, () => {
+        if (pathnameRef.current !== '/notifications') setUnreadNotif(v => v + 1);
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_participants', filter: `user_id=eq.${currentUser.id}` }, (p) => {
-        const newVal = p.new?.unread_count || 0;
-        const oldVal = p.old?.unread_count || 0;
-        const diff = newVal - oldVal;
+        const diff = (p.new?.unread_count || 0) - (p.old?.unread_count || 0);
         if (diff !== 0) setUnreadMsg(v => Math.max(0, v + diff));
       })
       .subscribe();
@@ -63,27 +54,17 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   const fetchLatestData = async () => {
     try {
-      const { data: authData } = await supabase.auth.getSession();
-      const session = authData?.session;
+      const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-
       const { data, error } = await supabase.rpc('get_user_app_data', { user_uuid: session.user.id });
-      
-      // ✅ เช็คว่า data มีค่าอยู่จริงก่อนเรียกใช้งาน (ป้องกันหน้าขาว)
       if (!error && data && data.user_info) {
         setCurrentUser(data.user_info);
-        setUnreadNotif(pathname === '/notifications' ? 0 : (data.unread_notifications || 0));
-        setFriendReq(pathname === '/friends' ? 0 : (data.pending_friends || 0));
-        setUnreadMsg(pathname === '/messages' ? 0 : (data.unread_messages || 0));
-        
-        sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-          user: data.user_info,
-          notif: data.unread_notifications,
-          friend: data.pending_friends,
-          message: data.unread_messages
-        }));
+        setUnreadNotif(pathname === '/notifications' ? 0 : data.unread_notifications);
+        setFriendReq(pathname === '/friends' ? 0 : data.pending_friends);
+        setUnreadMsg(pathname === '/messages' ? 0 : data.unread_messages);
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify({ user: data.user_info, notif: data.unread_notifications, friend: data.pending_friends, message: data.unread_messages }));
       }
-    } catch (err) { console.error("Fetch layout error:", err); }
+    } catch (err) { console.error(err); }
   };
 
   const handleLogout = async () => {
@@ -106,49 +87,28 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
-      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 fixed inset-y-0 bg-white border-r border-gray-100 z-50 p-4">
-        <div className="mb-8 px-2">
-          <Link href="/" className="flex items-center gap-2">
-            <img src="https://iili.io/qbtgKBt.png" className="w-10 h-10" alt="Ribbi" />
-            <span className="text-2xl font-black text-frog-600 tracking-tighter">Ribbi</span>
-          </Link>
-        </div>
+        <div className="mb-8 px-2"><Link href="/" className="flex items-center gap-2"><img src="https://iili.io/qbtgKBt.png" className="w-10 h-10" /><span className="text-2xl font-black text-frog-600">Ribbi</span></Link></div>
         <nav className="flex-1 space-y-1">
           {navItems.map((item) => {
-            const active = pathname === item.href || (item.label === 'โปรไฟล์' && currentUser?.username && pathname.startsWith(`/profile/${currentUser.username}`));
-            const Icon = item.icon;
+            const active = pathname === item.href || (item.label === 'โปรไฟล์' && pathname.startsWith('/profile/'));
+            // ✅ แก้ไข: (item.count ?? 0) ป้องกัน undefined ตอน Build
             return (
               <Link key={item.label} href={item.href} className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${active ? 'bg-frog-500 text-white font-bold' : 'text-gray-500 hover:bg-gray-50'}`}>
                 <div className="relative">
-                  <Icon className="w-5 h-5" />
-                  {(item.count ?? 0) > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full border-2 border-white font-black">{item.count! > 99 ? '99+' : item.count}</span>}
+                  <item.icon className="w-5 h-5" />
+                  {(item.count ?? 0) > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full border-2 border-white font-black">{item.count}</span>}
                 </div>
                 <span className="text-sm font-medium">{item.label}</span>
               </Link>
             );
           })}
         </nav>
-        <div className="mt-auto pt-4 border-t border-gray-100">
-          {currentUser && (
-            <Link href={profileLink} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-2xl mb-2">
-              <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover" alt="" />
-              <div className="min-w-0 flex-1"><p className="font-bold text-xs truncate text-gray-900">{currentUser.display_name}</p><p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">My Profile</p></div>
-            </Link>
-          )}
+        <div className="mt-auto border-t pt-4">
           <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-red-500 hover:bg-red-50 font-black text-xs transition-all"><LogOut className="w-4 h-4" /> <span>ออกจากระบบ</span></button>
         </div>
       </aside>
-
-      {/* Mobile Nav */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 z-40">
-        <Link href="/" className="flex items-center gap-2"><img src="https://iili.io/qbtgKBt.png" className="w-8 h-8" alt="" /><span className="text-xl font-black text-frog-600">Ribbi</span></Link>
-        <button onClick={() => setShowMobileMenu(true)} className="p-2 bg-gray-50 rounded-xl"><Menu className="w-6 h-6" /></button>
-      </header>
-
-      <main className="flex-1 lg:ml-64 pt-16 lg:pt-0 min-h-screen">
-        <div className="max-w-7xl mx-auto p-4 md:p-6">{children}</div>
-      </main>
+      <main className="flex-1 lg:ml-64 pt-16 lg:pt-0 min-h-screen"><div className="max-w-7xl mx-auto p-4 md:p-6">{children}</div></main>
     </div>
   );
 }
