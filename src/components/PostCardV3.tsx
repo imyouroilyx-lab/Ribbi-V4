@@ -92,9 +92,9 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [editContent, setEditContent] = useState(post.content || '');
 
-  // States สำหรับดูคนกดไลก์
+  // ✅ States สำหรับดูคนกดไลก์ (ปรับ Type เป็น any[] แก้ปัญหา TypeScript)
   const [showLikersModal, setShowLikersModal] = useState(false);
-  const [likers, setLikers] = useState<User[]>([]);
+  const [likers, setLikers] = useState<any[]>([]); 
   const [isLoadingLikers, setIsLoadingLikers] = useState(false);
 
   const [newComment, setNewComment] = useState('');
@@ -112,13 +112,11 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
-  // ✅ เพิ่ม useEffect เพื่อรับรู้ข้อมูลใหม่เวลาแม่ส่งโพสต์ใหม่ๆ มา
   useEffect(() => {
     setPost(initialPost);
     setEditContent(initialPost.content || '');
   }, [initialPost]);
 
-  // ✅ เช็กสิทธิ์ลบ/แก้ ให้ฉลาดขึ้น รองรับกรณีที่ author เป็น ID ธรรมดา หรือเป็น Object
   const authorId = post.author?.id || post.author_id;
   const targetId = post.target?.id || post.target_id;
   const canDeletePost = authorId === currentUserId || profileOwnerId === currentUserId || targetId === currentUserId;
@@ -150,7 +148,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     else await supabase.from('likes').delete().eq('post_id', post.id).eq('user_id', currentUserId);
   };
 
-  // ✅ ฟังก์ชันดึงรายชื่อคนกดไลก์แบบ 2 สเต็ป (แก้ปัญหาการ Join ของ Supabase)
   const handleViewLikers = async () => {
     if (likeCount === 0) return;
     setShowLikersModal(true);
@@ -182,7 +179,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     }
   };
 
-  // ✅ ฟังก์ชันแก้ไขโพสต์แบบมี Error Catching
   const handleUpdatePost = async () => {
     if (!editContent.trim() || isSubmitting) return;
     setIsSubmitting(true);
@@ -408,7 +404,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <p className="text-[10px] text-gray-400 font-bold uppercase">{getRelativeTime(post.created_at)}</p>
             
-            {/* ✅ ดึงสถานที่มาโชว์ */}
             {post.location && (
               <>
                 <span className="w-1 h-1 rounded-full bg-gray-300"></span>
@@ -418,7 +413,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               </>
             )}
             
-            {/* ✅ ดึงอารมณ์ (Mood) มาโชว์ */}
             {post.mood && (
               <>
                 <span className="w-1 h-1 rounded-full bg-gray-300"></span>
@@ -428,7 +422,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               </>
             )}
 
-            {/* ✅ ดึงกิจกรรม (Activity) มาโชว์ */}
             {post.activity && (
               <>
                 <span className="w-1 h-1 rounded-full bg-gray-300"></span>
@@ -448,7 +441,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         )}
       </div>
 
-      {/* เนื้อหาโพสต์ (โหมดปกติ หรือ โหมดแก้ไข) */}
       {isEditingPost ? (
         <div className="mb-4 space-y-3 animate-in fade-in">
           <textarea
@@ -493,7 +485,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           <button onClick={handleLike} className={`transition-all active:scale-75 p-1 -ml-1 rounded-full ${isLiked ? 'text-red-500' : 'text-gray-400 hover:bg-red-50 hover:text-red-400'}`}>
             <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
           </button>
-          {/* ✅ กดที่ตัวเลขเพื่อเปิดดูหน้าต่างรายชื่อคนกดไลก์ */}
+          {/* ✅ กดที่ตัวเลขเพื่อดูว่าใครไลก์บ้าง */}
           <button onClick={handleViewLikers} className={`text-xs font-black transition-colors py-1 pr-2 ${likeCount > 0 ? 'text-gray-500 hover:text-gray-900 hover:underline cursor-pointer' : 'text-gray-400 cursor-default'}`}>
             {likeCount}
           </button>
@@ -537,7 +529,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </div>
       )}
 
-      {/* ✅ หน้าต่างรายชื่อคนกดไลก์ */}
+      {/* ✅ Modal แสดงรายชื่อคนกดไลก์ */}
       {showLikersModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowLikersModal(false)}>
           <div className="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl p-6 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
