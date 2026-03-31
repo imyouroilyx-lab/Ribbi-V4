@@ -216,7 +216,7 @@ export default function NotificationsPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl md:text-3xl font-black text-gray-900 tracking-tight">การแจ้งเตือน</h1>
-            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">Recent Activity</p>
+            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">Recent Notifications</p>
           </div>
           
           {notifications.length > 0 && (
