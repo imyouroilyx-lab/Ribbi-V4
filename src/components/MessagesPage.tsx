@@ -8,7 +8,7 @@ import ChatWindow from './chat/ChatWindow';
 import { MessageSquare, Loader2 } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
-// ✅ export เพื่อให้ไฟล์อื่นนำไปใช้ได้ (แก้ Build Error)
+// ✅ สำคัญ: ต้อง export interface เพื่อให้ไฟล์อื่น build ผ่าน
 export interface Chat {
   id: string;
   is_group: boolean;
@@ -39,7 +39,7 @@ const fetchInChunks = async (table: string, select: string, column: string, ids:
       const { data } = await supabase.from(table).select(select).in(column, chunk);
       if (data) results.push(...data);
     }
-  } catch (e) { console.error(e); }
+  } catch (e) { console.error(`Error fetching ${table}:`, e); }
   return results;
 };
 
@@ -74,12 +74,13 @@ export default function MessagesPage() {
   }, [searchParams]);
 
   const loadChats = async (uid: string) => {
+    if (!uid) return;
     try {
       const { data: participantsData, error } = await supabase.from('chat_participants')
         .select(`chat_id, unread_count, chats:chat_id (id, is_group, name, group_img_url, last_message_at, last_message_content, last_message_sender_id, last_message_id)`)
         .eq('user_id', uid);
 
-      if (error || !participantsData) { setChats([]); return; }
+      if (error || !participantsData?.length) { setChats([]); return; }
 
       const chatIds = participantsData.map(p => p.chat_id);
       const lastMsgIds = participantsData.map(p => (p.chats as any)?.last_message_id).filter(Boolean);
@@ -112,18 +113,32 @@ export default function MessagesPage() {
       }).filter(Boolean) as Chat[];
 
       setChats(result.sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
-    } catch (e) { console.error(e); }
+    } catch (err) { console.error(err); }
   };
 
-  if (isLoading) return <div className="flex flex-col items-center justify-center h-screen bg-white"><Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" /><p className="text-gray-400 font-black text-xs uppercase tracking-widest">กำลังเตรียมข้อความ...</p></div>;
+  if (isLoading) return (
+    <div className="flex flex-col items-center justify-center h-screen bg-white">
+      <Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" />
+      <p className="text-gray-400 font-black text-[10px] tracking-widest uppercase">กำลังเตรียมแชท...</p>
+    </div>
+  );
+  
+  if (!currentUser) return null;
 
   return (
     <div className="h-[calc(100dvh-64px)] w-full flex overflow-hidden bg-white">
-      <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r flex-col`}>
-        <ChatList chats={chats} currentUserId={currentUser?.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={() => loadChats(currentUser?.id)} />
+      <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r border-gray-100 flex-col`}>
+        <ChatList chats={chats} currentUserId={currentUser.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={() => loadChats(currentUser.id)} />
       </div>
       <div className={`${selectedChatId ? 'flex' : 'hidden md:flex'} flex-1 bg-gray-50/30`}>
-        {selectedChatId ? <ChatWindow chatId={selectedChatId} currentUser={currentUser} onBack={() => setSelectedChatId(null)} onRefreshChats={() => loadChats(currentUser?.id)} /> : <div className="flex-1 flex flex-col items-center justify-center text-gray-300"><MessageSquare className="w-20 h-20 opacity-20" /><p className="font-black text-xs uppercase">เลือกแชทเพื่อเริ่มคุย</p></div>}
+        {selectedChatId ? (
+          <ChatWindow chatId={selectedChatId} currentUser={currentUser} onBack={() => setSelectedChatId(null)} onRefreshChats={() => loadChats(currentUser.id)} />
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
+            <MessageSquare className="w-20 h-20 mb-4 opacity-20" />
+            <p className="font-black text-xs tracking-widest uppercase">เลือกข้อความเพื่อเริ่มคุย</p>
+          </div>
+        )}
       </div>
     </div>
   );
