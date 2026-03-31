@@ -52,7 +52,6 @@ export default function HomePage() {
     }
   }, [page]);
 
-  // ระบบอัปเดตสถานะออนไลน์ (Throttled)
   useEffect(() => {
     if (!currentUser) return;
     const updateActivity = async () => {
@@ -80,7 +79,7 @@ export default function HomePage() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.push('/login'); return; }
 
-      // ✅ Optimize: ดึงเฉพาะ Column ที่ใช้ และใส่ 'as any' ป้องกัน Build Error
+      // ✅ ดึง location, mood, activity มาด้วยเพื่อให้ PostCardV3 แสดงผลได้
       const [userDataRes, postsDataRes] = await Promise.all([
         supabase.from('users')
           .select('id, username, display_name, profile_img_url')
@@ -89,7 +88,7 @@ export default function HomePage() {
         supabase
           .from('posts')
           .select(`
-            id, content, images, created_at, author_id, target_id,
+            id, content, images, created_at, author_id, target_id, location, mood, activity,
             author:author_id(id, username, display_name, profile_img_url),
             target:target_id(id, username, display_name, profile_img_url)
           `)
@@ -118,7 +117,7 @@ export default function HomePage() {
       const { data: newPosts } = await supabase
         .from('posts')
         .select(`
-          id, content, images, created_at, author_id, target_id,
+          id, content, images, created_at, author_id, target_id, location, mood, activity,
           author:author_id(id, username, display_name, profile_img_url),
           target:target_id(id, username, display_name, profile_img_url)
         `)
