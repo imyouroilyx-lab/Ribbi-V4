@@ -12,7 +12,8 @@ import {
   Send, 
   Loader2, 
   ChevronRight, 
-  MapPin
+  MapPin,
+  Link as LinkIcon
 } from 'lucide-react';
 import { getRelativeTime } from '../lib/utils';
 import Link from 'next/link';
@@ -42,6 +43,7 @@ function getYouTubeVideoId(url: string): string | null {
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
+// ✅ เปลี่ยนมาใช้ microlink API ที่ดึงง่าย ไม่ติดบล็อก CORS
 const LinkPreview = ({ url }: { url: string }) => {
   const [preview, setPreview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -50,27 +52,50 @@ const LinkPreview = ({ url }: { url: string }) => {
     let isMounted = true;
     const fetchPreview = async () => {
       try {
-        const res = await fetch(`https://api.dub.co/metatags?url=${encodeURIComponent(url)}`);
+        const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
         if (res.ok) {
           const json = await res.json();
-          if (isMounted && (json.title || json.image)) {
-            setPreview({ title: json.title, description: json.description, image: json.image, publisher: new URL(url).hostname });
+          if (isMounted && json.status === 'success' && (json.data.title || json.data.image)) {
+            setPreview({ 
+              title: json.data.title, 
+              description: json.data.description, 
+              image: json.data.image?.url || json.data.logo?.url, 
+              publisher: json.data.publisher || new URL(url).hostname 
+            });
           }
         }
-      } catch (e) {} finally { if (isMounted) setLoading(false); }
+      } catch (e) {
+        console.error('Failed to fetch link preview', e);
+      } finally { 
+        if (isMounted) setLoading(false); 
+      }
     };
     fetchPreview();
     return () => { isMounted = false; };
   }, [url]);
 
-  if (loading || !preview || (!preview.title && !preview.image)) return null;
+  // ✅ แสดงกล่องเทาๆ โหลดรอเบาๆ ไม่ทำให้เว็บกระตุก
+  if (loading) {
+    return (
+      <div className="mb-4 h-24 border border-gray-100 rounded-2xl bg-gray-50 animate-pulse flex items-center justify-center">
+        <LinkIcon size={24} className="text-gray-300" />
+      </div>
+    );
+  }
+
+  if (!preview || (!preview.title && !preview.image)) return null;
 
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="mb-4 block border border-gray-100 rounded-2xl overflow-hidden bg-white hover:border-indigo-200 transition-all group shadow-sm">
-      {preview.image && <div className="w-full h-40 overflow-hidden"><img src={preview.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" /></div>}
-      <div className="p-3">
+    <a href={url} target="_blank" rel="noopener noreferrer" className="mb-4 block border border-gray-100 rounded-2xl overflow-hidden bg-white hover:border-frog-300 transition-all group shadow-sm">
+      {preview.image && (
+        <div className="w-full h-48 overflow-hidden bg-gray-50 border-b border-gray-50">
+          <img src={preview.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="" />
+        </div>
+      )}
+      <div className="p-3 bg-gray-50/30">
          <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">{preview.publisher}</p>
-         <p className="text-sm font-bold text-gray-900 line-clamp-1">{preview.title}</p>
+         <p className="text-sm font-bold text-gray-900 line-clamp-2 leading-tight mb-1">{preview.title}</p>
+         {preview.description && <p className="text-xs text-gray-500 line-clamp-2">{preview.description}</p>}
       </div>
     </a>
   );
@@ -315,7 +340,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       const mdMatch = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
       if (mdMatch) return <Link key={i} href={`/profile/${mdMatch[2]}`} className="text-frog-600 font-bold hover:underline">{mdMatch[1]}</Link>;
       if (part.startsWith('#')) return <span key={i} className="text-blue-500 font-bold">{part}</span>;
-      // ✅ ใส่ break-all ตรงนี้ เพื่อบังคับให้ URL ตัดคำลงมาบรรทัดใหม่
       if (part.startsWith('http')) return <a key={i} href={part} target="_blank" className="text-blue-500 hover:underline break-all">{part}</a>;
       return <span key={i}>{part}</span>;
     });
@@ -348,7 +372,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             ) : (
               <div className="bg-gray-100 rounded-2xl px-3 py-2 inline-block max-w-full relative">
                 <p className="font-bold text-[11px] text-gray-900">{c.author?.display_name}</p>
-                {/* ✅ เพิ่ม break-words ตรงนี้ให้ข้อความคอมเมนต์ตัดคำเวลาเจอลิงก์ยาวๆ */}
                 <p className="text-sm text-gray-800 break-words whitespace-pre-wrap">{renderTextWithTags(c.content)}</p>
                 {c.image_url && <img src={c.image_url} onClick={() => setSelectedImage(c.image_url!)} className="mt-2 rounded-xl max-h-48 object-cover cursor-zoom-in hover:opacity-95 transition-all shadow-sm" alt="" />}
                 {(commentLikes[c.id] || 0) > 0 && <div className="absolute -bottom-2 -right-1 bg-white shadow-sm border rounded-full px-1.5 py-0.5 flex items-center gap-1"><Heart size={10} className="fill-red-500 text-red-500" /><span className="text-[10px] font-bold text-gray-500">{commentLikes[c.id]}</span></div>}
@@ -467,12 +490,12 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           </div>
         </div>
       ) : (
-        // ✅ เพิ่ม break-words ตรงนี้เพื่อบังคับให้ลิงก์หรือข้อความยาวๆ ในโพสต์ตัดคำ ไม่ทะลุกรอบ
         <div className="text-sm text-gray-900 mb-4 whitespace-pre-wrap break-words leading-relaxed">{renderTextWithTags(post.content || '')}</div>
       )}
 
       {!isEditingPost && post.content && (
         <div className="mb-4">
+          {/* ✅ จะดึงเฉพาะ URL ที่เป็นเว็บเท่านั้น ถ้าเป็นยูทูบก็ยังเป็นวิดีโอปกติ */}
           {post.content.match(/(https?:\/\/\S+)/g)?.map(url => {
             const ytId = getYouTubeVideoId(url);
             if (ytId) return <div key={url} className="mb-4 rounded-3xl overflow-hidden relative pt-[56.25%] w-full shadow-md bg-black"><iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube.com/embed/${ytId}`} allowFullScreen></iframe></div>;
@@ -491,7 +514,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </div>
       )}
 
-      {/* ปุ่ม Like / Comment */}
       <div className="flex items-center gap-6 pt-3 border-t border-gray-50">
         <div className="flex items-center gap-1.5">
           <button onClick={handleLike} className={`transition-all active:scale-75 p-1 -ml-1 rounded-full ${isLiked ? 'text-red-500' : 'text-gray-400 hover:bg-red-50 hover:text-red-400'}`}>
@@ -540,7 +562,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </div>
       )}
 
-      {/* Modal แสดงรายชื่อคนกดไลก์ */}
       {showLikersModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowLikersModal(false)}>
           <div className="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl p-6 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
