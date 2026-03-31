@@ -119,27 +119,33 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [commentLikes, setCommentLikes] = useState<Record<string, number>>({});
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
 
-  // ✅ ระบบแท็กเพื่อน (Mention System) แบบ Optimized
+  // ✅ ระบบแท็กเพื่อน
   const [friends, setFriends] = useState<User[]>([]);
   const [mentionSearch, setMentionSearch] = useState('');
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [activeInput, setActiveInput] = useState<'comment' | 'reply' | 'edit_comment' | null>(null);
+  const [hasLoadedFriends, setHasLoadedFriends] = useState(false); // ป้องกันการโหลดซ้ำ
 
   useEffect(() => {
     setPost(initialPost);
     setEditContent(initialPost.content || '');
-    loadFriends(); 
   }, [initialPost]);
 
-  const loadFriends = async () => {
-    const { data } = await supabase.from('friendships').select(`sender:sender_id(*), receiver:receiver_id(*)`).eq('status', 'accepted').or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
-    if (data) {
-      const list = data.map((f: any) => f.sender.id === currentUserId ? f.receiver : f.sender);
-      setFriends(list);
+  // ✅ โหลดเพื่อนแค่ครั้งเดียว "เมื่อกดเปิดดูคอมเมนต์เท่านั้น" (ประหยัดแรมสุดๆ)
+  useEffect(() => {
+    if (showComments && !hasLoadedFriends) {
+      const loadFriends = async () => {
+        const { data } = await supabase.from('friendships').select(`sender:sender_id(*), receiver:receiver_id(*)`).eq('status', 'accepted').or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
+        if (data) {
+          const list = data.map((f: any) => f.sender.id === currentUserId ? f.receiver : f.sender);
+          setFriends(list);
+          setHasLoadedFriends(true);
+        }
+      };
+      loadFriends();
     }
-  };
+  }, [showComments, currentUserId, hasLoadedFriends]);
 
-  // ✅ กรองรายชื่อใน Memory (ใช้เวลา 0.001 วินาที ไม่หน่วงแน่นอน)
   const filteredFriends = useMemo(() => {
     if (!mentionSearch && showMentionMenu) return friends.slice(0, 5);
     return friends
@@ -155,9 +161,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     else if (type === 'reply') setReplyContent(val);
     else setEditCommentContent(val);
 
-    // ดักจับการพิมพ์ @
     const mentionMatch = val.match(/@([a-zA-Z0-9_ก-๙]*)$/);
-
     if (mentionMatch) {
       setMentionSearch(mentionMatch[1]);
       setShowMentionMenu(true);
@@ -178,7 +182,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     setActiveInput(null);
   };
 
-  const sendTagNotifications = async (content: string) => {
+  const sendTagNotifications = async (content: string, newCommentId: string) => {
     const mentionRegex = /@\[.*?\]\(([a-zA-Z0-9_]+)\)/g;
     const matches = [...content.matchAll(mentionRegex)];
     const usernames = matches.map(m => m[1]);
@@ -193,6 +197,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             sender_id: currentUserId,
             type: 'tag_comment', 
             post_id: post.id,
+            comment_id: newCommentId,
             is_read: false
           }));
         if (notifs.length > 0) await supabase.from('notifications').insert(notifs);
@@ -288,41 +293,62 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     else await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: currentUserId });
   };
 
+  // ✅ ปรับระบบส่งคอมเมนต์ให้เป็น Optimistic Update (ใส่ของใหม่เข้าไปเลย ไม่ต้องโหลดใหม่หมด)
   const handleComment = async (e?: React.FormEvent) => {
     if (e) e.preventDefault(); 
     if ((!newComment.trim() && !commentImageUrl.trim()) || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('comments').insert({ 
+      const { data: newAddedComment, error } = await supabase.from('comments').insert({ 
         post_id: post.id, 
         author_id: currentUserId, 
         content: newComment.trim(), 
         image_url: commentImageUrl.trim() || null 
-      });
+      }).select('*, author:users(id, username, display_name, profile_img_url)').single();
+      
       if (error) throw error;
-      await sendTagNotifications(newComment);
-      setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); 
-      await loadComments(); 
+      
+      // อัปเดต UI ทันที
+      if (newAddedComment) {
+        setComments(prev => [...prev, { ...newAddedComment, replies: [] } as any]);
+      }
+      
+      await sendTagNotifications(newComment, newAddedComment.id);
+      
+      setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); setShowMentionMenu(false);
       setCommentCount(prev => prev + 1);
     } catch (err) { console.error(err); } 
     finally { setIsSubmitting(false); }
   };
 
+  // ✅ ระบบตอบกลับ (Reply) แบบ Optimistic Update เช่นกัน
   const handleReply = async (parentCommentId: string) => {
     if ((!replyContent.trim() && !replyImageUrl.trim()) || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('comments').insert({ 
+      const { data: newReply, error } = await supabase.from('comments').insert({ 
         post_id: post.id, 
         author_id: currentUserId, 
         content: replyContent.trim(), 
         parent_comment_id: parentCommentId,
         image_url: replyImageUrl.trim() || null
-      });
+      }).select('*, author:users(id, username, display_name, profile_img_url)').single();
+      
       if (error) throw error;
-      await sendTagNotifications(replyContent);
-      setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false);
-      await loadComments(); 
+      
+      // แทรก Reply ใหม่เข้าไปใน Comment หลัก
+      if (newReply) {
+        setComments(prev => prev.map(c => {
+          if (c.id === parentCommentId) {
+            return { ...c, replies: [...(c.replies || []), newReply] as any };
+          }
+          return c;
+        }));
+      }
+
+      await sendTagNotifications(replyContent, newReply.id);
+      
+      setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false); setShowMentionMenu(false);
       setCommentCount(prev => prev + 1);
     } catch (err) { console.error(err); }
     finally { setIsSubmitting(false); }
@@ -343,8 +369,15 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     setIsSubmitting(true);
     try {
       await supabase.from('comments').update({ content: editCommentContent.trim() }).eq('id', commentId);
+      
+      // อัปเดต State ในเครื่อง
+      setComments(prev => prev.map(c => {
+        if (c.id === commentId) return { ...c, content: editCommentContent.trim() };
+        if (c.replies) return { ...c, replies: c.replies.map(r => r.id === commentId ? { ...r, content: editCommentContent.trim() } : r) };
+        return c;
+      }));
+      
       setEditingCommentId(null);
-      await loadComments();
     } catch (err) { console.error(err); }
     finally { setIsSubmitting(false); }
   };
@@ -405,7 +438,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                 {activeInput === 'edit_comment' && <MentionMenu />}
                 <div className="flex gap-2">
                   <button onClick={() => handleUpdateComment(c.id)} disabled={isSubmitting} className="text-[10px] font-black text-frog-600 bg-frog-50 px-3 py-1.5 rounded-lg disabled:opacity-50">บันทึก</button>
-                  <button onClick={() => setEditingCommentId(null)} className="text-[10px] font-black text-gray-500 bg-gray-100 px-3 py-1.5 rounded-lg">ยกเลิก</button>
+                  <button onClick={() => { setEditingCommentId(null); setShowMentionMenu(false); }} className="text-[10px] font-black text-gray-500 bg-gray-100 px-3 py-1.5 rounded-lg">ยกเลิก</button>
                 </div>
               </div>
             ) : (
@@ -431,12 +464,12 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
 
             {replyTo === c.id && (
               <div className="mt-3 space-y-2 animate-in slide-in-from-left-2 relative">
-                <div className="space-y-2">
+                <div className="space-y-2 relative">
                   <div className="flex gap-2">
                     <input type="text" value={replyContent} onChange={(e) => handleInputChange(e.target.value, 'reply')} onKeyDown={(e) => e.key === 'Enter' && handleReply(c.id)} placeholder={`ตอบกลับ ${c.author?.display_name.split(' ')[0]}...`} className="input-minimal w-full text-xs py-2 px-3 bg-white border border-gray-200 rounded-xl" autoFocus />
                     <button onClick={() => setShowReplyImageInput(!showReplyImageInput)} className={`p-1.5 rounded-lg transition-colors ${showReplyImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400 hover:bg-gray-100'}`}><ImageIcon size={18} /></button>
                     <button onClick={() => handleReply(c.id)} disabled={(!replyContent.trim() && !replyImageUrl.trim()) || isSubmitting} className="p-1.5 text-frog-600 disabled:opacity-30"><Send size={18} /></button>
-                    <button onClick={() => setReplyTo(null)} className="p-1.5 text-gray-400"><X size={18} /></button>
+                    <button onClick={() => { setReplyTo(null); setShowMentionMenu(false); }} className="p-1.5 text-gray-400"><X size={18} /></button>
                   </div>
                   {activeInput === 'reply' && <MentionMenu />}
                   {showReplyImageInput && (
