@@ -90,8 +90,7 @@ export default function ProfilePage() {
         supabase.from('users').select('*').eq('id', authUser.id).single(),
         supabase.from('posts').select('*, author:author_id(*), target:target_id(*)').eq('target_id', profileData.id).order('created_at', { ascending: false }).range(0, POSTS_PER_PAGE - 1),
         
-        // ✅ ดึงความสัมพันธ์ที่ "เจ้าของโปรไฟล์นี้ (profileData.id) เป็นผู้ตั้งไว้เท่านั้น"
-        supabase.from('family_members').select('id, user_id, member_user_id, relationship_label, member:member_user_id(id, username, display_name, profile_img_url)').eq('user_id', profileData.id),
+        supabase.from('family_members').select('id, user_id, member_user_id, relationship_label, member:member_user_id(*)').eq('user_id', profileData.id),
         
         supabase.from('friendships').select('*, sender:sender_id(*), receiver:receiver_id(*)').eq('status', 'accepted').or(`sender_id.eq.${profileData.id},receiver_id.eq.${profileData.id}`).order('created_at', { ascending: false }).limit(6),
         supabase.from('friendships').select('*').or(`and(sender_id.eq.${authUser.id},receiver_id.eq.${profileData.id}),and(sender_id.eq.${profileData.id},receiver_id.eq.${authUser.id})`).maybeSingle(),
@@ -103,8 +102,12 @@ export default function ProfilePage() {
       setPosts(postsRes.data || []);
       setHasMore((postsRes.data?.length || 0) === POSTS_PER_PAGE);
       
-      // ✅ นำข้อมูลมาใช้งานได้เลยตรงๆ
-      setFamilyMembers(familyRes.data || []);
+      // ✅ แก้บั๊ก Type Error: Map ข้อมูลดึงเอา member ตัวแรกออกมา (เผื่อกรณีที่ Supabase รีเทิร์นเป็น Array)
+      const formattedFamilyMembers = (familyRes.data || []).map((fm: any) => ({
+        ...fm,
+        member: Array.isArray(fm.member) ? fm.member[0] : fm.member
+      }));
+      setFamilyMembers(formattedFamilyMembers as FamilyMember[]);
       
       setFriends((friendsRes.data || []).map((f: any) => f.sender_id === profileData.id ? f.receiver : f.sender));
       
@@ -134,7 +137,6 @@ export default function ProfilePage() {
       }
       setRecentVisitors(uniqueVisitors);
 
-      // บันทึกการส่อง
       const viewKey = `v_${profileData.id}`;
       if (!sessionStorage.getItem(viewKey) && authUser.id !== profileData.id) {
         await supabase.from('profile_views').insert({ profile_id: profileData.id, visitor_id: authUser.id });
@@ -306,7 +308,6 @@ export default function ProfilePage() {
           <div className="space-y-3">
             <p className="text-xs font-bold text-gray-500 px-1">ครอบครัวและคนสำคัญ</p>
             <div className="space-y-2">
-              {/* ✅ โชว์ข้อมูลเป้าหมาย (member) พร้อมป้ายสถานะที่เจ้าของหน้าเป็นคนตั้ง */}
               {familyMembers.map((fm) => (
                 <div key={fm.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl group transition-all hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100">
                   <img src={fm.member?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-xl object-cover shadow-sm" />
@@ -314,12 +315,7 @@ export default function ProfilePage() {
                     <Link href={`/profile/${fm.member?.username}`} className="font-bold text-sm hover:underline block truncate text-gray-900">{fm.member?.display_name}</Link>
                     <p className="text-[10px] text-gray-500 font-bold uppercase">{fm.relationship_label}</p>
                   </div>
-                  {/* ปุ่มลบแสดงเฉพาะตอนดูหน้าตัวเอง */}
-                  {isOwnProfile && (
-                    <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2">
-                      <Trash2 size={16} />
-                    </button>
-                  )}
+                  {isOwnProfile && <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2"><Trash2 size={16} /></button>}
                 </div>
               ))}
             </div>
