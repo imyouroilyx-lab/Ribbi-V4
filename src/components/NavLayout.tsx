@@ -48,7 +48,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         if (p.new.status === 'pending' && pathnameRef.current !== '/friends') setFriendReq(v => v + 1);
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_participants', filter: `user_id=eq.${currentUser.id}` }, (p) => {
-        // ✅ ป้องกัน Payload พัง: เช็คค่าก่อนคำนวณ
         const newVal = p.new?.unread_count || 0;
         const oldVal = p.old?.unread_count || 0;
         const diff = newVal - oldVal;
@@ -106,11 +105,16 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           {navItems.map((item) => {
             const active = item.label === 'โปรไฟล์' ? isProfileActive : pathname === item.href;
             const Icon = item.icon;
+            // ✅ แก้ไขจุดที่ 1: ใส่ (item.count ?? 0) เพื่อกัน undefined
             return (
               <Link key={item.label} href={item.href} className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-200 ${active ? 'bg-frog-500 text-white font-bold shadow-lg shadow-frog-100' : 'text-gray-500 hover:bg-gray-50'}`}>
                 <div className="relative">
                   <Icon className="w-5 h-5" />
-                  {item.count > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full border-2 border-white font-black">{item.count > 99 ? '99+' : item.count}</span>}
+                  {(item.count ?? 0) > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full border-2 border-white font-black">
+                      {item.count! > 99 ? '99+' : item.count}
+                    </span>
+                  )}
                 </div>
                 <span className="text-sm font-medium">{item.label}</span>
               </Link>
@@ -147,13 +151,18 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 h-16 flex items-center justify-around z-40 pb-safe">
         {navItems.slice(0, 5).map((item) => {
           const active = item.label === 'โปรไฟล์' ? isProfileActive : pathname === item.href;
+          // ✅ แก้ไขจุดที่ 2: สำหรับ Mobile Bottom Nav
           return (
             <Link key={item.label} href={item.href} className={`flex flex-col items-center gap-1 flex-1 relative ${active ? 'text-frog-600' : 'text-gray-400'}`}>
               <div className="relative">
                 {item.label === 'โปรไฟล์' && currentUser ? (
                   <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className={`w-6 h-6 rounded-full object-cover border-2 ${active ? 'border-frog-500' : 'border-transparent'}`} alt="" />
                 ) : <item.icon size={22} />}
-                {item.count > 0 && <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full font-black border border-white">{item.count}</span>}
+                {(item.count ?? 0) > 0 && (
+                  <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full font-black border border-white">
+                    {item.count}
+                  </span>
+                )}
               </div>
               <span className="text-[10px] font-black uppercase">{item.label}</span>
             </Link>
@@ -171,9 +180,14 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-1">
               {navItems.map((item) => (
+                // ✅ แก้ไขจุดที่ 3: สำหรับ Mobile Drawer
                 <Link key={item.label} href={item.href} onClick={() => setShowMobileMenu(false)} className={`flex items-center justify-between p-4 rounded-2xl font-black ${pathname === item.href ? 'bg-frog-50 text-frog-600' : 'text-gray-600'}`}>
                   <div className="flex items-center gap-4"><item.icon size={24} /><span>{item.label}</span></div>
-                  {item.count > 0 && <span className="bg-red-500 text-white text-xs px-2.5 py-0.5 rounded-full font-black">{item.count}</span>}
+                  {(item.count ?? 0) > 0 && (
+                    <span className="bg-red-500 text-white text-xs px-2.5 py-0.5 rounded-full font-black">
+                      {item.count}
+                    </span>
+                  )}
                 </Link>
               ))}
             </div>
