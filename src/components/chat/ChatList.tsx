@@ -3,7 +3,7 @@
 import { formatDistanceToNow } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { useState, useMemo } from 'react';
-import type { Chat } from '../MessagesPage'; 
+import type { Chat } from '../MessagesPage'; // ✅ ตัวนี้แหละที่พังเมื่อกี้ ตอนนี้แก้แล้ว
 
 interface ChatListProps {
   chats: Chat[];
@@ -16,7 +16,7 @@ interface ChatListProps {
 export default function ChatList({ chats, selectedChatId, onSelectChat }: ChatListProps) {
   const [search, setSearch] = useState('');
 
-  const sortedChats = useMemo(() => {
+  const filtered = useMemo(() => {
     return chats.filter(c => {
       const name = c.is_group ? c.name : c.other_user?.display_name;
       return (name || '').toLowerCase().includes(search.toLowerCase());
@@ -31,13 +31,13 @@ export default function ChatList({ chats, selectedChatId, onSelectChat }: ChatLi
           value={search} 
           onChange={e => setSearch(e.target.value)} 
           placeholder="ค้นหา..." 
-          className="w-full p-2.5 bg-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-frog-500/20" 
+          className="w-full p-2.5 bg-gray-100 rounded-2xl text-sm outline-none" 
         />
       </div>
-      <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
-        {sortedChats.map(c => {
-          const displayName = c.is_group ? c.name : c.other_user?.display_name;
-          const displayImg = c.is_group ? c.group_img_url : c.other_user?.profile_img_url;
+      <div className="flex-1 overflow-y-auto">
+        {filtered.map(c => {
+          const name = c.is_group ? c.name : c.other_user?.display_name;
+          const img = c.is_group ? c.group_img_url : c.other_user?.profile_img_url;
           
           return (
             <button 
@@ -46,14 +46,14 @@ export default function ChatList({ chats, selectedChatId, onSelectChat }: ChatLi
               className={`w-full p-4 flex gap-3 hover:bg-gray-50 transition-colors ${selectedChatId === c.id ? 'bg-frog-50' : ''}`}
             >
               <div className="relative flex-shrink-0">
-                <img src={displayImg || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-full object-cover shadow-sm" alt="" />
+                <img src={img || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-full object-cover border" />
                 {!c.is_group && c.other_user?.is_online && (
-                  <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full" />
+                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full" />
                 )}
               </div>
               <div className="flex-1 text-left min-w-0">
                 <div className="flex justify-between items-baseline mb-1">
-                  <h3 className="font-bold truncate text-sm text-gray-900">{displayName || 'Ribbi User'}</h3>
+                  <h3 className="font-bold truncate text-sm text-gray-900">{name || 'Ribbi User'}</h3>
                   <span className="text-[10px] text-gray-400">
                     {c.last_message_at ? formatDistanceToNow(new Date(c.last_message_at), { addSuffix: false, locale: th }) : ''}
                   </span>
