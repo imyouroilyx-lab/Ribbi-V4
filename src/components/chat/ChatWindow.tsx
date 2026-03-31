@@ -19,7 +19,8 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   const lastId = useRef(chatId);
 
   useEffect(() => {
-    loadMessages(); markAsRead();
+    loadMessages();
+    markAsRead();
   }, [chatId]);
 
   useEffect(() => {
@@ -48,7 +49,8 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   const handleSend = async (e: any) => {
     e.preventDefault();
     if (!input.trim()) return;
-    const content = input; setInput('');
+    const content = input;
+    setInput('');
     if (editingId) {
       await supabase.from('messages').update({ content, updated_at: new Date().toISOString() }).eq('id', editingId);
       setEditingId(null);
@@ -68,21 +70,41 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       }
       if (initialChatData.other_user && theirNick !== initialChatData.other_user.display_name) {
         await supabase.from('chat_nicknames').upsert({ chat_id: chatId, target_user_id: initialChatData.other_user.id, nickname: theirNick }, { onConflict: 'chat_id,target_user_id' });
-        await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} เปลี่ยนชื่อเล่นเพื่อนเป็น ${theirNick}`, event: 'system' });
+        await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} เปลี่ยนชื่อเล่นให้เพื่อนเป็น ${theirNick}`, event: 'system' });
       }
       if (tempColor !== initialChatData.theme_color) {
         await supabase.from('chats').update({ theme_color: tempColor }).eq('id', chatId);
         await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} เปลี่ยนสีธีมแชท`, event: 'system' });
       }
-      alert('บันทึกเรียบร้อย!'); setShowSettings(false); onRefreshChats(); loadMessages();
+      alert('บันทึกเรียบร้อย!');
+      setShowSettings(false);
+      onRefreshChats();
+      loadMessages();
     } catch (e) { console.error(e); } finally { setIsSaving(false); }
   };
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const otherUser = initialChatData.other_user;
 
+  // ✅ ฟังก์ชันสำหรับทำให้ลิงก์กดได้
+  const renderMessageContent = (content: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = content.split(urlRegex);
+    return parts.map((part, i) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="underline break-all hover:opacity-80">
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
+
   return (
     <div className="flex flex-col h-full bg-white w-full relative overflow-hidden">
+      {/* Header */}
       <div className="h-16 px-4 border-b flex items-center justify-between bg-white/90 z-20 sticky top-0 backdrop-blur-md">
         <div className="flex items-center gap-3 min-w-0">
           <button onClick={onBack} className="md:hidden p-1 text-gray-400"><ChevronLeft /></button>
@@ -97,6 +119,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         </div>
       </div>
 
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fcfdfe]">
         {messages.map((m) => {
           if (m.event === 'system') return <div key={m.id} className="text-center text-[10px] text-gray-400 font-bold uppercase py-4 tracking-widest">{m.content}</div>;
@@ -106,7 +129,10 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
               <div className="flex flex-col max-w-[80%] gap-1">
                 <div className={`relative px-4 py-2.5 rounded-2xl text-[14px] shadow-sm break-words ${isMe ? 'text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'}`} 
                      style={{ backgroundColor: isMe ? (initialChatData.theme_color || '#22c55e') : undefined }}>
-                  {m.content}
+                  
+                  {/* ✅ เรียกใช้ฟังก์ชัน Render Content เพื่อให้ลิงก์กดได้ */}
+                  {renderMessageContent(m.content || '')}
+                  
                   {isMe && (
                     <div className="absolute -left-16 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 bg-white border rounded-lg p-1 shadow-lg">
                        <button onClick={() => { setEditingId(m.id); setInput(m.content); }} className="p-1 text-blue-500 hover:bg-blue-50 rounded"><Edit2 size={12}/></button>
@@ -122,6 +148,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         <div ref={scrollRef} />
       </div>
 
+      {/* Settings Modal */}
       {showSettings && (
         <div className="absolute right-0 top-0 bottom-0 w-full sm:w-80 bg-white border-l z-30 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
           <div className="p-4 border-b flex justify-between items-center bg-gray-50">
@@ -147,17 +174,25 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
             </div>
             <button onClick={() => { if(confirm('ล้าง?')) { supabase.from('messages').select('id, deleted_by').eq('chat_id', chatId).then(({data}) => { const ups = data?.map(m => supabase.from('messages').update({ deleted_by: [...(m.deleted_by || []), currentUser.id] }).eq('id', m.id)); Promise.all(ups || []).then(() => { loadMessages(); setShowSettings(false); }); }); } }} className="w-full p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2 tracking-widest"><Eraser size={14}/> ล้างประวัติการแชท (ฝั่งคุณ)</button>
           </div>
+          
+          {/* ✅ ปุ่มยืนยัน สีเขียวไม่หายแน่นอน */}
           <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t z-50">
-            <button onClick={saveAllSettings} disabled={isSaving} className="w-full py-4 rounded-[1.25rem] text-[12px] font-black uppercase tracking-[0.2em] shadow-xl active:scale-95 disabled:opacity-50" style={{ backgroundColor: '#16a34a', color: '#ffffff', display: 'block' }}>
+            <button 
+              onClick={saveAllSettings} 
+              disabled={isSaving} 
+              className="w-full py-4 rounded-[1.25rem] text-[12px] font-black uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all disabled:opacity-50"
+              style={{ backgroundColor: '#16a34a', color: '#ffffff', display: 'block' }}
+            >
               {isSaving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
             </button>
           </div>
         </div>
       )}
 
+      {/* Input */}
       <form onSubmit={handleSend} className="p-4 border-t bg-white flex items-center gap-3 relative">
-        <input value={input} onChange={e => setInput(e.target.value)} placeholder="พิมพ์ข้อความ..." className="flex-1 p-3.5 bg-gray-100 rounded-2xl text-sm outline-none" />
-        <button type="submit" className="p-3.5 bg-frog-600 text-white rounded-2xl" style={{ backgroundColor: initialChatData.theme_color || '#22c55e' }}><Send size={20} /></button>
+        <input value={input} onChange={e => setInput(e.target.value)} placeholder="พิมพ์ข้อความ..." className="flex-1 p-3.5 bg-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-frog-200" />
+        <button type="submit" className="p-3.5 bg-frog-600 text-white rounded-2xl shadow-lg" style={{ backgroundColor: initialChatData.theme_color || '#22c55e' }}><Send size={20} /></button>
       </form>
     </div>
   );
