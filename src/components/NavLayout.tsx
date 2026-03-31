@@ -7,12 +7,22 @@ import Link from 'next/link';
 import { Home, Users, User, Settings, LogOut, Menu, X, MessageCircle, Bell, ArrowLeft, Loader2 } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
+// ✅ แยก Key สำหรับ Cache
+const CACHE_KEY = 'ribbi_user_cache';
+
 export default function NavLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   
-  // ✅ เก็บข้อมูล User ไว้ใน State
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  // ✅ โหลด Cache มาแสดงผลทันที (ไม่ระเบิดตาผู้ใช้ด้วยหน้าขาวๆ)
+  const [currentUser, setCurrentUser] = useState<any>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) return JSON.parse(cached);
+    }
+    return null;
+  });
+
   const [unreadNotif, setUnreadNotif] = useState(0);
   const [friendReq, setFriendReq] = useState(0);
   const [unreadMsg, setUnreadMsg] = useState(0);
@@ -24,21 +34,19 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
 
-  // 1️⃣ โหลดครั้งเดียวตอนเปิดเว็บ
   useEffect(() => {
     setIsMounted(true);
     audioRef.current = new Audio('/ribbi.wav');
     audioRef.current.load();
     
-    // ดึงข้อมูลครั้งแรก
+    // ✅ ยิงแบบ Async Background (ไม่รอ)
     fetchLatestData();
   }, []); 
 
-  // 2️⃣ จัดการเมนูและตัวเลขแจ้งเตือนเวลาเปลี่ยนหน้า
   useEffect(() => {
     setShowMobileMenu(false); 
     
-    // อัปเดตแค่ตัวเลขเบาๆ ไม่ต้องรีโหลดโปรไฟล์ใหม่ ลดอาการกะพริบ
+    // ดึงเฉพาะตัวเลขแจ้งเตือน (รวดเร็วมาก)
     if (currentUser?.id) {
       supabase.rpc('get_user_app_data', { user_uuid: currentUser.id }).then(({ data }) => {
         if (data) {
@@ -61,7 +69,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // 3️⃣ Realtime Monitoring
   useEffect(() => {
     if (!currentUser?.id) return;
 
@@ -79,27 +86,40 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   const fetchLatestData = async () => {
     try {
+      // 1. เช็ก Session ด่วนจาก Storage ที่ Supabase มีให้อยู่แล้ว
       const { data: authData } = await supabase.auth.getSession();
+      
       if (!authData?.session) {
-        if (pathname !== '/login' && pathname !== '/register') router.push('/login');
+        if (pathname !== '/login' && pathname !== '/register') {
+          localStorage.removeItem(CACHE_KEY); // ล้าง Cache ถ้าหลุดจากระบบ
+          router.push('/login');
+        }
         return;
       }
+
+      // 2. ดึงข้อมูลจริงมาอัปเดตทับ Cache
       const { data, error } = await supabase.rpc('get_user_app_data', { user_uuid: authData.session.user.id });
+      
       if (!error && data?.user_info) {
         setCurrentUser(data.user_info);
         setUnreadNotif(data.unread_notifications || 0);
         setFriendReq(data.pending_friends || 0);
         setUnreadMsg(data.unread_messages || 0);
+
+        // ✅ อัปเดต Cache ให้สดใหม่เสมอ
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data.user_info));
       }
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error(err); 
+    }
   };
 
   const handleLogout = async () => {
+    localStorage.removeItem(CACHE_KEY); // ✅ อย่าลืมเคลียร์ตอนออก
     await supabase.auth.signOut();
     router.push('/login');
   };
 
-  // ✅ ป้องกัน Hydration Error
   if (!isMounted) return null;
 
   const profileLink = currentUser?.username ? `/profile/${currentUser.username}` : '#';
@@ -119,7 +139,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           <span className="text-2xl font-black text-frog-600 tracking-tighter">Ribbi</span>
         </Link>
 
-        {/* ✅ แสดง User Info (ถ้ายังโหลดไม่เสร็จจะโชว์ Skeleton เล็กๆ ไม่กะพริบทั้งหน้า) */}
+        {/* ✅ แสดง User Info ทันทีจาก Cache (ถ้ามี) */}
         <div className="mb-6 h-[72px]">
           {currentUser ? (
             <Link href={profileLink} className="p-3 rounded-2xl bg-gray-50 flex items-center gap-3 hover:bg-frog-50 transition-all border border-transparent hover:border-frog-100 group animate-in fade-in">
