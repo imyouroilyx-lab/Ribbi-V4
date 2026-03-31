@@ -40,7 +40,7 @@ export default function FriendsPage() {
   const [sentRequests, setSentRequests] = useState<Friendship[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
-  const [isFetchingFriends, setIsFetchingFriends] = useState(false); // ✅ เพิ่ม State โหลดเฉพาะส่วนเพื่อน
+  const [isFetchingFriends, setIsFetchingFriends] = useState(false);
   const [totalFriends, setTotalFriends] = useState(0);
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,12 +53,11 @@ export default function FriendsPage() {
     loadInitialData();
   }, []);
 
-  // ✅ แก้ไข 1: ระบบ Debounce ที่รวมการ Reset หน้าไปด้วย
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery);
       if (searchQuery !== debouncedSearch) {
-        setCurrentPage(1); // ✅ รีเซ็ตหน้าเฉพาะตอนที่ Debounce ทำงานเสร็จ
+        setCurrentPage(1); 
       }
     }, 500);
     return () => clearTimeout(timer);
@@ -88,14 +87,14 @@ export default function FriendsPage() {
           .eq('receiver_id', authUser.id)
           .eq('status', 'pending')
           .order('created_at', { ascending: false })
-          .limit(30), // ✅ แก้ไข 2: ป้องกัน DOM Overload (ดึงแค่ 30 คำขอล่าสุด)
+          .limit(30),
           
         supabase.from('friendships')
           .select('*, receiver:receiver_id(id, username, display_name, profile_img_url)')
           .eq('sender_id', authUser.id)
           .eq('status', 'pending')
           .order('created_at', { ascending: false })
-          .limit(30)  // ✅ ป้องกัน DOM Overload
+          .limit(30) 
       ]);
       
       setPendingRequests(pending.data || []);
@@ -107,44 +106,67 @@ export default function FriendsPage() {
     }
   };
 
+  // ✅ แก้ไขฟังก์ชันค้นหาเพื่อน (Query Fix)
   const loadFriendsData = async () => {
     if (!currentUser) return;
-    setIsFetchingFriends(true); // ✅ เริ่มแสดง UI โหลด
+    setIsFetchingFriends(true);
     
     const from = (currentPage - 1) * FRIENDS_PER_PAGE;
     const to = from + FRIENDS_PER_PAGE - 1;
 
     try {
+      // ✅ ใช้ inner join แบบมีเงื่อนไขในตัว select เลย
+      // ถ้ามีการค้นหา เราจะดึงเฉพาะ row ที่ sender หรือ receiver ชื่อตรงกับคำค้น
+      let selectQuery = `
+        id, sender_id, receiver_id,
+        sender:users!friendships_sender_id_fkey(id, username, display_name, profile_img_url, is_online),
+        receiver:users!friendships_receiver_id_fkey(id, username, display_name, profile_img_url, is_online)
+      `;
+
+      if (debouncedSearch) {
+         // ถ้ามีการค้นหา บังคับให้ inner join ผู้ใช้ที่มีชื่อตรงกัน
+         selectQuery = `
+          id, sender_id, receiver_id,
+          sender:users!friendships_sender_id_fkey!inner(id, username, display_name, profile_img_url, is_online),
+          receiver:users!friendships_receiver_id_fkey!inner(id, username, display_name, profile_img_url, is_online)
+        `;
+      }
+
       let query = supabase
         .from('friendships')
-        .select(`
-          id, sender_id, receiver_id,
-          sender:users!friendships_sender_id_fkey(id, username, display_name, profile_img_url, is_online),
-          receiver:users!friendships_receiver_id_fkey(id, username, display_name, profile_img_url, is_online)
-        `, { count: 'exact' })
+        .select(selectQuery, { count: 'exact' })
         .eq('status', 'accepted')
         .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`);
 
+      // ✅ กรองด้วย ilike (เฉพาะกรณีที่มีคำค้นหา)
       if (debouncedSearch) {
-        query = query.or(`sender.display_name.ilike.%${debouncedSearch}%,receiver.display_name.ilike.%${debouncedSearch}%`);
+        // ท่านี้บอกว่า: หาแถวที่ชื่อผู้ส่งตรง OR ชื่อผู้รับตรง (ซึ่งหนึ่งในสองคนนี้ต้องไม่ใช่เรา)
+        query = query.or(`display_name.ilike.%${debouncedSearch}%,username.ilike.%${debouncedSearch}%`, { foreignTable: 'sender' })
+                     .or(`display_name.ilike.%${debouncedSearch}%,username.ilike.%${debouncedSearch}%`, { foreignTable: 'receiver' });
       }
 
-      const { data, count } = await query
+      const { data, count, error } = await query
         .order('created_at', { ascending: false })
         .range(from, to);
+        
+      if (error) throw error;
 
-      setTotalFriends(count || 0);
-      
+      // กรองผลลัพธ์ที่เป็น null ออกให้หมด (ในกรณีที่ใช้ inner join แล้วหาคนไม่เจอ)
       const friendsList = (data || []).map((f: any) => {
+        // หาว่าใครคือเพื่อนของเรา (ที่ไม่ใช่ตัวเราเอง)
         const friendData = f.sender_id === currentUser.id ? f.receiver : f.sender;
         return friendData ? { ...friendData, friendshipId: f.id } : null;
       }).filter(Boolean);
 
       setFriends(friendsList);
+      
+      // ✅ ถ้าเป็นการค้นหา ให้นับแค่คนที่ตรงเงื่อนไขจริงๆ
+      setTotalFriends(debouncedSearch ? friendsList.length : (count || 0));
+      
     } catch (error) {
       console.error('Error loading friends list:', error);
     } finally {
-      setIsFetchingFriends(false); // ✅ ปิด UI โหลด
+      setIsFetchingFriends(false);
     }
   };
 
@@ -219,14 +241,14 @@ export default function FriendsPage() {
               type="text"
               placeholder="ค้นหาชื่อเพื่อน..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)} // ✅ เอา setCurrentPage(1) ออกจากตรงนี้
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 bg-gray-100 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-frog-500 outline-none transition-all text-sm font-bold shadow-inner"
             />
           </div>
         </div>
 
         {/* Pending Requests */}
-        {pendingRequests.length > 0 && (
+        {pendingRequests.length > 0 && !debouncedSearch && (
           <div className="space-y-3">
             <h2 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] flex items-center gap-2 px-1">
               <UserPlus size={14} /> คำขอเป็นเพื่อน ({pendingRequests.length})
@@ -250,7 +272,7 @@ export default function FriendsPage() {
         )}
 
         {/* Sent Requests */}
-        {sentRequests.length > 0 && (
+        {sentRequests.length > 0 && !debouncedSearch && (
           <div className="space-y-3">
             <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2 px-1">
               <Send size={14} /> คำขอที่ส่งไปแล้ว ({sentRequests.length})
@@ -272,10 +294,9 @@ export default function FriendsPage() {
         {/* Friends List Grid */}
         <div className="space-y-4 relative">
           <h2 className="text-[10px] font-black text-gray-900 uppercase tracking-[0.2em] px-1 flex items-center gap-2">
-            <Users size={14} /> รายชื่อเพื่อน ({totalFriends})
+            <Users size={14} /> {debouncedSearch ? 'ผลการค้นหา' : 'รายชื่อเพื่อน'} ({totalFriends})
           </h2>
           
-          {/* ✅ แก้ไข 3: เพิ่ม UI หมุนตอนค้นหา/เปลี่ยนหน้า เพื่อไม่ให้รู้สึกหน่วง */}
           {isFetchingFriends ? (
             <div className="py-10 flex flex-col items-center justify-center bg-white rounded-[2.5rem] border border-gray-100">
               <Loader2 className="w-8 h-8 animate-spin text-frog-400 mb-2" />
@@ -285,7 +306,9 @@ export default function FriendsPage() {
               {friends.length === 0 ? (
                 <div className="col-span-full py-20 text-center bg-white rounded-[2.5rem] border-2 border-dashed border-gray-100 shadow-sm">
                   <Users size={40} className="mx-auto mb-4 text-gray-100" />
-                  <p className="text-gray-400 text-xs font-black uppercase tracking-widest">ไม่พบรายชื่อเพื่อน</p>
+                  <p className="text-gray-400 text-xs font-black uppercase tracking-widest">
+                    {debouncedSearch ? 'ไม่พบชื่อเพื่อนที่ค้นหา' : 'ไม่พบรายชื่อเพื่อน'}
+                  </p>
                 </div>
               ) : (
                 friends.map(f => (
