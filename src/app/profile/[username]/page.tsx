@@ -113,6 +113,7 @@ export default function ProfilePage() {
         setFriendshipStatus('none'); 
       }
 
+      // กรองคนเข้าชมซ้ำ เอาแค่ 5 คน
       const viewsData = viewsRes.data || [];
       const uniqueVisitors: any[] = [];
       const seenIds = new Set();
@@ -126,6 +127,7 @@ export default function ProfilePage() {
       }
       setRecentVisitors(uniqueVisitors);
 
+      // บันทึก View 
       const viewKey = `v_${profileData.id}`;
       if (!sessionStorage.getItem(viewKey) && authUser.id !== profileData.id) {
         await supabase.from('profile_views').insert({ profile_id: profileData.id, visitor_id: authUser.id });
@@ -325,19 +327,23 @@ export default function ProfilePage() {
             {/* Profile Header */}
             <div className="card-minimal overflow-hidden p-0 border border-gray-100 shadow-sm bg-white rounded-[3rem]">
               
-              {/* ✅ Cover Image (เอา Gradient สีขาวออกแล้ว ภาพเต็มตา!) */}
-              <div className="h-48 md:h-72 relative bg-gray-100" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }}>
+              {/* ✅ Cover Image (หน้าปกแสดงเต็ม ไม่โดนพื้นขาวบัง) */}
+              <div className="h-48 md:h-80 relative w-full bg-slate-100" style={{ backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
               </div>
               
-              <div className="px-6 md:px-10 pb-8 bg-white relative z-10">
+              {/* ✅ กล่องเนื้อหา (พื้นขาว) */}
+              <div className="px-6 md:px-10 pb-8 relative bg-white z-10">
                 
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 -mt-20 md:-mt-24 relative z-20 mb-4">
-                  <div className="w-36 h-36 md:w-48 md:h-48 rounded-full p-2 shadow-2xl bg-white flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px]" style={{ borderColor: themeColor }}>
-                    <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover shadow-inner bg-gray-50" />
+                {/* 🌟 ย้าย -mt มาใส่ที่ตัวรูปภาพ (Avatar) โดยตรง แทนที่จะใส่ที่กรอบรวม */}
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 relative z-20 mb-4">
+                  
+                  {/* ✅ Avatar (ตัวนี้เท่านั้นที่จะดึงทะลุขึ้นไปทับปก) */}
+                  <div className="w-36 h-36 md:w-48 md:h-48 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px] -mt-20 md:-mt-28" style={{ borderColor: themeColor }}>
+                    <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover bg-gray-50" />
                   </div>
                   
-                  {/* Action Buttons */}
-                  <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 pb-2">
+                  {/* Action Buttons (อยู่ในพื้นที่สีขาว ไม่ลอยขึ้นไป) */}
+                  <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 pb-2 pt-2 md:pt-0">
                     {isOwnProfile ? (
                       <Link href="/profile/edit" className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 text-white shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><Edit size={16} /> แก้ไขโปรไฟล์</Link>
                     ) : (
@@ -354,6 +360,7 @@ export default function ProfilePage() {
                         {friendshipStatus === 'sent' && (
                           <button className="px-5 py-3 rounded-xl bg-gray-50 text-gray-500 font-black text-xs flex items-center gap-2 cursor-default border border-gray-200"><Clock size={16} /> ส่งคำขอแล้ว</button>
                         )}
+                        {/* ปุ่มเพื่อนกันแล้ว (สามารถกดเพื่อลบเพื่อนได้) */}
                         {friendshipStatus === 'accepted' && (
                           <button 
                             onClick={() => setShowUnfriendConfirm(true)} 
