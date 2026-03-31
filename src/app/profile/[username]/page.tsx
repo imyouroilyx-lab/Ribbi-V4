@@ -9,7 +9,7 @@ import CreatePostV3 from '../../../components/CreatePostV3';
 import ConfirmModal from '../../../components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
-  Edit, UserPlus, UserCheck, Heart, Users, Music, 
+  Edit, UserPlus, UserCheck, Heart, Users, 
   MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye
 } from 'lucide-react';
 import Link from 'next/link';
@@ -54,7 +54,6 @@ export default function ProfilePage() {
   const [profileUser, setProfileUser] = useState<any | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   
-  // ✅ แยกสถานะการโหลด (Lazy Loading)
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [isPostsLoading, setIsPostsLoading] = useState(true);
   const [isWidgetsLoading, setIsWidgetsLoading] = useState(true);
@@ -90,12 +89,10 @@ export default function ProfilePage() {
     if (node) observer.current.observe(node);
   }, [isPostsLoading, isLoadingMore, hasMore]);
 
-  // 1. โหลดข้อมูลหลัก (โปรไฟล์)
   useEffect(() => { 
     loadMainProfile(); 
   }, [username]);
 
-  // 2. เมื่อโปรไฟล์มาแล้ว ค่อยโหลดส่วนอื่นๆ ตามมา
   useEffect(() => {
     if (profileUser && currentUser) {
       loadSecondaryData(profileUser.id, currentUser.id);
@@ -274,19 +271,36 @@ export default function ProfilePage() {
   const themeColor = profileUser.theme_color || '#9de5a8';
   const isOwnProfile = currentUser.id === profileUser.id;
 
+  // ✅ ส่วนของ Animation แผ่นเสียงที่พี่อยากได้ (เบาและลื่น)
   const MusicWidget = () => {
     if (isWidgetsLoading) return <div className="card-minimal h-24 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
     if (!profileUser.music_url) return null;
     return (
       <div className="card-minimal bg-white p-6 rounded-[2.5rem] border border-gray-100 flex items-center gap-4 transition-all shadow-sm">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${themeColor}15`, color: themeColor }}>
-          <Music size={24} />
+        {/* ✅ SVG แผ่นเสียงแบบหมุนได้ (GPU Accelerated) */}
+        <div className="relative w-14 h-14 shrink-0">
+          <svg 
+            viewBox="0 0 24 24" 
+            className="w-full h-full animate-[spin_3s_linear_infinite] drop-shadow-sm" 
+            fill="none" 
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            {/* ตัวแผ่นสีดำ */}
+            <circle cx="12" cy="12" r="10" fill="#18181b" />
+            {/* เส้นร่องแผ่นเสียง */}
+            <circle cx="12" cy="12" r="7" stroke="white" strokeWidth="0.5" strokeOpacity="0.1" />
+            <circle cx="12" cy="12" r="5" stroke="white" strokeWidth="0.5" strokeOpacity="0.1" />
+            {/* แกนกลางที่เปลี่ยนสีตามธีม */}
+            <circle cx="12" cy="12" r="3" fill={themeColor} />
+            <circle cx="12" cy="12" r="0.8" fill="white" fillOpacity="0.8" />
+          </svg>
         </div>
+
         <div className="flex-1 min-w-0">
-          <p className="text-[11px] font-bold text-gray-500 mb-0.5">กำลังฟัง</p>
+          <p className="text-[11px] font-bold text-gray-500 mb-0.5 uppercase tracking-tighter">กำลังฟัง</p>
           <p className="text-sm font-black text-gray-900 truncate">{profileUser.music_name || 'My Song'}</p>
         </div>
-        <a href={profileUser.music_url} target="_blank" rel="noopener noreferrer" className="p-2.5 text-white rounded-xl shadow-sm transition-all hover:opacity-90 active:scale-95" style={{ backgroundColor: themeColor }}>
+        <a href={profileUser.music_url} target="_blank" rel="noopener noreferrer" className="p-2.5 text-white rounded-xl shadow-md transition-all hover:opacity-90 active:scale-95 flex items-center justify-center" style={{ backgroundColor: themeColor }}>
           <ExternalLink size={16} />
         </a>
       </div>
