@@ -23,6 +23,15 @@ interface FamilyMember {
   member: User;
 }
 
+// ✅ เพิ่มฟังก์ชัน formatDate ที่หายไป
+const formatDate = (dateString: string) => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    return `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}`;
+  } catch { return dateString; }
+};
+
 export default function ProfilePage() {
   const params = useParams();
   const router = useRouter();
@@ -81,7 +90,6 @@ export default function ProfilePage() {
     finally { setIsLoading(false); }
   };
 
-  // --- Handlers ---
   const handleSendMessage = async () => {
     const { data: chatId } = await supabase.rpc('get_or_create_dm', { uid_a: currentUser?.id, uid_b: profileUser.id });
     if (chatId) router.push(`/messages?chat=${chatId}`);
@@ -96,7 +104,6 @@ export default function ProfilePage() {
 
   const themeColor = profileUser.theme_color || '#9de5a8';
 
-  // --- Components ---
   const RelationshipWidget = () => {
     const hasFamily = familyMembers.length > 0;
     const hasCloseFriends = profileUser.close_friends?.length > 0;
@@ -141,7 +148,6 @@ export default function ProfilePage() {
               <div className="h-44 md:h-72 relative" style={profileUser.cover_img_url ? { backgroundImage: `url(${profileUser.cover_img_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${themeColor}40, ${themeColor}80)` }} />
               
               <div className="px-6 md:px-10 pb-8">
-                {/* Header Layout: รูปโปรไฟล์ และ ข้อมูลด้านล่าง */}
                 <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 -mt-20 md:-mt-28 relative z-10">
                   <div className="flex flex-col items-center lg:items-start gap-4">
                     <div className="w-40 h-40 md:w-52 md:h-52 rounded-full p-2 shadow-2xl bg-white border-[8px]" style={{ borderColor: themeColor }}>
@@ -158,7 +164,6 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
-                  {/* ปุ่ม Action: ไม่เบียดชื่อ */}
                   <div className="flex flex-row gap-2 w-full lg:w-auto justify-center lg:mb-4">
                     {currentUser.id === profileUser.id ? (
                       <Link href="/profile/edit" className="flex-1 lg:flex-none justify-center font-black text-[10px] uppercase tracking-widest px-6 py-3 rounded-xl flex items-center gap-2 text-white shadow-md transition-all hover:scale-105" style={{ backgroundColor: themeColor }}><Edit size={14} /> แก้ไขโปรไฟล์</Link>
@@ -175,7 +180,6 @@ export default function ProfilePage() {
                 <div className="mt-10 space-y-8">
                   {profileUser.bio && <p className="text-gray-600 font-medium leading-relaxed whitespace-pre-wrap break-words border-l-4 pl-6 text-lg italic" style={{ borderColor: `${themeColor}20` }}>{profileUser.bio}</p>}
                   
-                  {/* Music Widget จากโค้ดเดิม */}
                   {profileUser.music_url && (
                     <div className="card-minimal bg-white p-4 rounded-2xl border border-gray-100 flex items-center gap-4">
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${themeColor}15`, color: themeColor }}><Music size={20} /></div>
@@ -194,7 +198,6 @@ export default function ProfilePage() {
                     {profileUser.address && <div className="flex items-center gap-3"><MapPin className="w-4 h-4 text-red-400" /> {profileUser.address}</div>}
                   </div>
 
-                  {/* Hobbies Bubble */}
                   {profileUser.hobbies?.length > 0 && (
                     <div className="pt-6 border-t border-gray-50 flex flex-wrap gap-2">
                       {profileUser.hobbies.map((h: any, i: number) => (
@@ -206,10 +209,8 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Mobile Sidebar */}
             <div className="lg:hidden space-y-8 px-2"><RelationshipWidget /></div>
 
-            {/* Posts */}
             {(friendshipStatus === 'accepted' || currentUser.id === profileUser.id) ? (
               <div className="space-y-8">
                 <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={() => setRefreshTrigger(t => t + 1)} />
