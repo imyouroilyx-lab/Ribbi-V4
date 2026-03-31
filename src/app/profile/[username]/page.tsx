@@ -54,7 +54,7 @@ export default function ProfilePage() {
   const [profileUser, setProfileUser] = useState<any | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   
-  // ✅ แยก State การโหลดเพื่อไม่ให้รอกัน
+  // ✅ แยกสถานะการโหลด (Lazy Loading)
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [isPostsLoading, setIsPostsLoading] = useState(true);
   const [isWidgetsLoading, setIsWidgetsLoading] = useState(true);
@@ -90,12 +90,12 @@ export default function ProfilePage() {
     if (node) observer.current.observe(node);
   }, [isPostsLoading, isLoadingMore, hasMore]);
 
-  // ✅ เมื่อ Component โหลด ให้ดึงข้อมูลหลักก่อน
+  // 1. โหลดข้อมูลหลัก (โปรไฟล์)
   useEffect(() => { 
     loadMainProfile(); 
   }, [username]);
 
-  // ✅ เมื่อข้อมูลโปรไฟล์หลักมาแล้ว ค่อยโหลดโพสต์และ Widget ตามมา (Lazy Load)
+  // 2. เมื่อโปรไฟล์มาแล้ว ค่อยโหลดส่วนอื่นๆ ตามมา
   useEffect(() => {
     if (profileUser && currentUser) {
       loadSecondaryData(profileUser.id, currentUser.id);
@@ -107,7 +107,6 @@ export default function ProfilePage() {
     if (page > 0 && profileUser) loadMorePosts(profileUser.id); 
   }, [page]);
 
-  // 1. โหลดเฉพาะข้อมูลโปรไฟล์และผู้ใช้ (ให้หน้าเว็บโชว์เร็วที่สุด)
   const loadMainProfile = async () => {
     setIsProfileLoading(true);
     try {
@@ -124,7 +123,6 @@ export default function ProfilePage() {
       setProfileUser(profileRes.data);
       setCurrentUser(currentUserRes.data);
 
-      // บันทึกการเข้าชมทันทีแบบไม่รอ
       if (authUser.id !== profileRes.data.id) {
         const viewKey = `v_${profileRes.data.id}`;
         if (!sessionStorage.getItem(viewKey)) {
@@ -136,7 +134,6 @@ export default function ProfilePage() {
     finally { setIsProfileLoading(false); }
   };
 
-  // 2. โหลดโพสต์แบบแยกต่างหาก
   const loadPosts = async (targetId: string) => {
     setIsPostsLoading(true);
     try {
@@ -153,7 +150,6 @@ export default function ProfilePage() {
     finally { setIsPostsLoading(false); }
   };
 
-  // 3. โหลด Widget ข้อมูลรองรอบๆ ข้าง
   const loadSecondaryData = async (targetId: string, authId: string) => {
     setIsWidgetsLoading(true);
     try {
@@ -266,7 +262,6 @@ export default function ProfilePage() {
     setShowFamilyDeleteConfirm(false);
   };
 
-  // โชว์แค่ตอนโหลดโปรไฟล์หลักเท่านั้น จะได้ดูไม่หน่วงนานเกินไป
   if (isProfileLoading || !profileUser || !currentUser) return (
     <NavLayout>
       <div className="flex flex-col items-center justify-center py-20">
@@ -454,7 +449,7 @@ export default function ProfilePage() {
 
                   {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
                     <div className="pt-6 border-t border-gray-100">
-                      <p className="text-xs font-bold text-gray-500 mb-3">สิ่งที่สนใจ</p>
+                      <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-widest text-[10px]">สิ่งที่สนใจ</p>
                       <div className="flex flex-wrap gap-2">
                         {profileUser.hobbies.map((h: any, i: number) => (
                           <span key={i} className="px-4 py-2 rounded-xl text-xs font-bold border transition-transform hover:-translate-y-0.5 shadow-sm" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: `${themeColor}20` }}>
@@ -480,7 +475,10 @@ export default function ProfilePage() {
                 <CreatePostV3 currentUser={currentUser} targetUser={profileUser} onPostCreated={() => loadPosts(profileUser.id)} />
                 <div className="space-y-6 lg:space-y-8">
                   {isPostsLoading ? (
-                     <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-frog-500 w-10 h-10" /></div>
+                     <div className="py-20 flex flex-col items-center justify-center bg-white/30 rounded-[3rem] border border-dashed border-gray-200">
+                        <Loader2 className="animate-spin text-frog-500 w-10 h-10 mb-4" />
+                        <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Loading Feed...</p>
+                     </div>
                   ) : posts.length === 0 ? (
                      <div className="card-minimal text-center py-20 bg-white/50 rounded-[3rem] border-dashed border-gray-200 border-2"><p className="text-gray-400 font-bold text-sm">ยังไม่มีโพสต์ให้แสดง</p></div>
                   ) : (
@@ -490,7 +488,12 @@ export default function ProfilePage() {
                       </div>
                     ))
                   )}
-                  {isLoadingMore && <div className="py-6 flex justify-center"><Loader2 className="animate-spin text-gray-400 w-8 h-8" /></div>}
+                  {isLoadingMore && (
+                    <div className="py-6 flex flex-col items-center justify-center">
+                       <Loader2 className="animate-spin text-gray-400 w-8 h-8 mb-2" />
+                       <p className="text-[9px] font-black uppercase text-gray-300 tracking-[0.3em]">Loading More Posts</p>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : <div className="card-minimal bg-white/50 border-2 border-dashed border-gray-200 p-20 text-center rounded-[3rem] text-gray-500 font-bold">เพิ่มเพื่อนเพื่อดูโพสต์ของ {profileUser.display_name}</div>}
@@ -501,15 +504,15 @@ export default function ProfilePage() {
             <RecentVisitorsWidget />
             <FriendsWidget />
             <RelationshipWidget />
-            <div className="text-center py-8"><p className="text-xs font-bold text-gray-300">Ribbi Community 2026</p></div>
+            <div className="text-center py-8 opacity-30"><p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400">Ribbi Community 2026</p></div>
           </div>
 
         </div>
       </div>
 
       {showAddFamilyModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl p-8 text-center animate-in zoom-in duration-200">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setShowAddFamilyModal(false)}>
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl p-8 text-center animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
             <div className="w-16 h-16 bg-frog-50 text-frog-500 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4"><Heart size={32} /></div>
             <h2 className="text-xl font-black text-gray-900 mb-2">เพิ่มคนสำคัญ</h2>
             <p className="text-sm text-gray-500 font-medium mb-6">ระบุความสัมพันธ์ที่จะแสดงที่หน้าโปรไฟล์ของคุณ</p>
