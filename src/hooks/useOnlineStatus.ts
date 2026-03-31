@@ -9,28 +9,27 @@ export function useOnlineStatus(userId: string | null) {
   useEffect(() => {
     if (!userId) return;
 
-    // 1. สร้างท่อ
-    const channel = supabase.channel('online-status', {
+    const channel = supabase.channel('online-status-v4', {
       config: { presence: { key: userId } },
     });
 
-    // ✅ 2. ต้องสั่ง .on('presence') "ก่อน" สั่ง .subscribe เสมอ!
+    // ✅ ขั้นตอนที่ 1: ตั้งค่า Callback ให้เสร็จก่อนเชื่อมต่อ
     channel
       .on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState();
-        const simplifiedState: Record<string, any> = {};
+        const simplified: Record<string, any> = {};
         for (const key in newState) {
-          simplifiedState[key] = newState[key][0];
+          simplified[key] = newState[key][0];
         }
-        setOnlineUsers(simplifiedState);
+        setOnlineUsers(simplified);
       })
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        // จัดการตอนคนเข้า
+        // Log ตอนคนเข้าถ้าต้องการ
       })
       .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        // จัดการตอนคนออก
+        // Log ตอนคนออกถ้าต้องการ
       })
-      // ✅ 3. สั่ง .subscribe เป็นขั้นตอนสุดท้าย
+      // ✅ ขั้นตอนที่ 2: สั่ง Subscribe หลังจากตั้งค่าเสร็จแล้วเท่านั้น
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({
