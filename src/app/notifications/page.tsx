@@ -9,13 +9,13 @@ import { Bell, Clock, Trash2, Loader2, UserCheck, Heart, MessageCircle, AtSign }
 import Link from 'next/link';
 import { getRelativeTime } from '@/lib/utils';
 
-const NOTIFS_PER_PAGE = 20;
+// ✅ ปรับเหลือ 10 แจ้งเตือนต่อการโหลด 1 ครั้ง
+const NOTIFS_PER_PAGE = 10;
 
-// ✅ ย้ายฟังก์ชันข้อความและไอคอนมาไว้ด้านนอก เพื่อไม่ให้ถูกสร้างใหม่ทุกครั้งที่ Render (ช่วยลดความหน่วง)
 const getNotifIcon = (type: string) => {
   switch (type) {
     case 'like':
-    case 'comment_like': // ดักการกดไลก์คอมเมนต์
+    case 'comment_like':
       return <Heart size={12} className="fill-red-500 text-red-500" />;
     case 'comment': 
     case 'reply': 
@@ -33,7 +33,7 @@ const getNotifIcon = (type: string) => {
 const getNotificationText = (type: string) => {
   switch (type) {
     case 'like': return 'ถูกใจโพสต์ของคุณ';
-    case 'comment_like': return 'ถูกใจความคิดเห็นของคุณ'; // ✅ แก้ให้ตรงจุดแล้วครับ
+    case 'comment_like': return 'ถูกใจความคิดเห็นของคุณ';
     case 'comment': return 'แสดงความคิดเห็นในโพสต์ของคุณ';
     case 'reply': return 'ตอบกลับความคิดเห็นของคุณ';
     case 'friend_request': return 'ส่งคำขอเป็นเพื่อนถึงคุณ';
@@ -54,16 +54,19 @@ export default function NotificationsPage() {
   const [page, setPage] = useState(0);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
 
-  // ระบบ Intersection Observer สำหรับโหลดข้อมูลเพิ่มเวลาเลื่อนลงสุด (ไม่หน่วงแน่นอน)
+  // ✅ ระบบ Infinite Scroll: ดักจับอิลิเมนต์สุดท้ายเพื่อโหลดเพิ่ม
   const observer = useRef<IntersectionObserver | null>(null);
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
     if (isLoading || isLoadingMore) return;
     if (observer.current) observer.current.disconnect();
+
     observer.current = new IntersectionObserver(entries => {
+      // ถ้าเลื่อนมาเจออันสุดท้าย และยังมีข้อมูลให้โหลดต่อ (hasMore)
       if (entries[0].isIntersecting && hasMore) {
         setPage(prev => prev + 1);
       }
-    });
+    }, { threshold: 0.8 }); // ต้องเห็นอิลิเมนต์เกือบทั้งหมดถึงจะโหลด
+
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
 
@@ -79,21 +82,16 @@ export default function NotificationsPage() {
     }
   };
 
-  // ✅ ระบบกรองแจ้งเตือนซ้ำซ้อน (Deduplication) ช่วยลดจำนวนของที่ต้องเรนเดอร์บนจอ
   const deduplicateNotifications = (notifs: any[]) => {
     const seen = new Set();
     return notifs.filter(n => {
       let key = n.id;
-      
-      // กรองคำขอเพื่อนซ้ำ
       if (n.type === 'friend_request' || n.type === 'friend_accept') {
         key = `${n.type}-${n.sender_id}`;
       } 
-      // กรองการกดไลก์รัวๆ ในโพสต์/คอมเมนต์เดียวกัน ให้เหลือแค่อันเดียว
       else if (n.type === 'like' || n.type === 'comment_like') {
         key = `${n.type}-${n.sender_id}-${n.post_id || n.id}`;
       }
-
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -121,6 +119,7 @@ export default function NotificationsPage() {
       if (data) {
         const uniqueData = deduplicateNotifications(data);
         setNotifications(uniqueData);
+        // เช็คว่ายอดที่ดึงมา (ก่อนกรอง) ครบจำนวนต่อหน้าไหม ถ้าไม่ครบแสดงว่าหมดแล้ว
         setHasMore(data.length === NOTIFS_PER_PAGE);
         silentMarkAllAsRead(user.id);
       }
@@ -233,6 +232,7 @@ export default function NotificationsPage() {
 
         <div className="space-y-3">
           {notifications.map((n, index) => {
+            // ✅ ใช้ ref กับอันสุดท้ายในลิสต์เพื่อสั่ง Infinite Scroll
             const isLast = notifications.length === index + 1;
             return (
               <div key={n.id} ref={isLast ? lastElementRef : null} className="group relative">
@@ -290,12 +290,21 @@ export default function NotificationsPage() {
             );
           })}
           
+          {/* ✅ แสดง Loader เฉพาะตอนกำลังดึงหน้าถัดไป */}
           {isLoadingMore && (
-            <div className="flex justify-center py-8">
-              <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+            <div className="flex flex-col items-center justify-center py-6">
+              <Loader2 className="w-6 h-6 text-indigo-500 animate-spin mb-2" />
+              <p className="text-[9px] font-black uppercase text-gray-400 tracking-[0.2em]">กำลังโหลดเพิ่ม...</p>
             </div>
           )}
           
+          {/* ✅ เมื่อโหลดจนสุดแล้ว */}
+          {!hasMore && notifications.length > 0 && (
+            <p className="text-center py-10 text-[9px] font-black uppercase text-gray-300 tracking-[0.3em]">
+              สิ้นสุดการแจ้งเตือน
+            </p>
+          )}
+
           {notifications.length === 0 && !isLoading && (
             <div className="text-center py-20 bg-white rounded-[2.5rem] border border-dashed border-gray-200 shadow-inner">
               <Bell className="w-16 h-16 mx-auto mb-4 text-gray-100" />
