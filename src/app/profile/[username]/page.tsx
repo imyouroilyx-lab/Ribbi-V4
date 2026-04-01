@@ -10,7 +10,7 @@ import ConfirmModal from '../../../components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, 
-  MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye
+  MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye, Info
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -278,31 +278,21 @@ export default function ProfilePage() {
       <div className="card-minimal bg-white p-6 rounded-[2.5rem] border border-gray-100 flex items-center gap-4 transition-all shadow-sm">
         <div className="relative w-14 h-14 shrink-0">
           
-          {/* 1. ตัวแผ่นเสียง (หมุนติ้วๆ) */}
           <svg 
             viewBox="0 0 24 24" 
             className="w-full h-full animate-[spin_3s_linear_infinite] drop-shadow-sm absolute inset-0" 
             fill="none" 
             xmlns="http://www.w3.org/2000/svg"
           >
-            {/* แผ่นสีดำ */}
             <circle cx="12" cy="12" r="10" fill="#18181b" />
-            {/* ร่องแผ่นเสียง */}
             <circle cx="12" cy="12" r="7.5" stroke="white" strokeWidth="0.3" strokeOpacity="0.15" />
             <circle cx="12" cy="12" r="5.5" stroke="white" strokeWidth="0.3" strokeOpacity="0.15" />
-            
-            {/* เลเบลวงใน */}
             <circle cx="12" cy="12" r="3.2" fill={themeColor} />
-            
-            {/* 🎯 ลายเส้นและจุดบนเลเบล เพื่อให้ตาเราเห็นจังหวะการหมุนชัดเจน */}
             <path d="M12 8.8 A 3.2 3.2 0 0 1 15.2 12" stroke="white" strokeWidth="0.5" strokeOpacity="0.6" strokeLinecap="round" />
             <circle cx="10" cy="10" r="0.4" fill="white" fillOpacity="0.6" />
-            
-            {/* รูแกนกลาง */}
             <circle cx="12" cy="12" r="0.8" fill="#f8fafc" />
           </svg>
 
-          {/* 2. เงาสะท้อนแสงแผ่นเสียง (ไม่หมุน แปะทับไว้เฉยๆ) เพื่อความเงางาม */}
           <svg viewBox="0 0 24 24" className="w-full h-full absolute inset-0 pointer-events-none opacity-50" fill="none">
             <path d="M12 2 A 10 10 0 0 1 19.07 4.93 L 12 12 Z" fill="white" fillOpacity="0.2" />
             <path d="M4.93 19.07 A 10 10 0 0 1 12 22 L 12 12 Z" fill="white" fillOpacity="0.05" />
@@ -422,11 +412,18 @@ export default function ProfilePage() {
                   
                   <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 pb-2 pt-2 md:pt-0">
                     {isOwnProfile ? (
-                      <Link href="/profile/edit" className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 text-white shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><Edit size={16} /> แก้ไขโปรไฟล์</Link>
+                      <>
+                        <Link href="/profile/edit" className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 text-white shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><Edit size={16} /> แก้ไขโปรไฟล์</Link>
+                        {/* ✅ เพิ่มปุ่มเกี่ยวกับฉัน สำหรับเจ้าของโปรไฟล์ */}
+                        <Link href={`/profile/${profileUser.username}/info`} className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 transition-all shadow-sm"><Info size={16} /> เกี่ยวกับฉัน</Link>
+                      </>
                     ) : (
                       <>
                         <button onClick={handleSendMessage} className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 transition-all shadow-sm"><MessageCircle size={16} /> ข้อความ</button>
                         
+                        {/* ✅ เพิ่มปุ่มเกี่ยวกับฉัน สำหรับให้คนอื่นดู */}
+                        <Link href={`/profile/${profileUser.username}/info`} className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 transition-all shadow-sm"><Info size={16} /> เกี่ยวกับฉัน</Link>
+
                         {!isOwnProfile && friendshipStatus === 'accepted' && !isAddedToFamily && (
                           <button onClick={() => setShowAddFamilyModal(true)} className="font-black text-xs px-5 py-3 rounded-xl border flex items-center gap-2 transition-all shadow-sm active:scale-95" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: themeColor }}><Plus size={16} /> เพิ่มคนสำคัญ</button>
                         )}
@@ -512,7 +509,6 @@ export default function ProfilePage() {
                   ) : (
                     posts.map((p, index) => (
                       <div key={p.id} ref={posts.length === index + 1 ? lastPostElementRef : null}>
-                         {/* ✅ แก้ไขตรงนี้ ใส่ onDelete พร้อมโค้ดที่ถูกต้องให้แล้วครับ */}
                          <PostCardV3 
                            post={p} 
                            currentUserId={currentUser.id} 
@@ -576,12 +572,13 @@ export default function ProfilePage() {
       
       <ConfirmModal 
         isOpen={showDeletePostConfirm} 
-        onClose={() => setShowDeletePostConfirm(false)} 
+        onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} 
         onConfirm={async () => { 
           if(postToDelete) { 
             await supabase.from('posts').delete().eq('id', postToDelete); 
             setPosts(prev => prev.filter(p => p.id !== postToDelete)); 
             setShowDeletePostConfirm(false); 
+            setPostToDelete(null);
           } 
         }} 
         title="ลบโพสต์?" 
