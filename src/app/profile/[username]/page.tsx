@@ -11,7 +11,7 @@ import {
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, 
   MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye, Info,
-  BadgeCheck // ✅ เพิ่มไอคอนติ๊กถูก
+  BadgeCheck // ✅ ติ๊กถูก Verified
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -108,12 +108,12 @@ export default function ProfilePage() {
   const loadMainProfile = async () => {
     setIsProfileLoading(true);
     try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) { router.push('/login'); return; }
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) { router.push('/login'); return; }
 
       const [profileRes, currentUserRes] = await Promise.all([
         supabase.from('users').select('*').eq('username', username).single(),
-        supabase.from('users').select('*').eq('id', authUser.id).single()
+        supabase.from('users').select('*').eq('id', session.user.id).single()
       ]);
 
       if (!profileRes.data) { router.push('/'); return; }
@@ -121,10 +121,10 @@ export default function ProfilePage() {
       setProfileUser(profileRes.data);
       setCurrentUser(currentUserRes.data);
 
-      if (authUser.id !== profileRes.data.id) {
+      if (session.user.id !== profileRes.data.id) {
         const viewKey = `v_${profileRes.data.id}`;
         if (!sessionStorage.getItem(viewKey)) {
-          supabase.from('profile_views').insert({ profile_id: profileRes.data.id, visitor_id: authUser.id }).then();
+          supabase.from('profile_views').insert({ profile_id: profileRes.data.id, visitor_id: session.user.id }).then();
           sessionStorage.setItem(viewKey, '1');
         }
       }
@@ -356,6 +356,8 @@ export default function ProfilePage() {
   const RelationshipWidget = () => {
     if (isWidgetsLoading) return <div className="card-minimal h-32 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
     const hasFamily = familyMembers.length > 0;
+    
+    // ✅ แสดง Widget เสมอถ้ามีสถานะหัวใจ หรือมีคนสำคัญในลิสต์
     if (!profileUser.relationship_status && !hasFamily) return null;
 
     return (
@@ -443,7 +445,6 @@ export default function ProfilePage() {
                 <div className="text-center md:text-left space-y-1 relative z-20">
                   <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 tracking-tight leading-none mb-2 flex items-center justify-center md:justify-start gap-3">
                     {profileUser.display_name}
-                    {/* ✅ เพิ่มติ๊กถูก Verified หน้าโปรไฟล์ */}
                     {profileUser.is_verified && <BadgeCheck className="w-8 h-8 md:w-10 md:h-10 text-blue-500 fill-blue-50 flex-shrink-0" />}
                   </h1>
                   <div className="flex wrap items-center justify-center md:justify-start gap-3 text-sm font-bold text-gray-500">
@@ -543,7 +544,23 @@ export default function ProfilePage() {
 
       <ConfirmModal isOpen={showFamilyDeleteConfirm} onClose={() => setShowFamilyDeleteConfirm(false)} onConfirm={handleRemoveFamilyMember} title="ลบข้อมูล?" message="คุณแน่ใจนะว่าจะลบความสัมพันธ์นี้?" variant="danger" />
       <ConfirmModal isOpen={showUnfriendConfirm} onClose={() => setShowUnfriendConfirm(false)} onConfirm={handleRemoveFriend} title="เลิกเป็นเพื่อน?" message={`คุณต้องการเลิกเป็นเพื่อนกับ ${profileUser?.display_name} ใช่หรือไม่? หากเลิกเป็นเพื่อนคุณจะไม่เห็นโพสต์ของกันและกันอีกต่อไป`} variant="danger" confirmText="เลิกเป็นเพื่อน" />
-      <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} onConfirm={async () => { if(postToDelete) { await supabase.from('posts').delete().eq('id', postToDelete); setPosts(prev => prev.filter(p => p.id !== postToDelete)); setShowDeletePostConfirm(false); setPostToDelete(null); } }} title="ลบโพสต์?" message="ต้องการลบโพสต์นี้ถาวรใช่หรือไม่" variant="danger" />
+      <ConfirmModal 
+        isOpen={showDeletePostConfirm} 
+        onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} 
+        onConfirm={async () => { 
+          if(postToDelete) { 
+            const { error } = await supabase.from('posts').delete().eq('id', postToDelete); 
+            if (!error) {
+              setPosts(prev => prev.filter(p => p.id !== postToDelete)); 
+            }
+            setShowDeletePostConfirm(false); 
+            setPostToDelete(null);
+          } 
+        }} 
+        title="ลบโพสต์?" 
+        message="ต้องการลบโพสต์นี้ถาวรใช่หรือไม่" 
+        variant="danger" 
+      />
     </NavLayout>
   );
 }
