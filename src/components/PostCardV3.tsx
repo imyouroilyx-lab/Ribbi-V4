@@ -5,7 +5,7 @@ import { supabase, Post, User } from '../lib/supabase';
 import { 
   Heart, MessageCircle, Trash2, Image as ImageIcon, 
   X, Edit2, Send, Loader2, ChevronRight, MapPin, 
-  Link as LinkIcon, AtSign, BadgeCheck // ✅ เพิ่ม BadgeCheck
+  Link as LinkIcon, AtSign, BadgeCheck 
 } from 'lucide-react';
 import { getRelativeTime } from '../lib/utils';
 import Link from 'next/link';
@@ -305,9 +305,14 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           <button key={f.id} onClick={() => insertMention(f)} className="w-full flex items-center gap-3 p-3 hover:bg-frog-50 transition-colors text-left border-b border-gray-50 last:border-0">
             <div className="relative flex-shrink-0">
               <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" />
-              {f.is_verified && <BadgeCheck className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 text-blue-500 bg-white rounded-full" />}
             </div>
-            <div className="min-w-0"><p className="text-sm font-bold text-gray-900 truncate">{f.display_name}</p><p className="text-[10px] text-gray-400">@{f.username}</p></div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-900 truncate flex items-center gap-1">
+                {f.display_name}
+                {f.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
+              </p>
+              <p className="text-[10px] text-gray-400">@{f.username}</p>
+            </div>
           </button>
         ))}
       </div>
@@ -323,7 +328,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         <div className="flex gap-2">
           <Link href={`/profile/${c.author?.username}`} className="flex-shrink-0 relative">
             <img src={c.author?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" />
-            {c.author?.is_verified && <BadgeCheck className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 text-blue-500 bg-white rounded-full" />}
           </Link>
           <div className="flex-1 min-w-0">
             {isEditing ? (
@@ -381,7 +385,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         {post.author && (
           <Link href={`/profile/${post.author.username}`} className="flex-shrink-0 relative">
             <img src={post.author.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-gray-50 shadow-sm" />
-            {post.author.is_verified && <BadgeCheck className="absolute -bottom-0.5 -right-0.5 w-4.5 h-4.5 text-blue-500 bg-white rounded-full" />}
           </Link>
         )}
         <div className="flex-1 min-w-0">
@@ -426,6 +429,21 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </div>
       ) : (
         <div className="text-sm text-gray-900 mb-4 whitespace-pre-wrap break-words leading-relaxed">{renderTextWithTags(post.content || '')}</div>
+      )}
+
+      {/* ✅ ดึงระบบ YouTube Embed กลับมาให้แล้วครับ */}
+      {!isEditingPost && post.content && (
+        <div className="mb-4">
+          {post.content.match(/(https?:\/\/\S+)/g)?.map(url => {
+            const ytId = getYouTubeVideoId(url);
+            if (ytId) return (
+              <div key={url} className="mb-4 rounded-3xl overflow-hidden relative pt-[56.25%] w-full shadow-md bg-black">
+                <iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube.com/embed/${ytId}`} allowFullScreen></iframe>
+              </div>
+            );
+            return <LinkPreview key={url} url={url} />;
+          })}
+        </div>
       )}
 
       {post.images && post.images.length > 0 && (
@@ -480,7 +498,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                   <Link key={idx} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors group">
                     <div className="relative flex-shrink-0">
                       <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover shadow-sm border border-gray-100" />
-                      {user.is_verified && <BadgeCheck className="absolute -bottom-0.5 -right-0.5 w-4 h-4 text-blue-500 bg-white rounded-full" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-sm text-gray-900 truncate group-hover:text-frog-600 flex items-center gap-1">
