@@ -271,7 +271,6 @@ export default function ProfilePage() {
   const themeColor = profileUser.theme_color || '#9de5a8';
   const isOwnProfile = currentUser.id === profileUser.id;
 
-  // ✅ แก้ภาพลวงตาวงกลมสมมาตร เพิ่มความชัดเจนตอนหมุน
   const MusicWidget = () => {
     if (isWidgetsLoading) return <div className="card-minimal h-24 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
     if (!profileUser.music_url) return null;
@@ -513,7 +512,16 @@ export default function ProfilePage() {
                   ) : (
                     posts.map((p, index) => (
                       <div key={p.id} ref={posts.length === index + 1 ? lastPostElementRef : null}>
-                         <PostCardV3 post={p} currentUserId={currentUser.id} profileOwnerId={profileUser.id} onDelete={() => {}} />
+                         {/* ✅ แก้ไขตรงนี้ ใส่ onDelete พร้อมโค้ดที่ถูกต้องให้แล้วครับ */}
+                         <PostCardV3 
+                           post={p} 
+                           currentUserId={currentUser.id} 
+                           profileOwnerId={profileUser.id} 
+                           onDelete={(id) => { 
+                             setPostToDelete(id); 
+                             setShowDeletePostConfirm(true); 
+                           }} 
+                         />
                       </div>
                     ))
                   )}
@@ -566,7 +574,20 @@ export default function ProfilePage() {
         confirmText="เลิกเป็นเพื่อน"
       />
       
-      <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => setShowDeletePostConfirm(false)} onConfirm={async () => { if(postToDelete) { await supabase.from('posts').delete().eq('id', postToDelete); setPosts(prev => prev.filter(p => p.id !== postToDelete)); setShowDeletePostConfirm(false); } }} title="ลบโพสต์?" message="ต้องการลบโพสต์นี้ถาวรใช่หรือไม่" variant="danger" />
+      <ConfirmModal 
+        isOpen={showDeletePostConfirm} 
+        onClose={() => setShowDeletePostConfirm(false)} 
+        onConfirm={async () => { 
+          if(postToDelete) { 
+            await supabase.from('posts').delete().eq('id', postToDelete); 
+            setPosts(prev => prev.filter(p => p.id !== postToDelete)); 
+            setShowDeletePostConfirm(false); 
+          } 
+        }} 
+        title="ลบโพสต์?" 
+        message="ต้องการลบโพสต์นี้ถาวรใช่หรือไม่" 
+        variant="danger" 
+      />
     </NavLayout>
   );
 }
