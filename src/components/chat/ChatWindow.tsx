@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, RefreshCcw, Palette, UserPen, Eraser, MessageSquare, Users, UserMinus, UserPlus, Check } from 'lucide-react';
+import { 
+  Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, 
+  RefreshCcw, Palette, UserPen, Eraser, MessageSquare, 
+  Users, UserMinus, UserPlus, Check, Image as ImageIcon 
+} from 'lucide-react';
 import Link from 'next/link';
 
 export default function ChatWindow({ chatId, chatData: initialChatData, currentUser, onBack, onRefreshChats }: any) {
@@ -13,20 +17,27 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // ✅ States สำหรับระบบส่งรูปภาพ
+  const [imageUrl, setImageUrl] = useState('');
+  const [showImageInput, setShowImageInput] = useState(false);
+
   const [myNick, setMyNick] = useState('');
   const [theirNick, setTheirNick] = useState('');
   const [tempColor, setTempColor] = useState('');
+  const [groupName, setGroupName] = useState(''); // ✅ State สำหรับชื่อกลุ่ม
   const lastId = useRef(chatId);
 
   // States สำหรับจัดการกลุ่ม
   const [participants, setParticipants] = useState<any[]>([]);
   const [myRole, setMyRole] = useState('member');
 
-  // ✅ States สำหรับเพิ่มคนเข้ากลุ่ม
+  // States สำหรับเพิ่มคนเข้ากลุ่ม
   const [showAddMember, setShowAddMember] = useState(false);
   const [availableFriends, setAvailableFriends] = useState<any[]>([]);
   const [selectedNewMembers, setSelectedNewMembers] = useState<string[]>([]);
   const [isAdding, setIsAdding] = useState(false);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadMessages();
@@ -38,8 +49,11 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       setMyNick(initialChatData.my_nickname || '');
       setTheirNick(initialChatData.other_user?.display_name || '');
       setTempColor(initialChatData.theme_color || '#22c55e');
+      setGroupName(initialChatData.name || ''); // ✅ เซ็ตค่าเริ่มต้นของชื่อกลุ่ม
       lastId.current = chatId;
-      setShowAddMember(false); // ปิดหน้าเพิ่มคนเวลาเปลี่ยนห้อง
+      setShowAddMember(false);
+      setShowImageInput(false);
+      setImageUrl('');
     }
   }, [initialChatData, chatId, showSettings]);
 
@@ -49,7 +63,6 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     }
   }, [showSettings, chatId]);
 
-  // ✅ โหลดเพื่อนที่ยังไม่อยู่ในกลุ่ม
   useEffect(() => {
     if (showAddMember) {
       loadAvailableFriends();
@@ -82,7 +95,6 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     if (data) {
       const friendList = data.map((f: any) => f.sender.id === currentUser.id ? f.receiver : f.sender);
       const currentMemberIds = participants.map(p => p.user_id);
-      // กรองเอาเฉพาะเพื่อนที่ยังไม่มี ID ในกลุ่ม
       setAvailableFriends(friendList.filter(f => !currentMemberIds.includes(f.id)));
     }
   };
@@ -106,17 +118,24 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     onRefreshChats();
   };
 
+  // ✅ ปรับระบบส่งให้รองรับ Array ของรูปภาพ (คอลัมน์ images)
   const handleSend = async (e: any) => {
     e.preventDefault();
-    if (!input.trim()) return;
-    const content = input;
+    if (!input.trim() && !imageUrl.trim()) return;
+
+    const content = input.trim();
+    const images = imageUrl.trim() ? [imageUrl.trim()] : null;
+    
     setInput('');
+    setImageUrl('');
+    setShowImageInput(false);
+
     if (editingId) {
       await supabase.from('messages').update({ content, updated_at: new Date().toISOString() }).eq('id', editingId);
       setEditingId(null);
     } else {
-      await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content });
-      await supabase.from('chats').update({ last_message_content: content, last_message_at: new Date().toISOString() }).eq('id', chatId);
+      await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content, images });
+      await supabase.from('chats').update({ last_message_content: content || '[ส่งรูปภาพ]', last_message_at: new Date().toISOString() }).eq('id', chatId);
     }
     loadMessages();
     onRefreshChats();
@@ -134,6 +153,11 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       if (tempColor !== initialChatData.theme_color) {
         await supabase.from('chats').update({ theme_color: tempColor }).eq('id', chatId);
         await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} เปลี่ยนสีธีมแชท`, event: 'system' });
+      }
+      // ✅ เพิ่มการอัปเดตชื่อกลุ่ม
+      if (initialChatData.is_group && groupName !== initialChatData.name) {
+        await supabase.from('chats').update({ name: groupName }).eq('id', chatId);
+        await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} เปลี่ยนชื่อกลุ่มเป็น "${groupName}"`, event: 'system' });
       }
       alert('บันทึกเรียบร้อย!');
       setShowSettings(false);
@@ -176,7 +200,6 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     }
   };
 
-  // ✅ ฟังก์ชันกดยืนยันเพิ่มคนเข้ากลุ่ม
   const submitAddMembers = async () => {
     if (selectedNewMembers.length === 0) return;
     setIsAdding(true);
@@ -184,11 +207,10 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       const newParticipants = selectedNewMembers.map(id => ({
         chat_id: chatId,
         user_id: id,
-        role: 'member' // ดึงเข้ามาเป็นสมาชิกระดับปกติ
+        role: 'member'
       }));
       await supabase.from('chat_participants').insert(newParticipants);
 
-      // ดึงชื่อคนที่ถูกเชิญมาเพื่อแสดงในข้อความระบบ
       const addedNames = availableFriends
         .filter(f => selectedNewMembers.includes(f.id))
         .map(f => f.display_name)
@@ -215,9 +237,9 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   };
 
   const otherUser = initialChatData.other_user;
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const renderMessageContent = (content: string) => {
+    if (!content) return null;
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const parts = content.split(urlRegex);
     return parts.map((part, i) => {
@@ -275,7 +297,14 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
               <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'} gap-1`}>
                 <div className={`relative px-4 py-2.5 rounded-2xl text-[14px] shadow-sm break-words ${isMe ? 'text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'}`} 
                      style={{ backgroundColor: isMe ? (initialChatData.theme_color || '#22c55e') : undefined }}>
-                  {renderMessageContent(m.content || '')}
+                  
+                  {/* ✅ แสดงรูปภาพถ้ามี */}
+                  {m.images && m.images.length > 0 && (
+                    <img src={m.images[0]} alt="Attached" className="rounded-xl mb-2 max-w-full max-h-64 object-cover border border-black/10" loading="lazy" />
+                  )}
+
+                  {/* แสดงข้อความ */}
+                  {m.content && renderMessageContent(m.content)}
                   
                   {isMe && (
                     <div className="absolute -left-16 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 bg-white border rounded-lg p-1 shadow-lg">
@@ -301,88 +330,95 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
           </div>
           <div className="p-6 space-y-8 flex-1 overflow-y-auto pb-24 custom-scrollbar">
             
-            {/* ✅ ส่วนจัดการสมาชิกกลุ่ม */}
-            {initialChatData.is_group && participants.length > 0 && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Users size={14}/> สมาชิกในกลุ่ม ({participants.length})</h4>
-                  {/* ปุ่มเพิ่มคนเข้ากลุ่ม (ให้แอดมินหรือทุกคนกดได้ตามต้องการ ตอนนี้เปิดให้ทุกคนกดเชิญเพื่อนได้) */}
-                  <button onClick={() => setShowAddMember(!showAddMember)} className="text-[10px] font-bold text-frog-600 bg-frog-50 hover:bg-frog-100 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors">
-                    <UserPlus size={12} /> เพิ่มสมาชิก
-                  </button>
+            {/* ✅ ส่วนจัดการชื่อกลุ่ม และ สมาชิกกลุ่ม */}
+            {initialChatData.is_group && (
+              <>
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Users size={14}/> ชื่อกลุ่ม</h4>
+                  <input value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="ตั้งชื่อกลุ่มใหม่..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:ring-1 focus:ring-frog-300 transition-shadow" />
                 </div>
 
-                {/* ✅ กล่องเลือกเพื่อนเพื่อเพิ่มเข้ากลุ่ม */}
-                {showAddMember && (
-                  <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100 animate-in fade-in slide-in-from-top-2 space-y-2">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">เลือกเพื่อนของคุณ</span>
-                      <button onClick={() => setShowAddMember(false)} className="text-[10px] text-gray-400 hover:text-gray-600 font-bold">ปิด</button>
-                    </div>
-                    <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
-                      {availableFriends.length === 0 ? (
-                        <p className="text-xs text-gray-400 text-center py-4 italic">เพื่อนทุกคนอยู่ในกลุ่มนี้แล้ว</p>
-                      ) : (
-                        availableFriends.map(f => (
-                          <button 
-                            key={f.id} 
-                            onClick={() => setSelectedNewMembers(prev => prev.includes(f.id) ? prev.filter(id => id !== f.id) : [...prev, f.id])}
-                            className={`w-full flex items-center justify-between p-2 rounded-xl border transition-all ${selectedNewMembers.includes(f.id) ? 'bg-white border-frog-400 shadow-sm' : 'bg-white border-transparent hover:bg-gray-100'}`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-6 h-6 rounded-full object-cover" alt="" />
-                              <span className="text-xs font-bold text-gray-700 truncate">{f.display_name}</span>
-                            </div>
-                            {selectedNewMembers.includes(f.id) && <Check size={14} className="text-frog-600" />}
-                          </button>
-                        ))
-                      )}
-                    </div>
-                    {availableFriends.length > 0 && (
-                      <button 
-                        onClick={submitAddMembers} 
-                        disabled={selectedNewMembers.length === 0 || isAdding}
-                        className="w-full py-2.5 mt-2 bg-frog-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-frog-600 disabled:opacity-50 transition-all shadow-sm"
-                      >
-                        {isAdding ? 'กำลังดึงเข้ากลุ่ม...' : `ดึงเข้ากลุ่ม (${selectedNewMembers.length} คน)`}
+                {participants.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Users size={14}/> สมาชิกในกลุ่ม ({participants.length})</h4>
+                      <button onClick={() => setShowAddMember(!showAddMember)} className="text-[10px] font-bold text-frog-600 bg-frog-50 hover:bg-frog-100 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors">
+                        <UserPlus size={12} /> เพิ่มสมาชิก
                       </button>
+                    </div>
+
+                    {showAddMember && (
+                      <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100 animate-in fade-in slide-in-from-top-2 space-y-2">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">เลือกเพื่อนของคุณ</span>
+                          <button onClick={() => setShowAddMember(false)} className="text-[10px] text-gray-400 hover:text-gray-600 font-bold">ปิด</button>
+                        </div>
+                        <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
+                          {availableFriends.length === 0 ? (
+                            <p className="text-xs text-gray-400 text-center py-4 italic">เพื่อนทุกคนอยู่ในกลุ่มนี้แล้ว</p>
+                          ) : (
+                            availableFriends.map(f => (
+                              <button 
+                                key={f.id} 
+                                onClick={() => setSelectedNewMembers(prev => prev.includes(f.id) ? prev.filter(id => id !== f.id) : [...prev, f.id])}
+                                className={`w-full flex items-center justify-between p-2 rounded-xl border transition-all ${selectedNewMembers.includes(f.id) ? 'bg-white border-frog-400 shadow-sm' : 'bg-white border-transparent hover:bg-gray-100'}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-6 h-6 rounded-full object-cover" alt="" />
+                                  <span className="text-xs font-bold text-gray-700 truncate">{f.display_name}</span>
+                                </div>
+                                {selectedNewMembers.includes(f.id) && <Check size={14} className="text-frog-600" />}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                        {availableFriends.length > 0 && (
+                          <button 
+                            onClick={submitAddMembers} 
+                            disabled={selectedNewMembers.length === 0 || isAdding}
+                            className="w-full py-2.5 mt-2 bg-frog-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-frog-600 disabled:opacity-50 transition-all shadow-sm"
+                          >
+                            {isAdding ? 'กำลังดึงเข้ากลุ่ม...' : `ดึงเข้ากลุ่ม (${selectedNewMembers.length} คน)`}
+                          </button>
+                        )}
+                      </div>
                     )}
+
+                    <div className="space-y-2">
+                      {participants.map(p => (
+                        <div key={p.user?.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-2xl border border-gray-100">
+                          <Link href={`/profile/${p.user?.username}`} className="flex items-center gap-3 min-w-0 flex-1 hover:opacity-80 transition-opacity">
+                            <img src={p.user?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover shadow-sm" alt="" />
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-gray-900 truncate">{p.user?.display_name}</p>
+                              <p className={`text-[9px] font-black uppercase tracking-widest ${p.role === 'admin' ? 'text-frog-500' : 'text-gray-400'}`}>
+                                {p.role}
+                              </p>
+                            </div>
+                          </Link>
+                          
+                          {myRole === 'admin' && p.user?.id !== currentUser.id && (
+                            <button 
+                              onClick={() => handleKickMember(p.user?.id, p.user?.display_name)}
+                              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all ml-2"
+                              title="เตะออกจากกลุ่ม"
+                            >
+                              <UserMinus size={16} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
-
-                <div className="space-y-2">
-                  {participants.map(p => (
-                    <div key={p.user?.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-2xl border border-gray-100">
-                      <Link href={`/profile/${p.user?.username}`} className="flex items-center gap-3 min-w-0 flex-1 hover:opacity-80 transition-opacity">
-                        <img src={p.user?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover shadow-sm" alt="" />
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-gray-900 truncate">{p.user?.display_name}</p>
-                          <p className={`text-[9px] font-black uppercase tracking-widest ${p.role === 'admin' ? 'text-frog-500' : 'text-gray-400'}`}>
-                            {p.role}
-                          </p>
-                        </div>
-                      </Link>
-                      
-                      {myRole === 'admin' && p.user?.id !== currentUser.id && (
-                        <button 
-                          onClick={() => handleKickMember(p.user?.id, p.user?.display_name)}
-                          className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all ml-2"
-                          title="เตะออกจากกลุ่ม"
-                        >
-                          <UserMinus size={16} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
+              </>
             )}
 
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><UserPen size={14}/> ตั้งชื่อเล่น</h4>
               <div className="space-y-3">
-                <input value={myNick} onChange={e => setMyNick(e.target.value)} placeholder="ชื่อเล่นของคุณ..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none" />
-                {!initialChatData.is_group && <input value={theirNick} onChange={e => setTheirNick(e.target.value)} placeholder="ชื่อเล่นเพื่อน..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none" />}
+                <input value={myNick} onChange={e => setMyNick(e.target.value)} placeholder="ชื่อเล่นของคุณ..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:ring-1 focus:ring-frog-300" />
+                {!initialChatData.is_group && <input value={theirNick} onChange={e => setTheirNick(e.target.value)} placeholder="ชื่อเล่นเพื่อน..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none focus:ring-1 focus:ring-frog-300" />}
               </div>
             </div>
             
@@ -411,16 +447,59 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       )}
 
       {/* Form */}
-      <form onSubmit={handleSend} className="p-4 border-t bg-white flex items-center gap-3 relative">
-        {editingId && (
-          <div className="absolute -top-12 left-4 right-4 bg-blue-500 text-white p-2 rounded-t-xl text-[10px] font-bold flex justify-between animate-in slide-in-from-bottom-2">
-            <span>กำลังแก้ไข...</span>
-            <button type="button" onClick={() => { setEditingId(null); setInput(''); }}><X size={14}/></button>
+      <div className="relative">
+        {/* ✅ กล่องใส่ URL รูปภาพ */}
+        {showImageInput && (
+          <div className="absolute bottom-full left-0 right-0 p-3 bg-gray-50 border-t border-gray-200 animate-in slide-in-from-bottom-2 z-10">
+            <div className="flex items-center gap-2">
+              <input 
+                type="url" 
+                value={imageUrl} 
+                onChange={e => setImageUrl(e.target.value)} 
+                placeholder="วาง URL รูปภาพที่นี่ (https://...)" 
+                className="flex-1 p-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-frog-300" 
+              />
+              <button type="button" onClick={() => { setImageUrl(''); setShowImageInput(false); }} className="p-2 text-gray-400 hover:text-gray-600 bg-white rounded-xl border border-gray-200"><X size={16}/></button>
+            </div>
+            {imageUrl && <img src={imageUrl} className="mt-2 h-20 object-cover rounded-lg shadow-sm border border-gray-200" alt="Preview" />}
           </div>
         )}
-        <input value={input} onChange={e => setInput(e.target.value)} placeholder="พิมพ์ข้อความ..." className="flex-1 p-3.5 bg-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-frog-200 text-gray-900" />
-        <button type="submit" className="p-3.5 text-white rounded-2xl shadow-lg" style={{ backgroundColor: initialChatData.theme_color || '#22c55e' }}><Send size={20} /></button>
-      </form>
+
+        <form onSubmit={handleSend} className="p-3 border-t bg-white flex items-center gap-2 z-20 relative">
+          {editingId && (
+            <div className="absolute -top-10 left-4 right-4 bg-blue-500 text-white p-2 rounded-t-xl text-[10px] font-bold flex justify-between animate-in slide-in-from-bottom-2">
+              <span>กำลังแก้ไข...</span>
+              <button type="button" onClick={() => { setEditingId(null); setInput(''); }}><X size={14}/></button>
+            </div>
+          )}
+
+          {/* ✅ ปุ่มแนบรูป */}
+          <button 
+            type="button" 
+            onClick={() => setShowImageInput(!showImageInput)} 
+            className={`p-2.5 rounded-2xl transition-colors ${showImageInput ? 'bg-frog-100 text-frog-600' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
+            title="แนบรูปภาพ"
+          >
+            <ImageIcon size={20} />
+          </button>
+
+          <input 
+            value={input} 
+            onChange={e => setInput(e.target.value)} 
+            placeholder="พิมพ์ข้อความ..." 
+            className="flex-1 p-3.5 bg-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-frog-200 text-gray-900" 
+          />
+          
+          <button 
+            type="submit" 
+            disabled={!input.trim() && !imageUrl.trim()}
+            className="p-3.5 text-white rounded-2xl shadow-lg disabled:opacity-50 transition-opacity" 
+            style={{ backgroundColor: initialChatData.theme_color || '#22c55e' }}
+          >
+            <Send size={20} />
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
