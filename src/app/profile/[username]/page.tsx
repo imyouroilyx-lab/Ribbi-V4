@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, type User, type Post } from '../../../lib/supabase'; 
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'navigation';
 import NavLayout from '../../../components/NavLayout';
 import PostCardV3 from '../../../components/PostCardV3';
 import CreatePostV3 from '../../../components/CreatePostV3';
@@ -10,7 +10,8 @@ import ConfirmModal from '../../../components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, 
-  MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye, Info
+  MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye, Info,
+  BadgeCheck // ✅ เพิ่มไอคอนติ๊กถูก
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -155,7 +156,7 @@ export default function ProfilePage() {
         supabase.from('friendships').select('*, sender:sender_id(*), receiver:receiver_id(*)').eq('status', 'accepted').or(`sender_id.eq.${targetId},receiver_id.eq.${targetId}`).order('created_at', { ascending: false }).limit(6),
         supabase.from('friendships').select('*').or(`and(sender_id.eq.${authId},receiver_id.eq.${targetId}),and(sender_id.eq.${targetId},receiver_id.eq.${authId})`).maybeSingle(),
         supabase.from('family_members').select('id').eq('user_id', authId).eq('member_user_id', targetId).maybeSingle(),
-        supabase.from('profile_views').select('visitor_id, viewed_at, visitor:visitor_id(id, username, display_name, profile_img_url)').eq('profile_id', targetId).order('viewed_at', { ascending: false }).limit(20)
+        supabase.from('profile_views').select('visitor_id, viewed_at, visitor:visitor_id(id, username, display_name, profile_img_url, is_verified)').eq('profile_id', targetId).order('viewed_at', { ascending: false }).limit(20)
       ]);
 
       const formattedFamilyMembers = (familyRes.data || []).map((fm: any) => ({
@@ -277,13 +278,7 @@ export default function ProfilePage() {
     return (
       <div className="card-minimal bg-white p-6 rounded-[2.5rem] border border-gray-100 flex items-center gap-4 transition-all shadow-sm">
         <div className="relative w-14 h-14 shrink-0">
-          
-          <svg 
-            viewBox="0 0 24 24" 
-            className="w-full h-full animate-[spin_3s_linear_infinite] drop-shadow-sm absolute inset-0" 
-            fill="none" 
-            xmlns="http://www.w3.org/2000/svg"
-          >
+          <svg viewBox="0 0 24 24" className="w-full h-full animate-[spin_3s_linear_infinite] drop-shadow-sm absolute inset-0" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="12" cy="12" r="10" fill="#18181b" />
             <circle cx="12" cy="12" r="7.5" stroke="white" strokeWidth="0.3" strokeOpacity="0.15" />
             <circle cx="12" cy="12" r="5.5" stroke="white" strokeWidth="0.3" strokeOpacity="0.15" />
@@ -292,14 +287,11 @@ export default function ProfilePage() {
             <circle cx="10" cy="10" r="0.4" fill="white" fillOpacity="0.6" />
             <circle cx="12" cy="12" r="0.8" fill="#f8fafc" />
           </svg>
-
           <svg viewBox="0 0 24 24" className="w-full h-full absolute inset-0 pointer-events-none opacity-50" fill="none">
             <path d="M12 2 A 10 10 0 0 1 19.07 4.93 L 12 12 Z" fill="white" fillOpacity="0.2" />
             <path d="M4.93 19.07 A 10 10 0 0 1 12 22 L 12 12 Z" fill="white" fillOpacity="0.05" />
           </svg>
-
         </div>
-
         <div className="flex-1 min-w-0">
           <p className="text-[11px] font-bold text-gray-500 mb-0.5 uppercase tracking-tighter">กำลังฟัง</p>
           <p className="text-sm font-black text-gray-900 truncate">{profileUser.music_name || 'My Song'}</p>
@@ -322,7 +314,10 @@ export default function ProfilePage() {
         <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
           {recentVisitors.map((v, i) => (
             <Link key={i} href={`/profile/${v.username}`} className="group flex flex-col items-center gap-1.5 flex-shrink-0 w-16 transition-all hover:scale-105">
-              <img src={v.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-100" />
+              <div className="relative">
+                <img src={v.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-100" />
+                {v.is_verified && <BadgeCheck className="absolute -bottom-1 -right-1 w-5 h-5 text-blue-500 bg-white rounded-full" />}
+              </div>
               <p className="text-[10px] font-black text-center truncate w-full text-gray-500 uppercase group-hover:text-gray-900">{v.display_name.split(' ')[0]}</p>
             </Link>
           ))}
@@ -345,7 +340,10 @@ export default function ProfilePage() {
           <div className="grid grid-cols-3 gap-3">
             {friends.map(f => (
               <Link key={f.id} href={`/profile/${f.username}`} className="group flex flex-col items-center gap-2 transition-all hover:scale-105">
-                <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-16 h-16 rounded-2xl object-cover shadow-sm border border-gray-100" />
+                <div className="relative">
+                  <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-16 h-16 rounded-2xl object-cover shadow-sm border border-gray-100" />
+                  {f.is_verified && <BadgeCheck className="absolute -top-1 -right-1 w-4 h-4 text-blue-500 bg-white rounded-full" />}
+                </div>
                 <p className="text-xs font-bold text-center truncate w-full text-gray-700 group-hover:text-gray-900">{f.display_name.split(' ')[0]}</p>
               </Link>
             ))}
@@ -380,7 +378,10 @@ export default function ProfilePage() {
             <div className="space-y-2">
               {familyMembers.map((fm) => (
                 <div key={fm.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl group transition-all hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100">
-                  <img src={fm.member?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-xl object-cover shadow-sm" />
+                  <div className="relative">
+                    <img src={fm.member?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-xl object-cover shadow-sm" />
+                    {fm.member?.is_verified && <BadgeCheck className="absolute -top-1 -right-1 w-3.5 h-3.5 text-blue-500 bg-white rounded-full" />}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <Link href={`/profile/${fm.member?.username}`} className="font-bold text-sm hover:underline block truncate text-gray-900">{fm.member?.display_name}</Link>
                     <p className="text-[10px] text-gray-500 font-bold uppercase">{fm.relationship_label}</p>
@@ -414,14 +415,11 @@ export default function ProfilePage() {
                     {isOwnProfile ? (
                       <>
                         <Link href="/profile/edit" className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 text-white shadow-md hover:opacity-90 transition-all" style={{ backgroundColor: themeColor }}><Edit size={16} /> แก้ไขโปรไฟล์</Link>
-                        {/* ✅ เพิ่มปุ่มเกี่ยวกับฉัน สำหรับเจ้าของโปรไฟล์ */}
                         <Link href={`/profile/${profileUser.username}/info`} className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 transition-all shadow-sm"><Info size={16} /> เกี่ยวกับฉัน</Link>
                       </>
                     ) : (
                       <>
                         <button onClick={handleSendMessage} className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 transition-all shadow-sm"><MessageCircle size={16} /> ข้อความ</button>
-                        
-                        {/* ✅ เพิ่มปุ่มเกี่ยวกับฉัน สำหรับให้คนอื่นดู */}
                         <Link href={`/profile/${profileUser.username}/info`} className="font-black text-xs px-5 py-3 rounded-xl flex items-center gap-2 border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 transition-all shadow-sm"><Info size={16} /> เกี่ยวกับฉัน</Link>
 
                         {!isOwnProfile && friendshipStatus === 'accepted' && !isAddedToFamily && (
@@ -435,12 +433,7 @@ export default function ProfilePage() {
                           <button className="px-5 py-3 rounded-xl bg-gray-50 text-gray-500 font-black text-xs flex items-center gap-2 cursor-default border border-gray-200"><Clock size={16} /> ส่งคำขอแล้ว</button>
                         )}
                         {friendshipStatus === 'accepted' && (
-                          <button 
-                            onClick={() => setShowUnfriendConfirm(true)} 
-                            className="px-5 py-3 rounded-xl border font-black text-xs flex items-center gap-2 bg-gray-50 text-gray-600 border-gray-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm active:scale-95"
-                          >
-                            <UserCheck size={16} /> เพื่อนกัน
-                          </button>
+                          <button onClick={() => setShowUnfriendConfirm(true)} className="px-5 py-3 rounded-xl border font-black text-xs flex items-center gap-2 bg-gray-50 text-gray-600 border-gray-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-all shadow-sm active:scale-95"><UserCheck size={16} /> เพื่อนกัน</button>
                         )}
                       </>
                     )}
@@ -448,8 +441,12 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="text-center md:text-left space-y-1 relative z-20">
-                  <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 tracking-tight leading-none mb-2">{profileUser.display_name}</h1>
-                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-sm font-bold text-gray-500">
+                  <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 tracking-tight leading-none mb-2 flex items-center justify-center md:justify-start gap-3">
+                    {profileUser.display_name}
+                    {/* ✅ เพิ่มติ๊กถูก Verified หน้าโปรไฟล์ */}
+                    {profileUser.is_verified && <BadgeCheck className="w-8 h-8 md:w-10 md:h-10 text-blue-500 fill-blue-50 flex-shrink-0" />}
+                  </h1>
+                  <div className="flex wrap items-center justify-center md:justify-start gap-3 text-sm font-bold text-gray-500">
                     <span>@{profileUser.username}</span>
                     <span className="hidden md:inline-block w-1.5 h-1.5 rounded-full bg-gray-300"></span>
                     <span className="flex items-center gap-1.5"><Calendar size={16} style={{ color: themeColor }} /> วันที่สมัคร {formatDate(profileUser.created_at)}</span>
@@ -457,29 +454,19 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="mt-8 space-y-8">
-                  {profileUser.bio && (
-                    <div className="border-l-4 pl-4 py-1" style={{ borderColor: themeColor }}>
-                      <p className="text-gray-800 font-medium whitespace-pre-wrap break-words text-base leading-relaxed">
-                        {profileUser.bio}
-                      </p>
-                    </div>
-                  )}
-
+                  {profileUser.bio && <div className="border-l-4 pl-4 py-1" style={{ borderColor: themeColor }}><p className="text-gray-800 font-medium whitespace-pre-wrap break-words text-base leading-relaxed">{profileUser.bio}</p></div>}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm font-bold text-gray-700">
                     {profileUser.birthday && <div className="flex items-center gap-3"><Calendar className="w-5 h-5 text-frog-500" /> เกิดวันที่ {formatDate(profileUser.birthday)} (อายุ {calculateAge(profileUser.birthday)} ปี)</div>}
                     {profileUser.occupation && <div className="flex items-center gap-3"><Briefcase className="w-5 h-5 text-frog-500" /> {profileUser.occupation}</div>}
                     {profileUser.workplace && <div className="flex items-center gap-3"><HomeIcon className="w-5 h-5 text-frog-500" /> ทำงานที่ {profileUser.workplace}</div>}
                     {profileUser.address && <div className="flex items-center gap-3"><MapPin className="w-5 h-5 text-red-500" /> {profileUser.address}</div>}
                   </div>
-
                   {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
                     <div className="pt-6 border-t border-gray-100">
                       <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-widest text-[10px]">สิ่งที่สนใจ</p>
                       <div className="flex flex-wrap gap-2">
                         {profileUser.hobbies.map((h: any, i: number) => (
-                          <span key={i} className="px-4 py-2 rounded-xl text-xs font-bold border transition-transform hover:-translate-y-0.5 shadow-sm" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: `${themeColor}20` }}>
-                            {typeof h === 'string' ? h : h.name}
-                          </span>
+                          <span key={i} className="px-4 py-2 rounded-xl text-xs font-bold border transition-transform hover:-translate-y-0.5 shadow-sm" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: `${themeColor}20` }}>{typeof h === 'string' ? h : h.name}</span>
                         ))}
                       </div>
                     </div>
@@ -513,10 +500,7 @@ export default function ProfilePage() {
                            post={p} 
                            currentUserId={currentUser.id} 
                            profileOwnerId={profileUser.id} 
-                           onDelete={(id) => { 
-                             setPostToDelete(id); 
-                             setShowDeletePostConfirm(true); 
-                           }} 
+                           onDelete={(id) => { setPostToDelete(id); setShowDeletePostConfirm(true); }} 
                          />
                       </div>
                     ))
@@ -539,7 +523,6 @@ export default function ProfilePage() {
             <RelationshipWidget />
             <div className="text-center py-8 opacity-30"><p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400">Ribbi Community 2026</p></div>
           </div>
-
         </div>
       </div>
 
@@ -559,32 +542,8 @@ export default function ProfilePage() {
       )}
 
       <ConfirmModal isOpen={showFamilyDeleteConfirm} onClose={() => setShowFamilyDeleteConfirm(false)} onConfirm={handleRemoveFamilyMember} title="ลบข้อมูล?" message="คุณแน่ใจนะว่าจะลบความสัมพันธ์นี้?" variant="danger" />
-      
-      <ConfirmModal 
-        isOpen={showUnfriendConfirm} 
-        onClose={() => setShowUnfriendConfirm(false)} 
-        onConfirm={handleRemoveFriend} 
-        title="เลิกเป็นเพื่อน?" 
-        message={`คุณต้องการเลิกเป็นเพื่อนกับ ${profileUser?.display_name} ใช่หรือไม่? หากเลิกเป็นเพื่อนคุณจะไม่เห็นโพสต์ของกันและกันอีกต่อไป`} 
-        variant="danger" 
-        confirmText="เลิกเป็นเพื่อน"
-      />
-      
-      <ConfirmModal 
-        isOpen={showDeletePostConfirm} 
-        onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} 
-        onConfirm={async () => { 
-          if(postToDelete) { 
-            await supabase.from('posts').delete().eq('id', postToDelete); 
-            setPosts(prev => prev.filter(p => p.id !== postToDelete)); 
-            setShowDeletePostConfirm(false); 
-            setPostToDelete(null);
-          } 
-        }} 
-        title="ลบโพสต์?" 
-        message="ต้องการลบโพสต์นี้ถาวรใช่หรือไม่" 
-        variant="danger" 
-      />
+      <ConfirmModal isOpen={showUnfriendConfirm} onClose={() => setShowUnfriendConfirm(false)} onConfirm={handleRemoveFriend} title="เลิกเป็นเพื่อน?" message={`คุณต้องการเลิกเป็นเพื่อนกับ ${profileUser?.display_name} ใช่หรือไม่? หากเลิกเป็นเพื่อนคุณจะไม่เห็นโพสต์ของกันและกันอีกต่อไป`} variant="danger" confirmText="เลิกเป็นเพื่อน" />
+      <ConfirmModal isOpen={showDeletePostConfirm} onClose={() => { setShowDeletePostConfirm(false); setPostToDelete(null); }} onConfirm={async () => { if(postToDelete) { await supabase.from('posts').delete().eq('id', postToDelete); setPosts(prev => prev.filter(p => p.id !== postToDelete)); setShowDeletePostConfirm(false); setPostToDelete(null); } }} title="ลบโพสต์?" message="ต้องการลบโพสต์นี้ถาวรใช่หรือไม่" variant="danger" />
     </NavLayout>
   );
 }
