@@ -7,7 +7,7 @@ import NavLayout from '@/components/NavLayout';
 import AlertModal from '@/components/AlertModal';
 import { 
   User as UserIcon, Briefcase, Heart, Music, ChevronLeft, Calendar, Home as HomeIcon,
-  Plus, X, Hash, GraduationCap, MapPin, Star, Trash2
+  Plus, X, Hash, GraduationCap, MapPin, Star, Trash2, Save
 } from 'lucide-react';
 
 const RELATIONSHIP_OPTIONS = [
@@ -30,7 +30,7 @@ export default function EditProfilePage() {
     hobbies: [] as { name: string }[]
   });
   
-  // ✅ State สำหรับเก็บเหตุการณ์ในชีวิต (Life Events)
+  // State สำหรับเก็บเหตุการณ์ในชีวิต (Life Events)
   const [lifeEvents, setLifeEvents] = useState<{id: string, type: string, title: string, subtitle: string, start_year: string, end_year: string}[]>([]);
 
   const [isSaving, setIsSaving] = useState(false);
@@ -100,6 +100,7 @@ export default function EditProfilePage() {
     setFormData({ ...formData, hobbies: formData.hobbies.filter((_, i) => i !== index) });
   };
 
+  // ✅ ฟังก์ชันเพิ่มประวัติ
   const addLifeEvent = () => {
     setLifeEvents([
       ...lifeEvents, 
@@ -107,10 +108,12 @@ export default function EditProfilePage() {
     ]);
   };
 
+  // ✅ ฟังก์ชันอัปเดตประวัติแต่ละอัน
   const updateLifeEvent = (id: string, field: string, value: string) => {
     setLifeEvents(lifeEvents.map(event => event.id === id ? { ...event, [field]: value } : event));
   };
 
+  // ✅ ฟังก์ชันลบประวัติ
   const removeLifeEvent = (id: string) => {
     setLifeEvents(lifeEvents.filter(event => event.id !== id));
   };
@@ -130,7 +133,8 @@ export default function EditProfilePage() {
           </div>
         </div>
 
-        <form onSubmit={handleSave} className="space-y-8">
+        <form onSubmit={handleSave} className="space-y-8 relative">
+          
           {/* ข้อมูลพื้นฐาน */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-frog-500">
@@ -165,7 +169,8 @@ export default function EditProfilePage() {
                 <span className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center"><Briefcase size={24} /></span>
                 เหตุการณ์ในชีวิต (ประวัติ)
               </h2>
-              <button type="button" onClick={addLifeEvent} className="px-5 py-2.5 bg-blue-50 text-blue-600 font-bold rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors">
+              {/* ✅ ปุ่มเพิ่มประวัติ */}
+              <button type="button" onClick={addLifeEvent} className="px-5 py-2.5 bg-blue-50 text-blue-600 font-bold rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors shadow-sm active:scale-95">
                 <Plus size={16} /> เพิ่มประวัติ
               </button>
             </div>
@@ -173,12 +178,22 @@ export default function EditProfilePage() {
             <div className="space-y-6">
               {lifeEvents.length === 0 ? (
                 <div className="text-center py-10 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200">
-                  <p className="text-gray-400 font-bold text-sm">ยังไม่มีประวัติการศึกษาหรือการทำงาน</p>
+                  <p className="text-gray-400 font-bold text-sm">ยังไม่มีประวัติการศึกษาหรือการทำงาน กดปุ่ม &quot;เพิ่มประวัติ&quot; ด้านบนเพื่อเริ่มต้น</p>
                 </div>
               ) : (
                 lifeEvents.map((event, index) => (
-                  <div key={event.id} className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100 relative group animate-in slide-in-from-bottom-2">
-                    <button type="button" onClick={() => removeLifeEvent(event.id)} className="absolute top-4 right-4 p-2 text-gray-300 hover:text-red-500 bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16} /></button>
+                  <div key={event.id} className="p-6 bg-gray-50/80 rounded-[2rem] border border-gray-100 relative group animate-in slide-in-from-bottom-2">
+                    
+                    {/* ✅ ปุ่มถังขยะ สำหรับลบประวัตินี้ */}
+                    <button 
+                      type="button" 
+                      onClick={() => removeLifeEvent(event.id)} 
+                      className="absolute top-4 right-4 p-2.5 bg-white text-gray-400 hover:text-white hover:bg-red-500 rounded-full shadow-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all z-10"
+                      title="ลบประวัตินี้"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">ประเภท</label>
@@ -189,11 +204,11 @@ export default function EditProfilePage() {
                         </select>
                       </div>
                       <div className="md:col-span-2 grid grid-cols-2 gap-4">
-                        <div>
+                        <div className="col-span-2 md:col-span-1">
                           <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">สถานที่ / ชื่อเหตุการณ์</label>
                           <input type="text" value={event.title} onChange={e => updateLifeEvent(event.id, 'title', e.target.value)} placeholder="เช่น มหาวิทยาลัย..., บริษัท..." className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-500 text-sm" />
                         </div>
-                        <div>
+                        <div className="col-span-2 md:col-span-1">
                           <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">รายละเอียด / ตำแหน่ง</label>
                           <input type="text" value={event.subtitle} onChange={e => updateLifeEvent(event.id, 'subtitle', e.target.value)} placeholder="เช่น ปริญญาตรี, Manager..." className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-500 text-sm" />
                         </div>
@@ -215,6 +230,7 @@ export default function EditProfilePage() {
             </div>
           </div>
 
+          {/* ความสัมพันธ์ */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-red-500">
               <span className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center"><Heart size={24} /></span>
@@ -237,6 +253,7 @@ export default function EditProfilePage() {
             </div>
           </div>
 
+          {/* งานอดิเรกและความสนใจ */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-orange-500">
               <span className="w-12 h-12 rounded-2xl bg-orange-50 flex items-center justify-center"><Hash size={24} /></span>
@@ -258,6 +275,7 @@ export default function EditProfilePage() {
             </div>
           </div>
 
+          {/* ธีมและเพลง */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-indigo-500">
               <span className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center"><Music size={24} /></span>
@@ -286,14 +304,16 @@ export default function EditProfilePage() {
             </div>
           </div>
 
+          {/* ✅ ปุ่มบันทึก (Sticky Footer) จะลอยอยู่ขอบล่างเสมอ */}
           <div className="sticky bottom-6 z-50">
             <div className="bg-white/80 backdrop-blur-xl p-4 rounded-[2.5rem] shadow-2xl border border-white/50 flex gap-4 max-w-lg mx-auto">
-              <button type="submit" disabled={isSaving} className="btn-primary flex-1 py-5 rounded-3xl font-black text-white shadow-xl shadow-frog-200 transition-all active:scale-95 disabled:opacity-50" style={{ backgroundColor: formData.theme_color }}>
-                {isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลทั้งหมด'}
+              <button type="submit" disabled={isSaving} className="btn-primary flex-1 py-5 rounded-3xl font-black text-white shadow-xl shadow-frog-200 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2" style={{ backgroundColor: formData.theme_color }}>
+                <Save size={20} /> {isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลทั้งหมด'}
               </button>
               <button type="button" onClick={() => router.back()} className="px-10 py-5 bg-gray-100 text-gray-500 rounded-3xl font-black transition-all hover:bg-gray-200 active:scale-95">ยกเลิก</button>
             </div>
           </div>
+
         </form>
       </div>
 
