@@ -8,7 +8,7 @@ import PostCardV3 from '@/components/PostCardV3';
 import CreatePostV3 from '@/components/CreatePostV3';
 import ConfirmModal from '@/components/ConfirmModal';
 import Link from 'next/link';
-import { Users, Circle, ChevronRight, RefreshCw, Loader2, ArrowRight } from 'lucide-react';
+import { Users, Circle, ChevronRight, RefreshCw, Loader2, ArrowRight, BadgeCheck } from 'lucide-react';
 
 const POSTS_PER_PAGE = 10;
 
@@ -79,21 +79,20 @@ export default function HomePage() {
   const loadInitialData = async () => {
     setIsLoading(true);
     try {
-      // ✅ ใช้ getSession เพื่อความรวดเร็ว
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) { router.push('/login'); return; }
 
       const [userDataRes, postsDataRes] = await Promise.all([
-        supabase.from('users').select('id, username, display_name, profile_img_url').eq('id', session.user.id).single(),
+        supabase.from('users').select('id, username, display_name, profile_img_url, is_verified').eq('id', session.user.id).single(),
         supabase
           .from('posts')
           .select(`
             id, content, images, created_at, author_id, target_id, location, mood, activity,
-            author:author_id(id, username, display_name, profile_img_url),
-            target:target_id(id, username, display_name, profile_img_url)
+            author:author_id(id, username, display_name, profile_img_url, is_verified),
+            target:target_id(id, username, display_name, profile_img_url, is_verified)
           `)
           .order('created_at', { ascending: false })
-          .limit(POSTS_PER_PAGE) // ✅ ใช้ Limit แทน Range สำหรับโหลดครั้งแรก
+          .limit(POSTS_PER_PAGE)
       ]);
 
       if (userDataRes.data) setCurrentUser(userDataRes.data as any);
@@ -120,8 +119,8 @@ export default function HomePage() {
         .from('posts')
         .select(`
           id, content, images, created_at, author_id, target_id, location, mood, activity,
-          author:author_id(id, username, display_name, profile_img_url),
-          target:target_id(id, username, display_name, profile_img_url)
+          author:author_id(id, username, display_name, profile_img_url, is_verified),
+          target:target_id(id, username, display_name, profile_img_url, is_verified)
         `)
         .order('created_at', { ascending: false })
         .range(start, end);
@@ -137,25 +136,19 @@ export default function HomePage() {
     } catch (error) {
       console.error('Error loading more posts:', error);
     } finally {
-      setIsLoadingMore(false); // ✅ เอา setTimeout ออก เพื่อให้ลื่นขึ้น
+      setIsLoadingMore(false);
     }
   };
 
-  // ✅ แก้ไขปุ่ม Refresh ให้ทำงาน 100% (บังคับไม่ใช้ Cache)
   const handleRefreshOnlineUsers = async () => {
     if (isOnlineLoading) return;
     setIsOnlineLoading(true);
     try {
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      
-      // ✅ สุ่มเลขต่อท้ายเพื่อหลอกระบบว่าเป็นการยิง API ใหม่ เพื่อไม่ให้มันไปเอา Cache เดิมมา
-      const forceRefreshBypass = new Date().getTime(); 
-      
       const { data, count } = await supabase
         .from('users')
-        .select(`id, username, display_name, profile_img_url, last_active`, { count: 'exact' }) 
+        .select(`id, username, display_name, profile_img_url, last_active, is_verified`, { count: 'exact' }) 
         .gte('last_active', tenMinutesAgo)
-        .neq('id', '00000000-0000-0000-0000-000000000000') // Trick เล็กน้อยให้มันรีเฟรชจริงๆ
         .order('last_active', { ascending: false })
         .limit(12);
       
@@ -164,7 +157,6 @@ export default function HomePage() {
     } catch (error) { 
       console.error(error); 
     } finally {
-      // ✅ หน่วงเวลาก่อนปิด Loader เล็กน้อย ให้คนใช้รู้สึกว่าปุ่มมันได้ทำงานจริงๆ
       setTimeout(() => setIsOnlineLoading(false), 500);
     }
   };
@@ -176,7 +168,7 @@ export default function HomePage() {
       const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       const { data, count } = await supabase
         .from('users')
-        .select('id, username, display_name, profile_img_url, last_active', { count: 'exact' }) 
+        .select('id, username, display_name, profile_img_url, last_active, is_verified', { count: 'exact' }) 
         .gte('last_active', tenMinutesAgo)
         .order('last_active', { ascending: false })
         .limit(12);
@@ -240,7 +232,6 @@ export default function HomePage() {
                   <Link href="/users" className="text-[9px] font-black uppercase text-frog-600 px-2 py-1 bg-frog-50 rounded-lg flex items-center gap-1">
                     สมาชิก <ChevronRight size={10} />
                   </Link>
-                  {/* ✅ เปลี่ยนฟังก์ชันไปเรียกตัวใหม่ที่บัคับให้รีเฟรช 100% */}
                   <button onClick={handleRefreshOnlineUsers} disabled={isOnlineLoading} className="p-1 hover:bg-gray-100 rounded-full transition-colors active:scale-90">
                     <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin text-frog-500' : 'text-gray-400'}`} />
                   </button>
@@ -254,7 +245,10 @@ export default function HomePage() {
                       <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-2xl object-cover border-2 border-white shadow-sm group-hover:scale-105 transition-transform" loading="lazy" alt="" />
                       <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full"></div>
                     </div>
-                    <p className="text-[10px] font-bold truncate w-full text-center text-gray-700">{user.display_name.split(' ')[0]}</p>
+                    <p className="text-[10px] font-bold truncate w-full text-center text-gray-700 flex items-center justify-center gap-0.5">
+                      {user.display_name.split(' ')[0]}
+                      {user.is_verified && <BadgeCheck className="w-3 h-3 text-blue-500 flex-shrink-0" />}
+                    </p>
                   </Link>
                 ))}
                 
@@ -271,7 +265,6 @@ export default function HomePage() {
 
             <CreatePostV3 currentUser={currentUser} onPostCreated={handlePostCreated} />
 
-            {/* FEED */}
             <div className="space-y-6">
               {posts.length === 0 && !isLoading ? (
                 <div className="card-minimal text-center py-12">
@@ -290,7 +283,6 @@ export default function HomePage() {
                     </div>
                   ))}
                   
-                  {/* กล่อง Loading ตอนเลื่อนลง */}
                   {isLoadingMore && (
                     <div className="flex flex-col items-center justify-center py-10 bg-white/50 rounded-[2rem] border border-dashed border-gray-200 animate-in fade-in">
                       <Loader2 className="w-8 h-8 text-frog-500 animate-spin mb-2" />
@@ -317,7 +309,6 @@ export default function HomePage() {
                       ออนไลน์ขณะนี้ ({totalOnlineCount})
                     </h3>
                   </div>
-                  {/* ✅ เปลี่ยนฟังก์ชันไปเรียกตัวใหม่ที่บังคับให้รีเฟรช 100% */}
                   <button onClick={handleRefreshOnlineUsers} disabled={isOnlineLoading} className="p-1.5 hover:bg-white rounded-lg transition-all shadow-sm border border-transparent hover:border-gray-200 active:scale-90">
                     <RefreshCw size={14} className={`${isOnlineLoading ? 'animate-spin text-frog-500' : 'text-gray-400'}`} />
                   </button>
@@ -334,7 +325,10 @@ export default function HomePage() {
                           <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm truncate text-gray-900 leading-none mb-1">{user.display_name}</p>
+                          <p className="font-bold text-sm truncate text-gray-900 leading-none mb-1 flex items-center gap-1">
+                            {user.display_name}
+                            {user.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
+                          </p>
                           <p className="text-[10px] text-gray-400 truncate font-medium">@{user.username}</p>
                         </div>
                       </Link>
