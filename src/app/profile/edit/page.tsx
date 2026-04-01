@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase, User } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import NavLayout from '@/components/NavLayout';
 import AlertModal from '@/components/AlertModal';
 import { 
-  Save, User as UserIcon, Briefcase, Heart, Palette, 
-  Music, ChevronLeft, MapPin, Calendar, Home as HomeIcon,
-  Plus, X, Hash
+  User as UserIcon, Briefcase, Heart, Music, ChevronLeft, Calendar, Home as HomeIcon,
+  Plus, X, Hash, GraduationCap, MapPin, Star, Trash2
 } from 'lucide-react';
 
 const RELATIONSHIP_OPTIONS = [
@@ -28,9 +27,12 @@ export default function EditProfilePage() {
     birthday: '', occupation: '', address: '', workplace: '',
     music_url: '', music_name: '', theme_color: '#9de5a8',
     relationship_status: '', relationship_custom_name: '',
-    hobbies: [] as { name: string; emoji?: string }[]
+    hobbies: [] as { name: string }[]
   });
   
+  // ✅ State สำหรับเก็บเหตุการณ์ในชีวิต (Life Events)
+  const [lifeEvents, setLifeEvents] = useState<{id: string, type: string, title: string, subtitle: string, start_year: string, end_year: string}[]>([]);
+
   const [isSaving, setIsSaving] = useState(false);
   const [newHobbyInput, setNewHobbyInput] = useState('');
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
@@ -39,10 +41,10 @@ export default function EditProfilePage() {
   useEffect(() => { loadUser(); }, []);
 
   const loadUser = async () => {
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) { router.push('/login'); return; }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) { router.push('/login'); return; }
     
-    const { data: userData } = await supabase.from('users').select('*').eq('id', authUser.id).single();
+    const { data: userData } = await supabase.from('users').select('*').eq('id', session.user.id).single();
     if (userData) {
       setCurrentUser(userData);
       setFormData({
@@ -61,6 +63,8 @@ export default function EditProfilePage() {
         relationship_custom_name: userData.relationship_custom_name || '',
         hobbies: Array.isArray(userData.hobbies) ? userData.hobbies : []
       });
+      // โหลดประวัติ
+      setLifeEvents(Array.isArray(userData.life_events) ? userData.life_events : []);
     }
   };
 
@@ -70,20 +74,8 @@ export default function EditProfilePage() {
     setIsSaving(true);
     try {
       const { error } = await supabase.from('users').update({
-        display_name: formData.display_name,
-        bio: formData.bio,
-        profile_img_url: formData.profile_img_url || null,
-        cover_img_url: formData.cover_img_url || null,
-        birthday: formData.birthday || null,
-        occupation: formData.occupation || null,
-        address: formData.address || null,
-        workplace: formData.workplace || null,
-        music_url: formData.music_url || null,
-        music_name: formData.music_name || null,
-        theme_color: formData.theme_color,
-        relationship_status: formData.relationship_status || null,
-        relationship_custom_name: formData.relationship_custom_name || null,
-        hobbies: formData.hobbies
+        ...formData,
+        life_events: lifeEvents // บันทึกประวัติเป็น JSONB
       }).eq('id', currentUser.id);
 
       if (error) throw error;
@@ -98,33 +90,38 @@ export default function EditProfilePage() {
   const handleAddHobby = () => {
     if (!newHobbyInput.trim()) return;
     if (formData.hobbies.some(h => h.name.toLowerCase() === newHobbyInput.trim().toLowerCase())) {
-      setNewHobbyInput('');
-      return;
+      setNewHobbyInput(''); return;
     }
-    setFormData({ 
-      ...formData, 
-      hobbies: [...formData.hobbies, { name: newHobbyInput.trim() }] 
-    });
+    setFormData({ ...formData, hobbies: [...formData.hobbies, { name: newHobbyInput.trim() }] });
     setNewHobbyInput('');
   };
 
   const removeHobby = (index: number) => {
-    setFormData({
-      ...formData,
-      hobbies: formData.hobbies.filter((_, i) => i !== index)
-    });
+    setFormData({ ...formData, hobbies: formData.hobbies.filter((_, i) => i !== index) });
+  };
+
+  const addLifeEvent = () => {
+    setLifeEvents([
+      ...lifeEvents, 
+      { id: Date.now().toString(), type: 'education', title: '', subtitle: '', start_year: '', end_year: '' }
+    ]);
+  };
+
+  const updateLifeEvent = (id: string, field: string, value: string) => {
+    setLifeEvents(lifeEvents.map(event => event.id === id ? { ...event, [field]: value } : event));
+  };
+
+  const removeLifeEvent = (id: string) => {
+    setLifeEvents(lifeEvents.filter(event => event.id !== id));
   };
 
   if (!currentUser) return null;
 
   return (
     <NavLayout>
-      <div className="max-w-[1000px] mx-auto px-4 pb-24">
+      <div className="max-w-[1000px] mx-auto px-4 pb-24 animate-in fade-in duration-500">
         <div className="flex items-center gap-4 mb-10 pt-8">
-          <button 
-            onClick={() => router.back()} 
-            className="w-12 h-12 rounded-2xl bg-white border border-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-900 shadow-sm hover:shadow-md transition-all active:scale-95"
-          >
+          <button onClick={() => router.back()} className="w-12 h-12 rounded-2xl bg-white border border-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-900 shadow-sm hover:shadow-md transition-all active:scale-95">
             <ChevronLeft size={24} />
           </button>
           <div className="space-y-1">
@@ -134,7 +131,7 @@ export default function EditProfilePage() {
         </div>
 
         <form onSubmit={handleSave} className="space-y-8">
-          {/* ส่วนที่ 1: ข้อมูลพื้นฐาน */}
+          {/* ข้อมูลพื้นฐาน */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-frog-500">
               <span className="w-12 h-12 rounded-2xl bg-frog-50 flex items-center justify-center"><UserIcon size={24} /></span>
@@ -147,13 +144,7 @@ export default function EditProfilePage() {
               </div>
               <div className="md:col-span-2">
                 <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Bio (แนะนำตัวสั้นๆ)</label>
-                <textarea 
-                  value={formData.bio} 
-                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })} 
-                  className="input-minimal w-full min-h-[120px] text-lg resize-none" 
-                  maxLength={150} 
-                  placeholder="เขียนอะไรบางอย่างเกี่ยวกับคุณ..."
-                />
+                <textarea value={formData.bio} onChange={(e) => setFormData({ ...formData, bio: e.target.value })} className="input-minimal w-full min-h-[120px] text-lg resize-none" maxLength={150} placeholder="เขียนอะไรบางอย่างเกี่ยวกับคุณ..." />
                 <p className="text-right text-[10px] font-black text-gray-300 mt-2">{formData.bio.length}/150</p>
               </div>
               <div>
@@ -167,41 +158,63 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* ส่วนที่ 2: ประวัติและสถานที่ (กู้คืนมาครบ) */}
+          {/* ✅ เหตุการณ์ในชีวิต (Timeline ประวัติ) */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
-            <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-blue-500">
-              <span className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center"><Briefcase size={24} /></span>
-              ประวัติและสถานที่
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div>
-                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                  <Calendar size={14} /> วันเกิด
-                </label>
-                <input type="date" value={formData.birthday} onChange={(e) => setFormData({ ...formData, birthday: e.target.value })} className="input-minimal w-full" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                  <Briefcase size={14} /> อาชีพ
-                </label>
-                <input type="text" value={formData.occupation} onChange={(e) => setFormData({ ...formData, occupation: e.target.value })} className="input-minimal w-full" placeholder="เช่น บรรณารักษ์, นักเรียน" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                  <HomeIcon size={14} /> สถานที่ทำงาน/เรียน
-                </label>
-                <input type="text" value={formData.workplace} onChange={(e) => setFormData({ ...formData, workplace: e.target.value })} className="input-minimal w-full" placeholder="ระบุสถานที่" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                  <MapPin size={14} /> ที่อยู่/จังหวัด
-                </label>
-                <input type="text" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="input-minimal w-full" placeholder="เช่น กรุงเทพมหานคร" />
-              </div>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+              <h2 className="text-2xl font-black flex items-center gap-4 text-blue-500">
+                <span className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center"><Briefcase size={24} /></span>
+                เหตุการณ์ในชีวิต (ประวัติ)
+              </h2>
+              <button type="button" onClick={addLifeEvent} className="px-5 py-2.5 bg-blue-50 text-blue-600 font-bold rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors">
+                <Plus size={16} /> เพิ่มประวัติ
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {lifeEvents.length === 0 ? (
+                <div className="text-center py-10 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200">
+                  <p className="text-gray-400 font-bold text-sm">ยังไม่มีประวัติการศึกษาหรือการทำงาน</p>
+                </div>
+              ) : (
+                lifeEvents.map((event, index) => (
+                  <div key={event.id} className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100 relative group animate-in slide-in-from-bottom-2">
+                    <button type="button" onClick={() => removeLifeEvent(event.id)} className="absolute top-4 right-4 p-2 text-gray-300 hover:text-red-500 bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16} /></button>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">ประเภท</label>
+                        <select value={event.type} onChange={e => updateLifeEvent(event.id, 'type', e.target.value)} className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-500 text-sm font-bold text-gray-700">
+                          <option value="education">🎓 การศึกษา</option>
+                          <option value="work">💼 การทำงาน</option>
+                          <option value="life">⭐ เหตุการณ์สำคัญ</option>
+                        </select>
+                      </div>
+                      <div className="md:col-span-2 grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">สถานที่ / ชื่อเหตุการณ์</label>
+                          <input type="text" value={event.title} onChange={e => updateLifeEvent(event.id, 'title', e.target.value)} placeholder="เช่น มหาวิทยาลัย..., บริษัท..." className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">รายละเอียด / ตำแหน่ง</label>
+                          <input type="text" value={event.subtitle} onChange={e => updateLifeEvent(event.id, 'subtitle', e.target.value)} placeholder="เช่น ปริญญาตรี, Manager..." className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-500 text-sm" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 md:col-span-2">
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">ปีที่เริ่ม (เช่น 2020)</label>
+                          <input type="text" value={event.start_year} onChange={e => updateLifeEvent(event.id, 'start_year', e.target.value)} placeholder="YYYY" className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-500 text-sm" maxLength={4} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">ปีที่สิ้นสุด (เว้นว่างถ้าปัจจุบัน)</label>
+                          <input type="text" value={event.end_year} onChange={e => updateLifeEvent(event.id, 'end_year', e.target.value)} placeholder="YYYY หรือ ปัจจุบัน" className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-500 text-sm" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
-          {/* ส่วนที่ 3: สถานะความสัมพันธ์ */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-red-500">
               <span className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center"><Heart size={24} /></span>
@@ -210,11 +223,7 @@ export default function EditProfilePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
                 <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">สถานะปัจจุบัน</label>
-                <select 
-                  value={formData.relationship_status} 
-                  onChange={(e) => setFormData({ ...formData, relationship_status: e.target.value })} 
-                  className="input-minimal w-full"
-                >
+                <select value={formData.relationship_status} onChange={(e) => setFormData({ ...formData, relationship_status: e.target.value })} className="input-minimal w-full">
                   <option value="">ไม่ระบุ</option>
                   {RELATIONSHIP_OPTIONS.map(o => (<option key={o.id} value={o.id}>{o.emoji} {o.label}</option>))}
                 </select>
@@ -222,19 +231,12 @@ export default function EditProfilePage() {
               {formData.relationship_status && formData.relationship_status !== 'single' && (
                 <div>
                   <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">ชื่อคนพิเศษ</label>
-                  <input 
-                    type="text" 
-                    value={formData.relationship_custom_name} 
-                    onChange={(e) => setFormData({ ...formData, relationship_custom_name: e.target.value })} 
-                    className="input-minimal w-full" 
-                    placeholder="ใส่ชื่อหรือ Tag @username" 
-                  />
+                  <input type="text" value={formData.relationship_custom_name} onChange={(e) => setFormData({ ...formData, relationship_custom_name: e.target.value })} className="input-minimal w-full" placeholder="ใส่ชื่อหรือ Tag @username" />
                 </div>
               )}
             </div>
           </div>
 
-          {/* ส่วนที่ 4: งานอดิเรก (กู้คืนมาให้แล้วพี่) */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-orange-500">
               <span className="w-12 h-12 rounded-2xl bg-orange-50 flex items-center justify-center"><Hash size={24} /></span>
@@ -242,14 +244,7 @@ export default function EditProfilePage() {
             </h2>
             <div className="space-y-6">
               <div className="flex gap-4">
-                <input 
-                  type="text" 
-                  value={newHobbyInput} 
-                  onChange={(e) => setNewHobbyInput(e.target.value)} 
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddHobby())}
-                  placeholder="เพิ่มงานอดิเรก (เช่น ถ่ายรูป, เล่นเกม)" 
-                  className="input-minimal flex-1"
-                />
+                <input type="text" value={newHobbyInput} onChange={(e) => setNewHobbyInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddHobby())} placeholder="เพิ่มงานอดิเรก (เช่น ถ่ายรูป, เล่นเกม)" className="input-minimal flex-1" />
                 <button type="button" onClick={handleAddHobby} className="btn-primary px-8 rounded-2xl"><Plus size={20} /></button>
               </div>
               <div className="flex flex-wrap gap-3">
@@ -263,7 +258,6 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* ส่วนที่ 5: สไตล์และเพลง */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-indigo-500">
               <span className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center"><Music size={24} /></span>
@@ -292,43 +286,19 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* ปุ่มบันทึก (Sticky Footer) */}
           <div className="sticky bottom-6 z-50">
             <div className="bg-white/80 backdrop-blur-xl p-4 rounded-[2.5rem] shadow-2xl border border-white/50 flex gap-4 max-w-lg mx-auto">
-              <button 
-                type="submit" 
-                disabled={isSaving} 
-                className="btn-primary flex-1 py-5 rounded-3xl font-black text-white shadow-xl shadow-frog-200 transition-all active:scale-95 disabled:opacity-50"
-                style={{ backgroundColor: formData.theme_color }}
-              >
+              <button type="submit" disabled={isSaving} className="btn-primary flex-1 py-5 rounded-3xl font-black text-white shadow-xl shadow-frog-200 transition-all active:scale-95 disabled:opacity-50" style={{ backgroundColor: formData.theme_color }}>
                 {isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลทั้งหมด'}
               </button>
-              <button 
-                type="button" 
-                onClick={() => router.back()} 
-                className="px-10 py-5 bg-gray-100 text-gray-500 rounded-3xl font-black transition-all hover:bg-gray-200 active:scale-95"
-              >
-                ยกเลิก
-              </button>
+              <button type="button" onClick={() => router.back()} className="px-10 py-5 bg-gray-100 text-gray-500 rounded-3xl font-black transition-all hover:bg-gray-200 active:scale-95">ยกเลิก</button>
             </div>
           </div>
         </form>
       </div>
 
-      <AlertModal 
-        isOpen={showSaveSuccess} 
-        onClose={() => setShowSaveSuccess(false)} 
-        title="สำเร็จ!" 
-        message="ข้อมูลโปรไฟล์ของคุณถูกอัปเดตเรียบร้อยแล้ว" 
-        variant="success" 
-      />
-      <AlertModal 
-        isOpen={showSaveError} 
-        onClose={() => setShowSaveError(false)} 
-        title="ล้มเหลว" 
-        message="ไม่สามารถบันทึกข้อมูลได้ โปรดตรวจสอบการเชื่อมต่อ" 
-        variant="error" 
-      />
+      <AlertModal isOpen={showSaveSuccess} onClose={() => setShowSaveSuccess(false)} title="สำเร็จ!" message="ข้อมูลโปรไฟล์ของคุณถูกอัปเดตเรียบร้อยแล้ว" variant="success" />
+      <AlertModal isOpen={showSaveError} onClose={() => setShowSaveError(false)} title="ล้มเหลว" message="ไม่สามารถบันทึกข้อมูลได้ โปรดตรวจสอบการเชื่อมต่อ" variant="error" />
     </NavLayout>
   );
 }
