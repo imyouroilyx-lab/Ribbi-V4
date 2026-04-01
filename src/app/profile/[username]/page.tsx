@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, type User, type Post } from '../../../lib/supabase'; 
-import { useParams, useRouter } from 'navigation';
+import { useParams, useRouter } from 'next/navigation';
 import NavLayout from '../../../components/NavLayout';
 import PostCardV3 from '../../../components/PostCardV3';
 import CreatePostV3 from '../../../components/CreatePostV3';
