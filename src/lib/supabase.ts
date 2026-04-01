@@ -10,7 +10,7 @@ export interface User {
   id: string;
   username: string;
   display_name: string;
-  email?: string | null; // <-- เพิ่มบรรทัดนี้เข้ามาเพื่อแก้ Error
+  email?: string | null;
   bio?: string | null;
   profile_img_url?: string | null;
   cover_img_url?: string | null;
@@ -26,6 +26,11 @@ export interface User {
   relationship_status?: string | null;
   relationship_custom_name?: string | null;
   is_online?: boolean;
+  
+  // ✅ เพิ่ม 2 บรรทัดนี้เพื่อรองรับฟีเจอร์ใหม่
+  is_verified?: boolean | null;  // ระบบติ๊กถูก Verified
+  life_events?: any | null;      // ระบบประวัติเหตุการณ์ในชีวิต (Timeline)
+  
   created_at: string;
   updated_at: string;
 }
