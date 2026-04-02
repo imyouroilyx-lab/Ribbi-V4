@@ -45,17 +45,10 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
 
   // ✅ ฟังก์ชันเลือกแชท และเคลียร์ Badge (Mark as Read)
   const handleSelectChat = (chatId: string) => {
-    // 1. เปลี่ยนห้องทันที (UI ลื่นปรื๊ด)
     onSelectChat(chatId);
-
-    // 2. หาข้อมูลแชทนี้ในลิสต์
     const targetChat = chats.find(c => c.id === chatId);
-
-    // 3. ถ้าไม่มีแจ้งเตือนค้างอยู่ (unread === 0) ก็ไม่ต้องยิงไปกวนเซิร์ฟเวอร์
     if (!targetChat || targetChat.unread_count === 0) return;
 
-    // 4. ถ้ามีแจ้งเตือน แอบยิง Update เบื้องหลัง (Fire and Forget)
-    // ไม่ใส่ await เพื่อไม่ให้ UI ค้างรอ
     supabase
       .from('chat_participants')
       .update({ last_read_at: new Date().toISOString() })
@@ -63,7 +56,6 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
       .eq('user_id', currentUserId)
       .then(({ error }) => {
         if (!error) {
-          // รีเฟรชลิสต์เพื่อให้เลข Badge หายไปจากหน้าจอ
           onRefresh();
         } else {
           console.error("Mark as read error:", error);
@@ -95,6 +87,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
     setLoadingFriends(false);
   };
 
+  // ✅ แก้ไข: เพิ่มระบบส่งข้อความแรกเพื่อให้กลุ่มแสดงผลทันที
   const handleCreateChat = async (friendId?: string) => {
     setIsSubmitting(true);
     try {
@@ -107,29 +100,50 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
         if (error) throw error;
         if (chatId) {
           onRefresh(); 
-          handleSelectChat(chatId); // ใช้ handleSelectChat เพื่อความต่อเนื่อง
+          handleSelectChat(chatId);
         }
       } else if (mode === 'group') {
         if (!groupName.trim() || selectedFriendIds.length === 0) return;
-        const { data: newGroup } = await supabase.from('chats').insert({ 
+        
+        // 1. สร้างแชทกลุ่ม
+        const { data: newGroup, error: chatError } = await supabase.from('chats').insert({ 
           is_group: true, 
           name: groupName, 
           group_img_url: groupImg.trim() || null, 
-          created_by: currentUserId 
+          created_by: currentUserId,
+          last_message_content: `สร้างกลุ่ม "${groupName}" เรียบร้อยแล้ว`,
+          last_message_at: new Date().toISOString()
         }).select().single();
 
+        if (chatError) throw chatError;
+
         if (newGroup) {
+          // 2. เพิ่มสมาชิกทุกคนเข้ากลุ่ม
           const participants = [
             { chat_id: newGroup.id, user_id: currentUserId, role: 'admin', last_read_at: new Date().toISOString() }, 
             ...selectedFriendIds.map(id => ({ chat_id: newGroup.id, user_id: id, role: 'member' }))
           ];
           await supabase.from('chat_participants').insert(participants);
+
+          // 3. ✅ ส่งข้อความระบบ (System Message) เพื่อให้แชทโผล่ในรายการทันที
+          await supabase.from('messages').insert({
+            chat_id: newGroup.id,
+            sender_id: currentUserId,
+            content: `สร้างกลุ่ม "${groupName}" เรียบร้อยแล้ว`,
+            event: 'system'
+          });
+
           onRefresh(); 
           handleSelectChat(newGroup.id);
         }
       }
       setShowCreateModal(false);
-    } catch (e) { console.error(e); } finally { setIsSubmitting(false); }
+    } catch (e) { 
+      console.error(e);
+      alert('ไม่สามารถสร้างแชทได้ กรุณาลองใหม่อีกครั้ง');
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   return (
