@@ -26,6 +26,7 @@ export interface User {
   relationship_status?: string | null;
   relationship_custom_name?: string | null;
   is_online?: boolean;
+  website_url?: string | null;
   
   // ✅ เพิ่ม 2 บรรทัดนี้เพื่อรองรับฟีเจอร์ใหม่
   is_verified?: boolean | null;  // ระบบติ๊กถูก Verified
