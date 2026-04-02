@@ -26,7 +26,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
   const [groupImg, setGroupImg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ✅ ระบบกรอง Chat ID ซ้ำ
+  // ✅ ระบบกรอง Chat ID ซ้ำ (จบปัญหา Duplicate)
   const filtered = useMemo(() => {
     const uniqueMap = new Map();
     chats.forEach(c => {
@@ -43,25 +43,32 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
     });
   }, [chats, search]);
 
-  // ✅ ฟังก์ชันเคลียร์ Badge แจ้งเตือน (บอก DB ว่าเราอ่านแล้วนะ)
-  const handleSelectChat = async (chatId: string) => {
-    onSelectChat(chatId); // เปลี่ยนห้องทันที (UI)
+  // ✅ ฟังก์ชันเลือกแชท และเคลียร์ Badge (Mark as Read)
+  const handleSelectChat = (chatId: string) => {
+    // 1. เปลี่ยนห้องทันที (UI ลื่นปรื๊ด)
+    onSelectChat(chatId);
 
-    try {
-      // อัปเดตเวลาอ่านล่าสุดในฐานข้อมูล
-      const { error } = await supabase
-        .from('chat_participants')
-        .update({ last_read_at: new Date().toISOString() })
-        .eq('chat_id', chatId)
-        .eq('user_id', currentUserId);
+    // 2. หาข้อมูลแชทนี้ในลิสต์
+    const targetChat = chats.find(c => c.id === chatId);
 
-      if (error) throw error;
-      
-      // สั่งรีเฟรชข้อมูล List เพื่อให้ตัวเลขหายไปทันที
-      onRefresh();
-    } catch (err) {
-      console.error('Error marking as read:', err);
-    }
+    // 3. ถ้าไม่มีแจ้งเตือนค้างอยู่ (unread === 0) ก็ไม่ต้องยิงไปกวนเซิร์ฟเวอร์
+    if (!targetChat || targetChat.unread_count === 0) return;
+
+    // 4. ถ้ามีแจ้งเตือน แอบยิง Update เบื้องหลัง (Fire and Forget)
+    // ไม่ใส่ await เพื่อไม่ให้ UI ค้างรอ
+    supabase
+      .from('chat_participants')
+      .update({ last_read_at: new Date().toISOString() })
+      .eq('chat_id', chatId)
+      .eq('user_id', currentUserId)
+      .then(({ error }) => {
+        if (!error) {
+          // รีเฟรชลิสต์เพื่อให้เลข Badge หายไปจากหน้าจอ
+          onRefresh();
+        } else {
+          console.error("Mark as read error:", error);
+        }
+      });
   };
 
   const openCreateModal = async (type: 'single' | 'group') => {
@@ -100,7 +107,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
         if (error) throw error;
         if (chatId) {
           onRefresh(); 
-          handleSelectChat(chatId); // ใช้ฟังก์ชันใหม่เพื่อเคลียร์ Badge ทันที
+          handleSelectChat(chatId); // ใช้ handleSelectChat เพื่อความต่อเนื่อง
         }
       } else if (mode === 'group') {
         if (!groupName.trim() || selectedFriendIds.length === 0) return;
@@ -170,7 +177,11 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
                   </div>
                   <p className="text-xs text-gray-500 truncate">{c.last_message_content || 'ยังไม่มีข้อความ'}</p>
                 </div>
-                {c.unread_count > 0 && <div className="bg-indigo-500 text-white text-[10px] rounded-full px-1.5 h-4 flex items-center justify-center font-black min-w-[16px]">{c.unread_count}</div>}
+                {c.unread_count > 0 && (
+                  <div className="bg-indigo-500 text-white text-[10px] rounded-full px-1.5 h-4 flex items-center justify-center font-black min-w-[16px]">
+                    {c.unread_count}
+                  </div>
+                )}
               </button>
             );
           })
