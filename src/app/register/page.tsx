@@ -4,7 +4,10 @@ import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { UserPlus, Mail, Lock, User, AtSign, AlertCircle, CheckCircle } from 'lucide-react';
+import { UserPlus, Mail, Lock, User, AtSign, AlertCircle, CheckCircle, Key } from 'lucide-react'; // ✅ เพิ่มไอคอน Key
+
+// 🤫 ตั้งค่าโค้ดลับของพี่ตรงนี้ (หรือจะเอาไปไว้ใน .env ก็ได้ครับ)
+const SITE_INVITE_CODE = 'ONLYROLEPLAYTH'; 
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -14,6 +17,7 @@ export default function RegisterPage() {
     password: '',
     username: '',
     displayName: '',
+    inviteCode: '', // ✅ เพิ่มฟิลด์โค้ดเชิญ
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -25,6 +29,13 @@ export default function RegisterPage() {
     setIsLoading(true);
     setError('');
     setSuccess('');
+
+    // ✅ ตรวจสอบโค้ดเฉพาะของเว็บไซต์ก่อนทำอย่างอื่น
+    if (formData.inviteCode !== SITE_INVITE_CODE) {
+      setError('Invite Code ไม่ถูกต้อง โปรดติดต่อผู้ดูแลระบบ');
+      setIsLoading(false);
+      return;
+    }
 
     if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
       setError('Username ใช้ได้เฉพาะ a-z, 0-9 และ _');
@@ -98,7 +109,7 @@ export default function RegisterPage() {
             />
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Ribbi</h1>
-          <p className="text-gray-600">สร้างบัญชีใหม่</p>
+          <p className="text-gray-600">สร้างบัญชีใหม่ (เฉพาะสมาชิกที่ได้รับเชิญ)</p>
         </div>
 
         <div className="card-minimal">
@@ -110,7 +121,7 @@ export default function RegisterPage() {
           {/* Error */}
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-600 flex gap-2 text-sm">
-              <AlertCircle className="w-5 h-5" />
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
               {error}
             </div>
           )}
@@ -118,7 +129,7 @@ export default function RegisterPage() {
           {/* Success */}
           {success && (
             <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-2xl text-green-600 flex gap-2 text-sm">
-              <CheckCircle className="w-5 h-5" />
+              <CheckCircle className="w-5 h-5 flex-shrink-0" />
               {success}
             </div>
           )}
@@ -187,9 +198,30 @@ export default function RegisterPage() {
               />
             </div>
 
+            {/* ✅ เพิ่มช่อง Invite Code */}
+            <div className="pt-2 border-t border-dashed border-gray-100 mt-4">
+              <label className="text-sm font-bold text-indigo-600 mb-1 block">
+                <Key className="w-4 h-4 inline mr-1" />
+                Invite Code
+              </label>
+              <input
+                type="text"
+                className="input-minimal border-indigo-100 focus:border-indigo-500 bg-indigo-50/30"
+                placeholder="กรอกโค้ดสมัครสมาชิก..."
+                value={formData.inviteCode}
+                onChange={(e) =>
+                  setFormData({ ...formData, inviteCode: e.target.value })
+                }
+                required
+              />
+              <p className="text-[10px] text-gray-400 mt-1.5 ml-1">
+                * ต้องใช้โค้ดเฉพาะจากเว็บไซต์เพื่อยืนยันการสมัคร
+              </p>
+            </div>
+
             <button
               disabled={isLoading}
-              className="btn-primary w-full disabled:opacity-50"
+              className="btn-primary w-full disabled:opacity-50 mt-4"
             >
               {isLoading ? 'กำลังสมัคร...' : 'สมัครสมาชิก'}
             </button>
