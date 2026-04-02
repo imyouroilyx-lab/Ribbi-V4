@@ -95,6 +95,10 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [likers, setLikers] = useState<any[]>([]); 
   const [isLoadingLikers, setIsLoadingLikers] = useState(false);
 
+  // ✅ ระบบ "ดูเพิ่มเติม"
+  const [isExpanded, setIsExpanded] = useState(false);
+  const CONTENT_LIMIT = 300; // ตั้งค่าจำนวนตัวอักษรที่ต้องการให้ตัด
+
   const [newComment, setNewComment] = useState('');
   const [commentImageUrl, setCommentImageUrl] = useState('');
   const [showCommentImageInput, setShowCommentImageInput] = useState(false);
@@ -390,14 +394,15 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap text-sm">
             {post.author && (
-              <Link href={`/profile/${post.author.username}`} className="font-black text-gray-900 hover:text-frog-600 flex items-center gap-1">
+              /* ✅ เพิ่มขนาด Display Name เป็น text-[15px] และ font-black */
+              <Link href={`/profile/${post.author.username}`} className="font-black text-[15px] text-gray-900 hover:text-frog-600 flex items-center gap-1 transition-colors">
                 {post.author.display_name}
                 {post.author.is_verified && <BadgeCheck className="w-4 h-4 text-blue-500 flex-shrink-0" />}
               </Link>
             )}
             {post.target && post.target.id !== post.author?.id && (
               <><ChevronRight size={14} className="text-gray-400" />
-                <Link href={`/profile/${post.target.username}`} className="font-black text-gray-900 hover:text-frog-600 flex items-center gap-1">
+                <Link href={`/profile/${post.target.username}`} className="font-black text-[15px] text-gray-900 hover:text-frog-600 flex items-center gap-1 transition-colors">
                   {post.target.display_name}
                   {post.target.is_verified && <BadgeCheck className="w-4 h-4 text-blue-500 flex-shrink-0" />}
                 </Link>
@@ -421,7 +426,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
 
       {isEditingPost ? (
         <div className="mb-4 space-y-3">
-          {/* ✅ ปรับ Textarea ให้เป็น text-base (ใหญ่ขึ้น) */}
           <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full text-base p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-frog-500 min-h-[120px]" autoFocus />
           <div className="flex gap-2 justify-end">
             <button onClick={() => setIsEditingPost(false)} className="px-5 py-2 text-xs font-black text-gray-500 bg-gray-100 rounded-xl">ยกเลิก</button>
@@ -429,11 +433,24 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           </div>
         </div>
       ) : (
-        /* ✅ ปรับขนาดข้อความโพสต์จาก text-sm เป็น text-base (16px) หรือ text-lg (18px) ได้ตรงนี้ครับ */
-        <div className="text-base text-gray-900 mb-4 whitespace-pre-wrap break-words leading-relaxed">{renderTextWithTags(post.content || '')}</div>
+        /* ✅ ระบบแสดงผลโพสต์ และปุ่มดูเพิ่มเติม */
+        <div className="text-base text-gray-900 mb-4 whitespace-pre-wrap break-words leading-relaxed">
+          {isExpanded || (post.content?.length || 0) <= CONTENT_LIMIT ? (
+            renderTextWithTags(post.content || '')
+          ) : (
+            <>
+              {renderTextWithTags(post.content?.slice(0, CONTENT_LIMIT) + '...')}
+              <button 
+                onClick={() => setIsExpanded(true)} 
+                className="text-frog-600 font-black hover:underline ml-1 text-sm uppercase tracking-tighter"
+              >
+                ดูเพิ่มเติม
+              </button>
+            </>
+          )}
+        </div>
       )}
 
-      {/* ✅ ดึงระบบ YouTube Embed กลับมาให้แล้วครับ */}
       {!isEditingPost && post.content && (
         <div className="mb-4">
           {post.content.match(/(https?:\/\/\S+)/g)?.map(url => {
