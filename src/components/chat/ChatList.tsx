@@ -43,7 +43,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
     });
   }, [chats, search]);
 
-  // ✅ ฟังก์ชันเลือกแชท และเคลียร์ Badge (Mark as Read)
+  // ✅ ฟังก์ชันเลือกแชท และเคลียร์ Badge
   const handleSelectChat = (chatId: string) => {
     onSelectChat(chatId);
     const targetChat = chats.find(c => c.id === chatId);
@@ -55,11 +55,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
       .eq('chat_id', chatId)
       .eq('user_id', currentUserId)
       .then(({ error }) => {
-        if (!error) {
-          onRefresh();
-        } else {
-          console.error("Mark as read error:", error);
-        }
+        if (!error) onRefresh();
       });
   };
 
@@ -87,7 +83,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
     setLoadingFriends(false);
   };
 
-  // ✅ แก้ไข: เพิ่มระบบส่งข้อความแรกเพื่อให้กลุ่มแสดงผลทันที
+  // ✅ แก้ไข: ปรับระบบสร้างแชทกลุ่มให้แข็งแกร่งขึ้น
   const handleCreateChat = async (friendId?: string) => {
     setIsSubmitting(true);
     try {
@@ -96,7 +92,6 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
           uid_a: currentUserId, 
           uid_b: friendId 
         });
-
         if (error) throw error;
         if (chatId) {
           onRefresh(); 
@@ -104,43 +99,54 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
         }
       } else if (mode === 'group') {
         if (!groupName.trim() || selectedFriendIds.length === 0) return;
-        
-        // 1. สร้างแชทกลุ่ม
+
+        // 1. สร้างแชทในตาราง chats
         const { data: newGroup, error: chatError } = await supabase.from('chats').insert({ 
           is_group: true, 
           name: groupName, 
           group_img_url: groupImg.trim() || null, 
           created_by: currentUserId,
-          last_message_content: `สร้างกลุ่ม "${groupName}" เรียบร้อยแล้ว`,
+          last_message_content: 'สร้างกลุ่มเรียบร้อยแล้ว',
           last_message_at: new Date().toISOString()
         }).select().single();
 
-        if (chatError) throw chatError;
+        if (chatError) {
+          console.error("Step 1 (Create Chat) Failed:", chatError);
+          throw chatError;
+        }
 
         if (newGroup) {
-          // 2. เพิ่มสมาชิกทุกคนเข้ากลุ่ม
+          // 2. เพิ่มผู้เข้าร่วมทั้งหมด (ตัวเรา + เพื่อน)
           const participants = [
             { chat_id: newGroup.id, user_id: currentUserId, role: 'admin', last_read_at: new Date().toISOString() }, 
             ...selectedFriendIds.map(id => ({ chat_id: newGroup.id, user_id: id, role: 'member' }))
           ];
-          await supabase.from('chat_participants').insert(participants);
+          
+          const { error: partError } = await supabase.from('chat_participants').insert(participants);
+          if (partError) {
+            console.error("Step 2 (Add Participants) Failed:", partError);
+            throw partError;
+          }
 
-          // 3. ✅ ส่งข้อความระบบ (System Message) เพื่อให้แชทโผล่ในรายการทันที
-          await supabase.from('messages').insert({
+          // 3. ส่งข้อความระบบเพื่อยืนยันการสร้างกลุ่ม
+          const { error: msgError } = await supabase.from('messages').insert({
             chat_id: newGroup.id,
             sender_id: currentUserId,
-            content: `สร้างกลุ่ม "${groupName}" เรียบร้อยแล้ว`,
+            content: `ได้สร้างกลุ่ม "${groupName}"`,
             event: 'system'
           });
+          
+          if (msgError) console.error("Step 3 (System Message) Warning:", msgError);
 
+          // 4. เสร็จสิ้นและรีเฟรช
           onRefresh(); 
           handleSelectChat(newGroup.id);
         }
       }
       setShowCreateModal(false);
-    } catch (e) { 
-      console.error(e);
-      alert('ไม่สามารถสร้างแชทได้ กรุณาลองใหม่อีกครั้ง');
+    } catch (e: any) { 
+      console.error("Group Creation Error:", e);
+      alert(`ไม่สามารถสร้างแชทได้: ${e.message || 'กรุณาลองใหม่อีกครั้ง'}`);
     } finally { 
       setIsSubmitting(false); 
     }
@@ -148,6 +154,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
 
   return (
     <div className="h-full flex flex-col bg-white relative border-r">
+      {/* Header */}
       <div className="p-4 border-b space-y-4">
         <div className="flex justify-between items-center px-1">
           <h2 className="text-xl font-black italic tracking-tighter text-gray-900 uppercase">Messages</h2>
@@ -162,6 +169,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
         </div>
       </div>
 
+      {/* Chat List */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {filtered.length === 0 ? (
           <div className="py-20 text-center opacity-20">
@@ -202,6 +210,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
         )}
       </div>
 
+      {/* Create Chat Modal */}
       {showCreateModal && (
         <div className="absolute inset-0 bg-white z-[60] flex flex-col animate-in fade-in slide-in-from-bottom-2 h-full overflow-hidden">
           <div className="p-4 border-b flex justify-between items-center bg-gray-50 flex-shrink-0">
