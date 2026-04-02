@@ -10,8 +10,8 @@ import ConfirmModal from '../../../components/ConfirmModal';
 import { 
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, 
-  MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye, Info,
-  BadgeCheck, Link as LinkIcon, Fingerprint // ✅ เพิ่ม Fingerprint ตรงนี้
+  MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Info,
+  BadgeCheck, Link as LinkIcon, Fingerprint
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -67,7 +67,6 @@ export default function ProfilePage() {
   const [friendshipId, setFriendshipId] = useState<string | null>(null);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [friends, setFriends] = useState<User[]>([]);
-  const [recentVisitors, setRecentVisitors] = useState<User[]>([]);
   
   const [isAddedToFamily, setIsAddedToFamily] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -121,13 +120,6 @@ export default function ProfilePage() {
       setProfileUser(profileRes.data);
       setCurrentUser(currentUserRes.data);
 
-      if (session.user.id !== profileRes.data.id) {
-        const viewKey = `v_${profileRes.data.id}`;
-        if (!sessionStorage.getItem(viewKey)) {
-          supabase.from('profile_views').insert({ profile_id: profileRes.data.id, visitor_id: session.user.id }).then();
-          sessionStorage.setItem(viewKey, '1');
-        }
-      }
     } catch (err) { console.error(err); } 
     finally { setIsProfileLoading(false); }
   };
@@ -151,12 +143,11 @@ export default function ProfilePage() {
   const loadSecondaryData = async (targetId: string, authId: string) => {
     setIsWidgetsLoading(true);
     try {
-      const [familyRes, friendsRes, friendStatusRes, checkFamilyRes, viewsRes] = await Promise.all([
+      const [familyRes, friendsRes, friendStatusRes, checkFamilyRes] = await Promise.all([
         supabase.from('family_members').select('id, user_id, member_user_id, relationship_label, member:member_user_id(*)').eq('user_id', targetId),
         supabase.from('friendships').select('*, sender:sender_id(*), receiver:receiver_id(*)').eq('status', 'accepted').or(`sender_id.eq.${targetId},receiver_id.eq.${targetId}`).order('created_at', { ascending: false }).limit(6),
         supabase.from('friendships').select('*').or(`and(sender_id.eq.${authId},receiver_id.eq.${targetId}),and(sender_id.eq.${targetId},receiver_id.eq.${authId})`).maybeSingle(),
-        supabase.from('family_members').select('id').eq('user_id', authId).eq('member_user_id', targetId).maybeSingle(),
-        supabase.from('profile_views').select('visitor_id, viewed_at, visitor:visitor_id(id, username, display_name, profile_img_url, is_verified)').eq('profile_id', targetId).order('viewed_at', { ascending: false }).limit(20)
+        supabase.from('family_members').select('id').eq('user_id', authId).eq('member_user_id', targetId).maybeSingle()
       ]);
 
       const formattedFamilyMembers = (familyRes.data || []).map((fm: any) => ({
@@ -177,19 +168,6 @@ export default function ProfilePage() {
         setFriendshipId(null);
         setFriendshipStatus('none'); 
       }
-
-      const viewsData = viewsRes.data || [];
-      const uniqueVisitors: any[] = [];
-      const seenIds = new Set();
-      
-      for (const row of viewsData) {
-        if (row.visitor && !seenIds.has(row.visitor_id)) {
-          seenIds.add(row.visitor_id);
-          uniqueVisitors.push(row.visitor);
-          if (uniqueVisitors.length === 5) break; 
-        }
-      }
-      setRecentVisitors(uniqueVisitors);
 
     } catch (err) { console.error(err); }
     finally { setIsWidgetsLoading(false); }
@@ -295,31 +273,6 @@ export default function ProfilePage() {
         <a href={profileUser.music_url} target="_blank" rel="noopener noreferrer" className="p-2.5 text-white rounded-xl shadow-md transition-all hover:opacity-90 active:scale-95 flex items-center justify-center" style={{ backgroundColor: themeColor }}>
           <ExternalLink size={16} />
         </a>
-      </div>
-    );
-  };
-
-  const RecentVisitorsWidget = () => {
-    if (isWidgetsLoading) return <div className="card-minimal h-32 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
-    if (recentVisitors.length === 0) return null;
-    return (
-      <div className="card-minimal bg-white p-6 md:p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-5">
-        <h3 className="font-black text-gray-900 text-sm flex items-center gap-2">
-          <Eye className="w-5 h-5 text-blue-500" /> ผู้เข้าชมล่าสุด
-        </h3>
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-          {recentVisitors.map((v, i) => (
-            <Link key={i} href={`/profile/${v.username}`} className="group flex flex-col items-center gap-1.5 flex-shrink-0 w-16 transition-all hover:scale-105">
-              <div className="relative">
-                <img src={v.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-100" />
-              </div>
-              <p className="text-[10px] font-black text-center truncate w-full text-gray-500 uppercase group-hover:text-gray-900 flex items-center justify-center gap-0.5">
-                {v.display_name.split(' ')[0]}
-                {v.is_verified && <BadgeCheck className="w-3 h-3 text-blue-500 flex-shrink-0" />}
-              </p>
-            </Link>
-          ))}
-        </div>
       </div>
     );
   };
@@ -478,7 +431,6 @@ export default function ProfilePage() {
                     </div>
                   )}
 
-                  {/* ✅ ส่วนแสดง MBTI, ราศี, Enneagram (Identity Tags) */}
                   {(profileUser.zodiac || profileUser.mbti || profileUser.enneagram) && (
                     <div className="flex flex-wrap gap-2 pt-2 px-1">
                       {profileUser.mbti && (
@@ -488,7 +440,7 @@ export default function ProfilePage() {
                       )}
                       {profileUser.zodiac && (
                         <span className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center gap-1.5 shadow-sm">
-                          {profileUser.zodiac}
+                          ราศี{profileUser.zodiac}
                         </span>
                       )}
                       {profileUser.enneagram && (
@@ -521,7 +473,6 @@ export default function ProfilePage() {
 
             <div className="lg:hidden space-y-6">
               <MusicWidget />
-              <RecentVisitorsWidget />
               <FriendsWidget />
               <RelationshipWidget />
             </div>
@@ -562,7 +513,6 @@ export default function ProfilePage() {
 
           <div className="hidden lg:flex flex-col w-[320px] xl:w-[340px] flex-shrink-0 space-y-6">
             <MusicWidget />
-            <RecentVisitorsWidget />
             <FriendsWidget />
             <RelationshipWidget />
             <div className="text-center py-8 opacity-30"><p className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400">Ribbi Community 2026</p></div>
