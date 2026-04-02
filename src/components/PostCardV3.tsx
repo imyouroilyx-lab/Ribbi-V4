@@ -365,14 +365,25 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                 </div>
               )}
             </div>
+            
+            {/* ตอบกลับคอมเมนต์ */}
             {replyTo === c.id && (
               <div className="mt-3 space-y-2 relative">
                 <div className="flex gap-2">
                   <input type="text" value={replyContent} onChange={(e) => handleInputChange(e.target.value, 'reply')} onKeyDown={(e) => e.key === 'Enter' && handleReply(c.id)} placeholder={`ตอบกลับ ${c.author?.display_name.split(' ')[0]}...`} className="input-minimal w-full text-xs py-2 px-3 rounded-xl" autoFocus />
-                  <button onClick={() => setShowReplyImageInput(!showReplyImageInput)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><ImageIcon size={18} /></button>
-                  <button onClick={() => handleReply(c.id)} className="p-1.5 text-frog-600"><Send size={18} /></button>
-                  <button onClick={() => setReplyTo(null)} className="p-1.5 text-gray-400"><X size={18} /></button>
+                  <button onClick={() => setShowReplyImageInput(!showReplyImageInput)} className={`p-1.5 rounded-lg transition-colors ${showReplyImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400 hover:bg-gray-100'}`}><ImageIcon size={18} /></button>
+                  <button onClick={() => handleReply(c.id)} className="p-1.5 text-frog-600 hover:text-frog-700 transition-colors"><Send size={18} /></button>
+                  <button onClick={() => setReplyTo(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} /></button>
                 </div>
+                
+                {/* ✅ เพิ่มกล่อง Input สำหรับใส่ URL รูปภาพตอน Reply กลับมา */}
+                {showReplyImageInput && (
+                  <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                    <input type="url" value={replyImageUrl} onChange={e => setReplyImageUrl(e.target.value)} placeholder="วาง URL รูปภาพที่นี่..." className="input-minimal flex-1 text-xs py-1.5 px-3 bg-white border border-gray-200 rounded-lg outline-none focus:border-frog-300" disabled={isSubmitting} />
+                    {replyImageUrl && <img src={replyImageUrl} className="w-6 h-6 rounded-md object-cover border border-gray-200 shadow-sm" alt="Preview" />}
+                  </div>
+                )}
+
                 {activeInput === 'reply' && <MentionMenu />}
               </div>
             )}
@@ -394,7 +405,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap text-sm">
             {post.author && (
-              /* ✅ เพิ่มขนาด Display Name เป็น text-[15px] และ font-black */
               <Link href={`/profile/${post.author.username}`} className="font-black text-[15px] text-gray-900 hover:text-frog-600 flex items-center gap-1 transition-colors">
                 {post.author.display_name}
                 {post.author.is_verified && <BadgeCheck className="w-4 h-4 text-blue-500 flex-shrink-0" />}
@@ -433,7 +443,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           </div>
         </div>
       ) : (
-        /* ✅ ระบบแสดงผลโพสต์ และปุ่มดูเพิ่มเติม */
         <div className="text-base text-gray-900 mb-4 whitespace-pre-wrap break-words leading-relaxed">
           {isExpanded || (post.content?.length || 0) <= CONTENT_LIMIT ? (
             renderTextWithTags(post.content || '')
@@ -489,16 +498,26 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 text-frog-500 animate-spin" /></div>
           ) : (
             <>
+              {/* คอมเมนต์หลัก */}
               <form onSubmit={handleComment} className="space-y-2 relative">
                 <div className="flex gap-2 relative">
                   <div className="relative flex-1">
                     <input type="text" value={newComment} onChange={(e) => handleInputChange(e.target.value, 'comment')} placeholder="เขียนความคิดเห็น..." className="input-minimal w-full text-sm py-2 px-4 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:ring-2 focus:ring-frog-200" disabled={isSubmitting} />
                     {activeInput === 'comment' && <MentionMenu />}
                   </div>
-                  <button type="button" onClick={() => setShowCommentImageInput(!showCommentImageInput)} className={`p-2 rounded-xl transition-all ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'bg-gray-50 text-gray-400'}`}><ImageIcon size={18} /></button>
-                  <button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2 bg-frog-500 text-white rounded-xl hover:bg-frog-600 shadow-sm active:scale-95 disabled:opacity-50"><Send size={18} /></button>
+                  <button type="button" onClick={() => setShowCommentImageInput(!showCommentImageInput)} className={`p-2 rounded-xl transition-all ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}><ImageIcon size={18} /></button>
+                  <button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2 bg-frog-500 text-white rounded-xl hover:bg-frog-600 shadow-sm active:scale-95 disabled:opacity-50 transition-colors"><Send size={18} /></button>
                 </div>
+                
+                {/* ✅ เพิ่มกล่อง Input สำหรับใส่ URL รูปภาพคอมเมนต์กลับมา */}
+                {showCommentImageInput && (
+                  <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                    <input type="url" value={commentImageUrl} onChange={e => setCommentImageUrl(e.target.value)} placeholder="วาง URL รูปภาพที่นี่ (https://...)" className="input-minimal flex-1 text-xs py-2 px-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:ring-1 focus:ring-frog-300" disabled={isSubmitting} />
+                    {commentImageUrl && <img src={commentImageUrl} className="w-8 h-8 rounded-lg object-cover shadow-sm border border-gray-100" alt="Preview" />}
+                  </div>
+                )}
               </form>
+
               <div className="space-y-3">{comments.length === 0 ? <p className="text-center text-gray-300 text-[10px] font-black uppercase py-4">ยังไม่มีความคิดเห็น</p> : comments.map(c => renderCommentItem(c))}</div>
             </>
           )}
