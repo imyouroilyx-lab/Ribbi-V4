@@ -26,14 +26,14 @@ export default function ProfileInfoPage() {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, username, display_name, profile_img_url, cover_img_url, bio, birthday, hobbies, theme_color, life_events, is_verified, website_url')
+        .select('id, username, display_name, profile_img_url, bio, birthday, hobbies, theme_color, life_events, is_verified, website_url') // ✅ ตรวจสอบว่ามี hobbies ตรงนี้แล้ว
         .eq('username', username)
         .single();
 
       if (error) throw error;
       setProfileUser(data);
     } catch (err) {
-      console.error(err);
+      console.error('Error loading info:', err);
     } finally {
       setIsLoading(false);
     }
@@ -44,7 +44,7 @@ export default function ProfileInfoPage() {
       <NavLayout>
         <div className="flex flex-col items-center justify-center py-20">
           <Loader2 className="w-10 h-10 animate-spin text-frog-500 mb-4" />
-          <p className="text-gray-500 font-bold text-xs uppercase tracking-wide">LOADING INFO...</p>
+          <p className="text-gray-500 font-bold text-xs uppercase tracking-wide">กำลังโหลดข้อมูล...</p>
         </div>
       </NavLayout>
     );
@@ -52,27 +52,24 @@ export default function ProfileInfoPage() {
 
   const themeColor = profileUser.theme_color || '#22c55e';
   
-  // ✅ Logic การเรียงลำดับใหม่: แม่นยำ 100%
+  // ✅ Logic การเรียงลำดับใหม่ (แม่นยำกว่าเดิม)
   const lifeEvents = Array.isArray(profileUser.life_events) 
     ? [...profileUser.life_events].sort((a, b) => {
-        // แปลงปีจบให้เป็นตัวเลข ถ้าเป็น "ปัจจุบัน" หรือว่าง ให้เป็น 9999 (สูงสุด)
-        const getYearValue = (yearStr: string) => {
-          if (!yearStr || yearStr.includes('ปัจจุบัน')) return 9999;
-          const parsed = parseInt(yearStr);
-          return isNaN(parsed) ? 0 : parsed;
+        const getYear = (y: any) => {
+          if (!y || y.toString().includes('ปัจจุบัน')) return 9999;
+          const num = parseInt(y);
+          return isNaN(num) ? 0 : num;
         };
 
-        const endA = getYearValue(a.end_year);
-        const endB = getYearValue(b.end_year);
+        const endA = getYear(a.end_year);
+        const endB = getYear(b.end_year);
+        const startA = getYear(a.start_year);
+        const startB = getYear(b.start_year);
 
-        // 1. เรียงตามปีที่จบก่อน (ใครจบช้ากว่า/ยังทำอยู่ ขึ้นก่อน)
-        if (endB !== endA) {
-          return endB - endA;
-        }
-
-        // 2. ถ้าปีจบเท่ากัน ให้ดูปีที่เริ่ม (ใครเริ่มทีหลัง ขึ้นก่อน)
-        const startA = parseInt(a.start_year) || 0;
-        const startB = parseInt(b.start_year) || 0;
+        // 1. ถ้าใครยังทำอยู่ (end_year = 9999) ให้ขึ้นก่อน
+        if (endB !== endA) return endB - endA;
+        
+        // 2. ถ้าปีจบเท่ากัน ให้เอาคนที่ "เริ่มทีหลัง" ขึ้นก่อน (สดใหม่กว่า)
         return startB - startA;
       })
     : [];
@@ -87,46 +84,44 @@ export default function ProfileInfoPage() {
 
   return (
     <NavLayout>
-      <div className="max-w-4xl mx-auto px-4 md:px-6 pb-24 animate-in fade-in duration-500 pt-6">
+      <div className="max-w-4xl mx-auto px-4 md:px-6 pb-24 pt-6 animate-in fade-in duration-500">
         
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
-          <button onClick={() => router.push(`/profile/${username}`)} className="p-3 bg-white rounded-2xl shadow-sm hover:shadow-md transition-all active:scale-95 border border-gray-100">
+          <button onClick={() => router.push(`/profile/${username}`)} className="p-3 bg-white rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100">
             <ChevronLeft size={24} className="text-gray-600" />
           </button>
           <div className="flex items-center gap-4">
-            <div className="relative">
-              <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover border-2 shadow-sm" style={{ borderColor: themeColor }} alt="" />
-            </div>
+            <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover border-2 shadow-sm" style={{ borderColor: themeColor }} alt="" />
             <div>
-              <h1 className="text-2xl font-black text-gray-900 leading-tight flex items-center gap-2">
-                เกี่ยวกับฉัน
-                {profileUser.is_verified && <BadgeCheck className="w-6 h-6 text-blue-500" />}
+              <h1 className="text-2xl font-black text-gray-900 flex items-center gap-2">
+                เกี่ยวกับ {profileUser.display_name}
+                {profileUser.is_verified && <BadgeCheck className="w-6 h-6 text-blue-500 flex-shrink-0" />}
               </h1>
-              <p className="text-sm text-gray-500 font-bold tracking-wide">@{profileUser.username}</p>
+              <p className="text-sm text-gray-500 font-bold">@{profileUser.username}</p>
             </div>
           </div>
         </div>
 
         <div className="bg-white rounded-[3rem] p-8 md:p-12 shadow-soft border border-gray-100 space-y-12">
           
-          {/* แนะนำตัว + ลิงก์เว็บไซต์ */}
+          {/* แนะนำตัว */}
           <section className="space-y-4">
             <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-400">
-              <Info size={18} style={{ color: themeColor }} /> แนะนำตัว
+              <Info size={18} style={{ color: themeColor }} /> ข้อมูลทั่วไป
             </h2>
             <div className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100">
-              <p className="text-gray-800 whitespace-pre-wrap font-medium leading-relaxed mb-4">{profileUser.bio || 'ยังไม่ได้เพิ่มข้อมูลแนะนำตัว'}</p>
+              <p className="text-gray-800 whitespace-pre-wrap font-medium leading-relaxed mb-4">
+                {profileUser.bio || 'ยังไม่มีข้อมูลแนะนำตัว'}
+              </p>
               
-              {/* ✅ แสดงลิงก์เว็บไซต์แบบ IG */}
               {profileUser.website_url && (
                 <div className="flex items-center gap-2 pt-4 border-t border-gray-200/50">
                   <LinkIcon size={16} className="text-gray-400" />
                   <a 
                     href={profileUser.website_url.startsWith('http') ? profileUser.website_url : `https://${profileUser.website_url}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="text-sm font-black hover:underline transition-all"
+                    target="_blank" rel="noopener noreferrer" 
+                    className="text-sm font-black hover:underline"
                     style={{ color: themeColor }}
                   >
                     {profileUser.website_url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
@@ -136,49 +131,43 @@ export default function ProfileInfoPage() {
             </div>
           </section>
 
-          {/* Timeline เหตุการณ์ในชีวิต */}
+          {/* Timeline */}
           <section className="space-y-6">
-            <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-400 mb-6">
-              <Calendar size={18} style={{ color: themeColor }} /> เหตุการณ์ในชีวิต
+            <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-400">
+              <Calendar size={18} style={{ color: themeColor }} /> ประวัติและเหตุการณ์
             </h2>
             
             {lifeEvents.length > 0 ? (
               <div className="relative pl-4 md:pl-8 border-l-2 border-gray-100 space-y-10">
                 {lifeEvents.map((event: any, idx: number) => (
                   <div key={idx} className="relative">
-                    <div 
-                      className="absolute -left-[25px] md:-left-[41px] top-1 w-8 h-8 rounded-full flex items-center justify-center shadow-md border-2 border-white z-10" 
-                      style={{ backgroundColor: themeColor }}
-                    >
+                    <div className="absolute -left-[25px] md:-left-[41px] top-1 w-8 h-8 rounded-full flex items-center justify-center shadow-md border-2 border-white z-10" style={{ backgroundColor: themeColor }}>
                       {getEventIcon(event.type)}
                     </div>
-                    
-                    <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100 hover:shadow-md transition-shadow hover:bg-white ml-2">
-                      <span className="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg mb-2 inline-block" style={{ backgroundColor: `${themeColor}20`, color: themeColor }}>
+                    <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100 hover:bg-white transition-all ml-2">
+                      <span className="text-[10px] font-black uppercase px-2 py-1 rounded-lg mb-2 inline-block" style={{ backgroundColor: `${themeColor}20`, color: themeColor }}>
                         {event.start_year} — {(!event.end_year || event.end_year.includes('ปัจจุบัน')) ? 'ปัจจุบัน' : event.end_year}
                       </span>
-                      <h3 className="text-lg font-black text-gray-900 mt-1 leading-tight">{event.title}</h3>
+                      <h3 className="text-lg font-black text-gray-900 leading-tight">{event.title}</h3>
                       {event.subtitle && <p className="text-sm font-bold text-gray-500 mt-1">{event.subtitle}</p>}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-10 bg-gray-50 rounded-3xl border border-dashed border-gray-200">
-                <p className="text-sm font-bold text-gray-400">ยังไม่มีประวัติให้แสดง</p>
-              </div>
+              <p className="text-center py-10 bg-gray-50 rounded-3xl border-2 border-dashed text-gray-400 font-bold text-sm">ยังไม่มีข้อมูลประวัติ</p>
             )}
           </section>
 
-          {/* ความสนใจ */}
+          {/* Hobbies (งานอดิเรก) */}
           {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
             <section className="space-y-4">
               <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-400">
-                <Heart size={18} style={{ color: themeColor }} /> ความสนใจ
+                <Heart size={18} style={{ color: themeColor }} /> สิ่งที่สนใจ
               </h2>
               <div className="flex flex-wrap gap-2 pt-2">
                 {profileUser.hobbies.map((h: any, i: number) => (
-                  <span key={i} className="px-5 py-2.5 rounded-2xl text-sm font-bold border shadow-sm transition-transform hover:-translate-y-1" style={{ backgroundColor: `${themeColor}10`, color: themeColor, borderColor: `${themeColor}20` }}>
+                  <span key={i} className="px-5 py-2.5 rounded-2xl text-sm font-bold border shadow-sm transition-all hover:-translate-y-1 bg-white" style={{ color: themeColor, borderColor: `${themeColor}20` }}>
                     {typeof h === 'string' ? h : h.name}
                   </span>
                 ))}
