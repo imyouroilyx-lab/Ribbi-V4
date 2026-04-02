@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import NavLayout from '../../../../components/NavLayout';
 import { 
   ChevronLeft, GraduationCap, Briefcase, Heart, Info, 
-  Loader2, Star, Calendar, BadgeCheck, Link as LinkIcon 
+  Loader2, Star, Calendar, BadgeCheck, Link as LinkIcon, Fingerprint
 } from 'lucide-react';
 
 export default function ProfileInfoPage() {
@@ -26,14 +26,14 @@ export default function ProfileInfoPage() {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, username, display_name, profile_img_url, bio, birthday, hobbies, theme_color, life_events, is_verified, website_url')
+        .select('id, username, display_name, profile_img_url, bio, birthday, hobbies, theme_color, life_events, is_verified, website_url, zodiac, mbti, enneagram')
         .eq('username', username)
         .single();
 
       if (error) throw error;
       setProfileUser(data);
     } catch (err) {
-      console.error('Error:', err);
+      console.error(err);
     } finally {
       setIsLoading(false);
     }
@@ -52,16 +52,12 @@ export default function ProfileInfoPage() {
 
   const themeColor = profileUser.theme_color || '#22c55e';
   
-  // ✅ Logic ใหม่: เรียงตามปีที่เริ่ม (Start Year) จากใหม่ไปเก่า
+  // ✅ เรียงตามปีที่เริ่ม (Start Year) จากใหม่ไปเก่า
   const lifeEvents = Array.isArray(profileUser.life_events) 
     ? [...profileUser.life_events].sort((a, b) => {
         const startA = parseInt(a.start_year) || 0;
         const startB = parseInt(b.start_year) || 0;
-        
-        // ถ้าปีเริ่มไม่เท่ากัน เอาคนเริ่มทีหลัง (ใหม่กว่า) ขึ้นก่อน
         if (startB !== startA) return startB - startA;
-        
-        // ถ้าปีเริ่มเท่ากันจริงๆ ค่อยเอาอันที่จบทีหลัง (หรือยังไม่จบ) ขึ้นก่อน
         const getEndYear = (y: any) => (!y || y.toString().includes('ปัจจุบัน')) ? 9999 : parseInt(y) || 0;
         return getEndYear(b.end_year) - getEndYear(a.end_year);
       })
@@ -112,12 +108,7 @@ export default function ProfileInfoPage() {
               {profileUser.website_url && (
                 <div className="flex items-center gap-2 pt-4 border-t border-gray-200/50">
                   <LinkIcon size={16} className="text-gray-400" />
-                  <a 
-                    href={profileUser.website_url.startsWith('http') ? profileUser.website_url : `https://${profileUser.website_url}`} 
-                    target="_blank" rel="noopener noreferrer" 
-                    className="text-sm font-black hover:underline"
-                    style={{ color: themeColor }}
-                  >
+                  <a href={profileUser.website_url.startsWith('http') ? profileUser.website_url : `https://${profileUser.website_url}`} target="_blank" rel="noopener noreferrer" className="text-sm font-black hover:underline" style={{ color: themeColor }}>
                     {profileUser.website_url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
                   </a>
                 </div>
@@ -125,7 +116,36 @@ export default function ProfileInfoPage() {
             </div>
           </section>
 
-          {/* Timeline เหตุการณ์ในชีวิต */}
+          {/* ✅ Section ลักษณะตัวตน (Identity Tags) */}
+          {(profileUser.zodiac || profileUser.mbti || profileUser.enneagram) && (
+            <section className="space-y-4">
+              <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-400">
+                <Fingerprint size={18} style={{ color: themeColor }} /> ลักษณะตัวตน
+              </h2>
+              <div className="flex flex-wrap gap-3 pt-2">
+                {profileUser.zodiac && (
+                  <div className="px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-xl flex flex-col">
+                    <span className="text-[9px] font-black text-indigo-400 uppercase tracking-tighter">Zodiac</span>
+                    <span className="text-sm font-black text-indigo-700">{profileUser.zodiac}</span>
+                  </div>
+                )}
+                {profileUser.mbti && (
+                  <div className="px-4 py-2 bg-purple-50 border border-purple-100 rounded-xl flex flex-col">
+                    <span className="text-[9px] font-black text-purple-400 uppercase tracking-tighter">MBTI</span>
+                    <span className="text-sm font-black text-purple-700">{profileUser.mbti}</span>
+                  </div>
+                )}
+                {profileUser.enneagram && (
+                  <div className="px-4 py-2 bg-pink-50 border border-pink-100 rounded-xl flex flex-col">
+                    <span className="text-[9px] font-black text-pink-400 uppercase tracking-tighter">Enneagram</span>
+                    <span className="text-sm font-black text-pink-700">{profileUser.enneagram}</span>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Timeline */}
           <section className="space-y-6">
             <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-400 mb-6">
               <Calendar size={18} style={{ color: themeColor }} /> ประวัติและเหตุการณ์
@@ -142,7 +162,7 @@ export default function ProfileInfoPage() {
                       </div>
                       <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100 hover:bg-white transition-all ml-2">
                         <span className="text-[10px] font-black uppercase px-2 py-1 rounded-lg mb-2 inline-block shadow-sm" style={{ backgroundColor: isPresent ? themeColor : `${themeColor}20`, color: isPresent ? '#fff' : themeColor }}>
-                          เริ่ม {event.start_year} {isPresent ? ' (กำลังดำเนินอยู่)' : ` ถึง ${event.end_year}`}
+                          เริ่ม {event.start_year} {isPresent ? ' (ปัจจุบัน)' : ` ถึง ${event.end_year}`}
                         </span>
                         <h3 className="text-lg font-black text-gray-900 mt-1 leading-tight">{event.title}</h3>
                         {event.subtitle && <p className="text-sm font-bold text-gray-500 mt-1">{event.subtitle}</p>}
