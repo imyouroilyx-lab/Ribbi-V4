@@ -307,7 +307,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-bold text-gray-900 truncate flex items-center gap-1">
+              <p className="text-lg font-bold text-gray-900 truncate flex items-center gap-1">
                 {f.display_name}
                 {f.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
               </p>
