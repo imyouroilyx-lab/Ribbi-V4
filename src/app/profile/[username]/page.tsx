@@ -488,7 +488,7 @@ export default function ProfilePage() {
                       )}
                       {profileUser.zodiac && (
                         <span className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center gap-1.5 shadow-sm">
-                          ราศี{profileUser.zodiac}
+                          {profileUser.zodiac}
                         </span>
                       )}
                       {profileUser.enneagram && (
