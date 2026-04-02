@@ -23,28 +23,27 @@ export default function PostPage() {
 
   const loadData = async () => {
     try {
-      // 1. เช็ก Auth ก่อน (ต้องใช้ ID ไปดึงข้อมูลอื่น)
+      // 1. เช็ก Auth ก่อน
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) {
         router.push('/login');
         return;
       }
 
-      // ✅ 2. Optimize: ดึงข้อมูล User และ Post พร้อมกัน (Parallel Fetching)
-      // และเลือกเฉพาะ Column ที่จำเป็น (Selective Fetching)
+      // ✅ 2. เพิ่ม is_verified เข้าไปในทุกจุดที่ดึงข้อมูล User
       const [userRes, postRes] = await Promise.all([
         supabase
           .from('users')
-          .select('id, username, display_name, profile_img_url') // ดึงแค่นี้พอ
+          .select('id, username, display_name, profile_img_url, is_verified') // ✅ เพิ่มตรงนี้
           .eq('id', authUser.id)
           .single(),
         supabase
           .from('posts')
           .select(`
             *,
-            author:author_id(id, username, display_name, profile_img_url),
-            target:target_id(id, username, display_name, profile_img_url)
-          `) // ดึงเฉพาะ Column ที่ PostCardV3 ต้องใช้
+            author:author_id(id, username, display_name, profile_img_url, is_verified), 
+            target:target_id(id, username, display_name, profile_img_url, is_verified)
+          `) // ✅ เพิ่ม is_verified ให้ทั้ง author และ target
           .eq('id', postId)
           .single()
       ]);
