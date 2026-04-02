@@ -11,7 +11,7 @@ import {
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, 
   MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Info,
-  BadgeCheck, Link as LinkIcon, Fingerprint
+  BadgeCheck, Link as LinkIcon, Fingerprint, Image as ImageIcon, X, Maximize2
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -70,6 +70,9 @@ export default function ProfilePage() {
   
   const [isAddedToFamily, setIsAddedToFamily] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // ✅ States สำหรับระบบดูรูปเต็ม
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   
   const [showDeletePostConfirm, setShowDeletePostConfirm] = useState(false);
   const [postToDelete, setPostToDelete] = useState<string | null>(null);
@@ -249,6 +252,33 @@ export default function ProfilePage() {
 
   const themeColor = profileUser.theme_color || '#9de5a8';
   const isOwnProfile = currentUser.id === profileUser.id;
+
+  // ✅ ระบบรูปภาพแนะนำ (สัดส่วน 5:8 พร้อมกดดูภาพเต็ม)
+  const FeaturedImagesWidget = () => {
+    const images = profileUser.featured_images;
+    if (!images || !Array.isArray(images) || images.length === 0) return null;
+    return (
+      <div className="card-minimal bg-white p-6 md:p-8 rounded-[3rem] border border-gray-100 shadow-sm space-y-6 animate-in fade-in duration-700">
+        <h3 className="font-black text-gray-900 flex items-center gap-2 text-sm">
+          <ImageIcon className="w-5 h-5" style={{ color: themeColor }} /> รูปภาพแนะนำ
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {images.map((url, i) => (
+            <div 
+              key={i} 
+              onClick={() => setSelectedImage(url)}
+              className="aspect-[5/8] rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 group cursor-pointer relative"
+            >
+              <img src={url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" loading="lazy" />
+              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Maximize2 className="text-white w-6 h-6" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const MusicWidget = () => {
     if (isWidgetsLoading) return <div className="card-minimal h-24 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
@@ -471,6 +501,9 @@ export default function ProfilePage() {
               </div>
             </div>
 
+            {/* ✅ แสดงรูปภาพแนะนำ (Featured Images) สัดส่วน 5:8 */}
+            <FeaturedImagesWidget />
+
             <div className="lg:hidden space-y-6">
               <MusicWidget />
               <FriendsWidget />
@@ -519,6 +552,22 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* ✅ Modal แสดงรูปภาพเต็มหน้าจอ */}
+      {selectedImage && (
+        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-md z-[999] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setSelectedImage(null)}>
+          <button className="absolute top-6 right-6 text-white/50 hover:text-white p-2 transition-colors">
+            <X size={32} />
+          </button>
+          <div className="max-w-4xl max-h-full w-full flex items-center justify-center p-2" onClick={e => e.stopPropagation()}>
+            <img 
+              src={selectedImage} 
+              alt="Full View" 
+              className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-300"
+            />
+          </div>
+        </div>
+      )}
 
       {showAddFamilyModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setShowAddFamilyModal(false)}>
