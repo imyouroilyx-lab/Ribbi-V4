@@ -154,7 +154,7 @@ export default function RegisterPage() {
             <div>
               <label className="text-sm font-medium mb-1 block">
                 <User className="w-4 h-4 inline mr-1" />
-                ชื่อที่แสดง
+                ชื่อที่แสดง (ใช้ชื่อตาม Display Name ในเว็บไซต์)
               </label>
               <input
                 className="input-minimal"
