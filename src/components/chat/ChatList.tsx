@@ -26,24 +26,19 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
   const [groupImg, setGroupImg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ✅ ระบบกรอง Chat ID ซ้ำ (จบปัญหา Duplicate)
+  // ✅ ระบบกรอง Chat ID ซ้ำ
   const filtered = useMemo(() => {
     const uniqueMap = new Map();
     chats.forEach(c => {
-      if (!uniqueMap.has(c.id)) {
-        uniqueMap.set(c.id, c);
-      }
+      if (!uniqueMap.has(c.id)) uniqueMap.set(c.id, c);
     });
-    
     const uniqueList = Array.from(uniqueMap.values());
-
     return uniqueList.filter(c => {
       const name = c.is_group ? c.name : c.other_user?.display_name;
       return (name || '').toLowerCase().includes(search.toLowerCase());
     });
   }, [chats, search]);
 
-  // ✅ ฟังก์ชันเลือกแชท และเคลียร์ Badge
   const handleSelectChat = (chatId: string) => {
     onSelectChat(chatId);
     const targetChat = chats.find(c => c.id === chatId);
@@ -83,7 +78,6 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
     setLoadingFriends(false);
   };
 
-  // ✅ แก้ไข: ปรับระบบสร้างแชทกลุ่มให้แข็งแกร่งขึ้น
   const handleCreateChat = async (friendId?: string) => {
     setIsSubmitting(true);
     try {
@@ -100,7 +94,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
       } else if (mode === 'group') {
         if (!groupName.trim() || selectedFriendIds.length === 0) return;
 
-        // 1. สร้างแชทในตาราง chats
+        // 1. สร้างหัวข้อแชท (จะผ่าน RLS เพราะใช้ auth.uid() = created_by และ SELECT creator)
         const { data: newGroup, error: chatError } = await supabase.from('chats').insert({ 
           is_group: true, 
           name: groupName, 
@@ -110,43 +104,33 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
           last_message_at: new Date().toISOString()
         }).select().single();
 
-        if (chatError) {
-          console.error("Step 1 (Create Chat) Failed:", chatError);
-          throw chatError;
-        }
+        if (chatError) throw chatError;
 
         if (newGroup) {
-          // 2. เพิ่มผู้เข้าร่วมทั้งหมด (ตัวเรา + เพื่อน)
+          // 2. เพิ่มสมาชิก (รวมตัวเองและเพื่อน)
           const participants = [
             { chat_id: newGroup.id, user_id: currentUserId, role: 'admin', last_read_at: new Date().toISOString() }, 
             ...selectedFriendIds.map(id => ({ chat_id: newGroup.id, user_id: id, role: 'member' }))
           ];
-          
           const { error: partError } = await supabase.from('chat_participants').insert(participants);
-          if (partError) {
-            console.error("Step 2 (Add Participants) Failed:", partError);
-            throw partError;
-          }
+          if (partError) throw partError;
 
-          // 3. ส่งข้อความระบบเพื่อยืนยันการสร้างกลุ่ม
-          const { error: msgError } = await supabase.from('messages').insert({
+          // 3. ส่ง System Message
+          await supabase.from('messages').insert({
             chat_id: newGroup.id,
             sender_id: currentUserId,
-            content: `ได้สร้างกลุ่ม "${groupName}"`,
+            content: `สร้างกลุ่ม "${groupName}" สำเร็จ`,
             event: 'system'
           });
-          
-          if (msgError) console.error("Step 3 (System Message) Warning:", msgError);
 
-          // 4. เสร็จสิ้นและรีเฟรช
           onRefresh(); 
           handleSelectChat(newGroup.id);
         }
       }
       setShowCreateModal(false);
     } catch (e: any) { 
-      console.error("Group Creation Error:", e);
-      alert(`ไม่สามารถสร้างแชทได้: ${e.message || 'กรุณาลองใหม่อีกครั้ง'}`);
+      console.error(e);
+      alert(`ล้มเหลว: ${e.message}`);
     } finally { 
       setIsSubmitting(false); 
     }
@@ -154,7 +138,6 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
 
   return (
     <div className="h-full flex flex-col bg-white relative border-r">
-      {/* Header */}
       <div className="p-4 border-b space-y-4">
         <div className="flex justify-between items-center px-1">
           <h2 className="text-xl font-black italic tracking-tighter text-gray-900 uppercase">Messages</h2>
@@ -169,7 +152,6 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
         </div>
       </div>
 
-      {/* Chat List */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {filtered.length === 0 ? (
           <div className="py-20 text-center opacity-20">
@@ -181,11 +163,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
             const name = c.is_group ? c.name : c.other_user?.display_name;
             const img = c.is_group ? c.group_img_url : c.other_user?.profile_img_url;
             return (
-              <button 
-                key={c.id} 
-                onClick={() => handleSelectChat(c.id)} 
-                className={`w-full p-4 flex gap-3 hover:bg-gray-50 transition-all border-b border-gray-50 ${selectedChatId === c.id ? 'bg-indigo-50/50' : ''}`}
-              >
+              <button key={c.id} onClick={() => handleSelectChat(c.id)} className={`w-full p-4 flex gap-3 hover:bg-gray-50 transition-all border-b border-gray-50 ${selectedChatId === c.id ? 'bg-indigo-50/50' : ''}`}>
                 <div className="relative flex-shrink-0">
                   <img src={img || 'https://iili.io/qbtgKBt.png'} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" alt="" />
                   {!c.is_group && c.other_user?.is_online && <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full" />}
@@ -199,18 +177,13 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
                   </div>
                   <p className="text-xs text-gray-500 truncate">{c.last_message_content || 'ยังไม่มีข้อความ'}</p>
                 </div>
-                {c.unread_count > 0 && (
-                  <div className="bg-indigo-500 text-white text-[10px] rounded-full px-1.5 h-4 flex items-center justify-center font-black min-w-[16px]">
-                    {c.unread_count}
-                  </div>
-                )}
+                {c.unread_count > 0 && <div className="bg-indigo-500 text-white text-[10px] rounded-full px-1.5 h-4 flex items-center justify-center font-black min-w-[16px]">{c.unread_count}</div>}
               </button>
             );
           })
         )}
       </div>
 
-      {/* Create Chat Modal */}
       {showCreateModal && (
         <div className="absolute inset-0 bg-white z-[60] flex flex-col animate-in fade-in slide-in-from-bottom-2 h-full overflow-hidden">
           <div className="p-4 border-b flex justify-between items-center bg-gray-50 flex-shrink-0">
@@ -239,11 +212,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
               <p className="p-10 text-center text-xs text-gray-400 font-bold italic">ไม่พบรายชื่อเพื่อน</p>
             ) : (
               friends.map(f => (
-                <button 
-                  key={f.id} 
-                  onClick={() => mode === 'single' ? handleCreateChat(f.id) : setSelectedFriendIds(prev => prev.includes(f.id) ? prev.filter(i => i !== f.id) : [...prev, f.id])} 
-                  className={`w-full p-3 flex items-center gap-3 border-b border-gray-50 transition-colors ${selectedFriendIds.includes(f.id) ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
-                >
+                <button key={f.id} onClick={() => mode === 'single' ? handleCreateChat(f.id) : setSelectedFriendIds(prev => prev.includes(f.id) ? prev.filter(i => i !== f.id) : [...prev, f.id])} className={`w-full p-3 flex items-center gap-3 border-b border-gray-50 transition-colors ${selectedFriendIds.includes(f.id) ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
                   <div className="relative flex-shrink-0">
                     <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover border border-gray-100 shadow-sm" alt="" />
                     {selectedFriendIds.includes(f.id) && <div className="absolute -top-1 -right-1 bg-indigo-500 text-white rounded-full p-0.5 border-2 border-white shadow-sm"><Check size={10} strokeWidth={4}/></div>}
@@ -259,11 +228,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
 
           {mode === 'group' && (
             <div className="p-4 bg-gray-50 border-t flex-shrink-0 sticky bottom-0">
-              <button 
-                onClick={() => handleCreateChat()} 
-                disabled={isSubmitting || !groupName.trim() || selectedFriendIds.length === 0} 
-                className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-100 disabled:opacity-50 active:scale-95 transition-all"
-              >
+              <button onClick={() => handleCreateChat()} disabled={isSubmitting || !groupName.trim() || selectedFriendIds.length === 0} className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-100 disabled:opacity-50 active:scale-95 transition-all">
                 {isSubmitting ? 'กำลังสร้าง...' : `สร้างกลุ่ม (${selectedFriendIds.length} คน)`}
               </button>
             </div>
