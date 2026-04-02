@@ -253,25 +253,28 @@ export default function ProfilePage() {
   const themeColor = profileUser.theme_color || '#9de5a8';
   const isOwnProfile = currentUser.id === profileUser.id;
 
-  // ✅ ระบบรูปภาพแนะนำ (สัดส่วน 5:8 พร้อมกดดูภาพเต็ม)
+  // ✅ แก้ไข: ย่อขนาดรูปภาพแนะนำโดยการเพิ่มคอลัมน์ใน Grid (3/5/6 คอลัมน์) และปรับ Padding การ์ด
   const FeaturedImagesWidget = () => {
     const images = profileUser.featured_images;
     if (!images || !Array.isArray(images) || images.length === 0) return null;
     return (
-      <div className="card-minimal bg-white p-6 md:p-8 rounded-[3rem] border border-gray-100 shadow-sm space-y-6 animate-in fade-in duration-700">
+      <div className="card-minimal bg-white p-4 md:p-6 rounded-[3rem] border border-gray-100 shadow-sm space-y-4 animate-in fade-in duration-700">
         <h3 className="font-black text-gray-900 flex items-center gap-2 text-sm">
           <ImageIcon className="w-5 h-5" style={{ color: themeColor }} /> รูปภาพแนะนำ
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {/* ✅ ปรับ Grid: เพิ่มคอลัมน์เพื่อย่อขนาดภาพ (cols-3 เป็นฐาน, md:cols-5, lg:cols-6 และลด gap) */}
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
           {images.map((url, i) => (
             <div 
               key={i} 
               onClick={() => setSelectedImage(url)}
-              className="aspect-[5/8] rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 group cursor-pointer relative"
+              // ปรับ rounded เล็กน้อยให้เข้ากับขนาดภาพ
+              className="aspect-[5/8] rounded-xl overflow-hidden border border-gray-100 bg-gray-50 group cursor-pointer relative"
             >
               <img src={url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" loading="lazy" />
               <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Maximize2 className="text-white w-6 h-6" />
+                {/* ย่อไอคอนลงเล็กน้อย */}
+                <Maximize2 className="text-white w-4 h-4" />
               </div>
             </div>
           ))}
