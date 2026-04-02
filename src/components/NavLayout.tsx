@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react'; // ✅ เพิ่ม useCallback
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase'; 
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -32,30 +32,51 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
 
-  // ✅ 1. ฟังก์ชันเล่นเสียง (ใช้ useCallback เพื่อให้ Reference คงที่)
+  // ✅ 1. ฟังก์ชันเล่นเสียง (แก้ Path เป็น /sounds/ribbi.wav)
   const playNotificationSound = useCallback(() => {
     const now = Date.now();
     if (now - lastPlayedRef.current < 1500) return; 
     
-    // ถ้ายังไม่มี Audio Object ให้สร้างใหม่ (กันพลาด)
     if (!audioRef.current) {
-      audioRef.current = new Audio('/ribbi.wav');
+      audioRef.current = new Audio('/sounds/ribbi.wav'); // ✅ แก้ Path ตรงนี้ครับ
     }
 
     if (audioRef.current) {
       audioRef.current.currentTime = 0; 
       audioRef.current.volume = 0.4;
-      audioRef.current.play().catch((err) => {
-        console.warn("Audio play blocked by browser. User interaction needed.", err);
-      });
+      const playPromise = audioRef.current.play();
+      
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn("Audio play blocked. Need user interaction first.");
+        });
+      }
       lastPlayedRef.current = now;
     }
   }, []);
 
+  // ✅ 2. ระบบ Unlock Audio (ช่วยให้เล่นเสียงได้แม้เบราว์เซอร์จะบล็อกตอนแรก)
+  useEffect(() => {
+    const unlockAudio = () => {
+      if (audioRef.current) {
+        // แอบเล่นแบบเงียบๆ เพื่อขออนุญาตเบราว์เซอร์
+        audioRef.current.play().then(() => {
+          audioRef.current?.pause();
+          if (audioRef.current) audioRef.current.currentTime = 0;
+        }).catch(() => {});
+        
+        // ปลดล็อกเสร็จแล้วให้ลบ Event ทิ้งเพื่อประหยัดทรัพยากร
+        document.removeEventListener('click', unlockAudio);
+      }
+    };
+    document.addEventListener('click', unlockAudio);
+    return () => document.removeEventListener('click', unlockAudio);
+  }, []);
+
   useEffect(() => {
     setIsMounted(true);
-    // โหลดเสียงเตรียมไว้
-    const audio = new Audio('/ribbi.wav');
+    // ✅ แก้ Path สำหรับการโหลดครั้งแรกด้วย
+    const audio = new Audio('/sounds/ribbi.wav');
     audio.load();
     audioRef.current = audio;
     
@@ -75,7 +96,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
     }
   }, [pathname, currentUser?.id]);
 
-  // ✅ 2. อัปเดต Realtime ให้เรียกใช้ playNotificationSound ที่เป็น useCallback
   useEffect(() => {
     if (!currentUser?.id) return;
 
@@ -103,12 +123,11 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [currentUser?.id, playNotificationSound]); // ✅ เพิ่ม playNotificationSound เข้าไปตรงนี้
+  }, [currentUser?.id, playNotificationSound]);
 
   const fetchLatestData = async () => {
     try {
       const { data: authData } = await supabase.auth.getSession();
-      
       if (!authData?.session) {
         if (pathname !== '/login' && pathname !== '/register') {
           localStorage.removeItem(CACHE_KEY);
@@ -118,7 +137,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       }
 
       const { data, error } = await supabase.rpc('get_user_app_data', { user_uuid: authData.session.user.id });
-      
       if (!error && data?.user_info) {
         setCurrentUser(data.user_info);
         setUnreadNotif(data.unread_notifications || 0);
@@ -126,9 +144,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         setUnreadMsg(data.unread_messages || 0);
         localStorage.setItem(CACHE_KEY, JSON.stringify(data.user_info));
       }
-    } catch (err) { 
-      console.error(err); 
-    }
+    } catch (err) { console.error(err); }
   };
 
   const handleLogout = async () => {
@@ -149,7 +165,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-[100dvh] bg-gray-50 flex flex-col lg:flex-row overflow-x-hidden">
-      {/* 💻 Desktop Sidebar */}
+      {/* ... (ส่วนที่เหลือของ UI เหมือนเดิมเป๊ะครับ) ... */}
       <aside className="hidden lg:flex flex-col w-64 fixed inset-y-0 bg-white border-r z-50 p-4">
         <Link href="/" className="mb-8 px-2 flex items-center gap-2 group">
           <img src="https://iili.io/qbtgKBt.png" className="w-10 h-10 group-hover:rotate-12 transition-transform" alt=""/>
@@ -168,10 +184,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           ) : (
             <div className="p-3 rounded-2xl bg-gray-50/50 flex items-center gap-3 animate-pulse border border-dashed border-gray-200">
               <div className="w-10 h-10 bg-gray-200 rounded-xl"></div>
-              <div className="flex-1 space-y-2">
-                <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-                <div className="h-2 bg-gray-100 rounded w-1/2"></div>
-              </div>
+              <div className="flex-1 space-y-2"><div className="h-3 bg-gray-200 rounded w-2/3"></div><div className="h-2 bg-gray-100 rounded w-1/2"></div></div>
             </div>
           )}
         </div>
@@ -194,27 +207,19 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      {/* 📱 Mobile Top Bar */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b flex items-center justify-between px-4 z-40">
-        <Link href="/" className="flex items-center gap-2">
-          <img src="https://iili.io/qbtgKBt.png" className="w-8 h-8" alt=""/>
-          <span className="text-xl font-black text-frog-600">Ribbi</span>
-        </Link>
+        <Link href="/" className="flex items-center gap-2"><img src="https://iili.io/qbtgKBt.png" className="w-8 h-8" alt=""/><span className="text-xl font-black text-frog-600">Ribbi</span></Link>
         <button onClick={() => setShowMobileMenu(true)} className="p-1 pr-1 pl-3 bg-gray-50 rounded-2xl active:scale-90 transition-all flex items-center gap-2 border">
           {currentUser ? <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-lg object-cover" alt=""/> : <div className="w-8 h-8 bg-gray-200 rounded-lg animate-pulse" />}
           <Menu size={20} className="text-gray-600 mr-2"/>
         </button>
       </header>
 
-      {/* 📱 Mobile Drawer Menu */}
       {showMobileMenu && (
         <div className="lg:hidden fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)} />
           <div className="absolute right-0 top-0 bottom-0 w-72 bg-white shadow-2xl p-6 animate-in slide-in-from-right duration-300 text-gray-900">
-            <div className="flex justify-between items-center mb-8">
-              <span className="font-black text-frog-600 italic">RIBBI MENU</span>
-              <button onClick={() => setShowMobileMenu(false)} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button>
-            </div>
+            <div className="flex justify-between items-center mb-8"><span className="font-black text-frog-600 italic">RIBBI MENU</span><button onClick={() => setShowMobileMenu(false)} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button></div>
             {currentUser && (
               <div className="mb-8 p-4 bg-gray-50 rounded-[2rem] flex flex-col items-center text-center gap-2 border border-gray-100 animate-in zoom-in">
                 <img src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-20 h-20 rounded-[1.5rem] object-cover shadow-md border-2 border-white" alt=""/>
@@ -238,11 +243,8 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <main className="flex-1 lg:ml-64 pt-16 pb-20 lg:pt-0 lg:pb-0 min-h-[100dvh]">
-        <div className="max-w-7xl mx-auto p-4 md:p-6">{children}</div>
-      </main>
+      <main className="flex-1 lg:ml-64 pt-16 pb-20 lg:pt-0 lg:pb-0 min-h-[100dvh]"><div className="max-w-7xl mx-auto p-4 md:p-6">{children}</div></main>
 
-      {/* 📱 Mobile Bottom Navigation */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-100 flex items-center justify-around z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
         {navItems.map((item) => (
           <Link key={item.label} href={item.href} className={`flex flex-col items-center gap-0.5 relative ${pathname === item.href ? 'text-frog-500' : 'text-gray-400'}`}>
@@ -254,9 +256,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           </Link>
         ))}
         <Link href={profileLink} className={`flex flex-col items-center gap-0.5 ${pathname.startsWith('/profile') ? 'text-frog-500' : 'text-gray-400'}`}>
-          <div className="p-1">
-            <img src={currentUser?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className={`w-6 h-6 rounded-full object-cover border-2 ${pathname.startsWith('/profile') ? 'border-frog-500' : 'border-transparent'}`} alt=""/>
-          </div>
+          <div className="p-1"><img src={currentUser?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className={`w-6 h-6 rounded-full object-cover border-2 ${pathname.startsWith('/profile') ? 'border-frog-500' : 'border-transparent'}`} alt=""/></div>
           <span className="text-[9px] font-black uppercase tracking-tighter">โปรไฟล์</span>
         </Link>
       </nav>
