@@ -11,7 +11,7 @@ import {
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, 
   MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye, Info,
-  BadgeCheck, Link as LinkIcon 
+  BadgeCheck, Link as LinkIcon, Fingerprint // ✅ เพิ่ม Fingerprint ตรงนี้
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -475,6 +475,27 @@ export default function ProfilePage() {
                       >
                         {profileUser.website_url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
                       </a>
+                    </div>
+                  )}
+
+                  {/* ✅ ส่วนแสดง MBTI, ราศี, Enneagram (Identity Tags) */}
+                  {(profileUser.zodiac || profileUser.mbti || profileUser.enneagram) && (
+                    <div className="flex flex-wrap gap-2 pt-2 px-1">
+                      {profileUser.mbti && (
+                        <span className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-purple-50 text-purple-600 border border-purple-100 flex items-center gap-1.5 shadow-sm">
+                          <Fingerprint size={12} /> {profileUser.mbti}
+                        </span>
+                      )}
+                      {profileUser.zodiac && (
+                        <span className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center gap-1.5 shadow-sm">
+                          ราศี{profileUser.zodiac}
+                        </span>
+                      )}
+                      {profileUser.enneagram && (
+                        <span className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-pink-50 text-pink-600 border border-pink-100 flex items-center gap-1.5 shadow-sm">
+                          {profileUser.enneagram}
+                        </span>
+                      )}
                     </div>
                   )}
 
