@@ -79,12 +79,24 @@ export default function EditProfilePage() {
     if (!currentUser) return;
     setIsSaving(true);
     try {
-      const { error } = await supabase.from('users').update({
+      // ✅ แปลงค่าว่าง ('') เป็น null เพื่อป้องกัน Database Error
+      const payload = {
         ...formData,
+        birthday: formData.birthday === '' ? null : formData.birthday,
+        zodiac: formData.zodiac === '' ? null : formData.zodiac,
+        mbti: formData.mbti === '' ? null : formData.mbti,
+        enneagram: formData.enneagram === '' ? null : formData.enneagram,
+        relationship_status: formData.relationship_status === '' ? null : formData.relationship_status,
         life_events: lifeEvents 
-      }).eq('id', currentUser.id);
+      };
 
-      if (error) throw error;
+      const { error } = await supabase.from('users').update(payload).eq('id', currentUser.id);
+
+      if (error) {
+        console.error("Supabase Save Error:", error);
+        throw error;
+      }
+      
       setShowSaveSuccess(true);
       setTimeout(() => router.push(`/profile/${currentUser.username}`), 1500);
     } catch (error) { 
@@ -162,7 +174,7 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* ✅ เพิ่มกลับมา: วันเกิดและสีประจำตัว */}
+          {/* วันเกิดและสีประจำตัว */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-pink-500">
               <span className="w-12 h-12 rounded-2xl bg-pink-50 flex items-center justify-center"><Calendar size={24} /></span>
@@ -183,7 +195,7 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* ✅ เพิ่มกลับมา: การทำงานและที่พักอาศัย */}
+          {/* การทำงานและที่พักอาศัย */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-orange-500">
               <span className="w-12 h-12 rounded-2xl bg-orange-50 flex items-center justify-center"><Briefcase size={24} /></span>
@@ -236,7 +248,7 @@ export default function EditProfilePage() {
             </div>
           </div>
 
-          {/* ✅ เพิ่มกลับมา: เพลงและงานอดิเรก */}
+          {/* เพลงและงานอดิเรก */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-emerald-500">
               <span className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center"><Music size={24} /></span>
