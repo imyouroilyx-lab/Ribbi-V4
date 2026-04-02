@@ -1,20 +1,18 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react'; // ✅ เพิ่ม useCallback
 import { supabase } from '../lib/supabase'; 
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Home, Users, User, Settings, LogOut, Menu, X, MessageCircle, Bell, ArrowLeft, Loader2 } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
-// ✅ แยก Key สำหรับ Cache
 const CACHE_KEY = 'ribbi_user_cache';
 
 export default function NavLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   
-  // ✅ โหลด Cache มาแสดงผลทันที (ไม่ระเบิดตาผู้ใช้ด้วยหน้าขาวๆ)
   const [currentUser, setCurrentUser] = useState<any>(() => {
     if (typeof window !== 'undefined') {
       const cached = localStorage.getItem(CACHE_KEY);
@@ -34,19 +32,38 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
 
+  // ✅ 1. ฟังก์ชันเล่นเสียง (ใช้ useCallback เพื่อให้ Reference คงที่)
+  const playNotificationSound = useCallback(() => {
+    const now = Date.now();
+    if (now - lastPlayedRef.current < 1500) return; 
+    
+    // ถ้ายังไม่มี Audio Object ให้สร้างใหม่ (กันพลาด)
+    if (!audioRef.current) {
+      audioRef.current = new Audio('/ribbi.wav');
+    }
+
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0; 
+      audioRef.current.volume = 0.4;
+      audioRef.current.play().catch((err) => {
+        console.warn("Audio play blocked by browser. User interaction needed.", err);
+      });
+      lastPlayedRef.current = now;
+    }
+  }, []);
+
   useEffect(() => {
     setIsMounted(true);
-    audioRef.current = new Audio('/ribbi.wav');
-    audioRef.current.load();
+    // โหลดเสียงเตรียมไว้
+    const audio = new Audio('/ribbi.wav');
+    audio.load();
+    audioRef.current = audio;
     
-    // ✅ ยิงแบบ Async Background (ไม่รอ)
     fetchLatestData();
   }, []); 
 
   useEffect(() => {
     setShowMobileMenu(false); 
-    
-    // ดึงเฉพาะตัวเลขแจ้งเตือน (รวดเร็วมาก)
     if (currentUser?.id) {
       supabase.rpc('get_user_app_data', { user_uuid: currentUser.id }).then(({ data }) => {
         if (data) {
@@ -56,48 +73,50 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         }
       });
     }
-  }, [pathname]);
+  }, [pathname, currentUser?.id]);
 
-  const playNotificationSound = () => {
-    const now = Date.now();
-    if (now - lastPlayedRef.current < 1500) return; 
-    if (audioRef.current) {
-      audioRef.current.currentTime = 0; 
-      audioRef.current.volume = 0.4;
-      audioRef.current.play().catch(() => {});
-      lastPlayedRef.current = now;
-    }
-  };
-
+  // ✅ 2. อัปเดต Realtime ให้เรียกใช้ playNotificationSound ที่เป็น useCallback
   useEffect(() => {
     if (!currentUser?.id) return;
 
     const channel = supabase.channel('realtime_nav_alerts')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `receiver_id=eq.${currentUser.id}` }, 
-        () => { setUnreadNotif(p => p + 1); playNotificationSound(); }
-      )
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'friendships', filter: `receiver_id=eq.${currentUser.id}` }, 
-        (payload: any) => { if (payload.new.status === 'pending') { setFriendReq(p => p + 1); playNotificationSound(); } }
-      )
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications', 
+        filter: `receiver_id=eq.${currentUser.id}` 
+      }, () => { 
+        setUnreadNotif(p => p + 1); 
+        playNotificationSound(); 
+      })
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'friendships', 
+        filter: `receiver_id=eq.${currentUser.id}` 
+      }, (payload: any) => { 
+        if (payload.new.status === 'pending') { 
+          setFriendReq(p => p + 1); 
+          playNotificationSound(); 
+        } 
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, playNotificationSound]); // ✅ เพิ่ม playNotificationSound เข้าไปตรงนี้
 
   const fetchLatestData = async () => {
     try {
-      // 1. เช็ก Session ด่วนจาก Storage ที่ Supabase มีให้อยู่แล้ว
       const { data: authData } = await supabase.auth.getSession();
       
       if (!authData?.session) {
         if (pathname !== '/login' && pathname !== '/register') {
-          localStorage.removeItem(CACHE_KEY); // ล้าง Cache ถ้าหลุดจากระบบ
+          localStorage.removeItem(CACHE_KEY);
           router.push('/login');
         }
         return;
       }
 
-      // 2. ดึงข้อมูลจริงมาอัปเดตทับ Cache
       const { data, error } = await supabase.rpc('get_user_app_data', { user_uuid: authData.session.user.id });
       
       if (!error && data?.user_info) {
@@ -105,8 +124,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
         setUnreadNotif(data.unread_notifications || 0);
         setFriendReq(data.pending_friends || 0);
         setUnreadMsg(data.unread_messages || 0);
-
-        // ✅ อัปเดต Cache ให้สดใหม่เสมอ
         localStorage.setItem(CACHE_KEY, JSON.stringify(data.user_info));
       }
     } catch (err) { 
@@ -115,7 +132,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   };
 
   const handleLogout = async () => {
-    localStorage.removeItem(CACHE_KEY); // ✅ อย่าลืมเคลียร์ตอนออก
+    localStorage.removeItem(CACHE_KEY);
     await supabase.auth.signOut();
     router.push('/login');
   };
@@ -139,7 +156,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           <span className="text-2xl font-black text-frog-600 tracking-tighter">Ribbi</span>
         </Link>
 
-        {/* ✅ แสดง User Info ทันทีจาก Cache (ถ้ามี) */}
         <div className="mb-6 h-[72px]">
           {currentUser ? (
             <Link href={profileLink} className="p-3 rounded-2xl bg-gray-50 flex items-center gap-3 hover:bg-frog-50 transition-all border border-transparent hover:border-frog-100 group animate-in fade-in">
