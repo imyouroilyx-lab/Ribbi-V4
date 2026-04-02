@@ -11,7 +11,7 @@ import {
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, 
   MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye, Info,
-  BadgeCheck, Link as LinkIcon // ✅ เพิ่ม LinkIcon
+  BadgeCheck, Link as LinkIcon 
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -287,10 +287,6 @@ export default function ProfilePage() {
             <circle cx="10" cy="10" r="0.4" fill="white" fillOpacity="0.6" />
             <circle cx="12" cy="12" r="0.8" fill="#f8fafc" />
           </svg>
-          <svg viewBox="0 0 24 24" className="w-full h-full absolute inset-0 pointer-events-none opacity-50" fill="none">
-            <path d="M12 2 A 10 10 0 0 1 19.07 4.93 L 12 12 Z" fill="white" fillOpacity="0.2" />
-            <path d="M4.93 19.07 A 10 10 0 0 1 12 22 L 12 12 Z" fill="white" fillOpacity="0.05" />
-          </svg>
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-[11px] font-bold text-gray-500 mb-0.5 uppercase tracking-tighter">กำลังฟัง</p>
@@ -316,9 +312,11 @@ export default function ProfilePage() {
             <Link key={i} href={`/profile/${v.username}`} className="group flex flex-col items-center gap-1.5 flex-shrink-0 w-16 transition-all hover:scale-105">
               <div className="relative">
                 <img src={v.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-100" />
-                {v.is_verified && <BadgeCheck className="absolute -bottom-1 -right-1 w-5 h-5 text-blue-500 bg-white rounded-full" />}
               </div>
-              <p className="text-[10px] font-black text-center truncate w-full text-gray-500 uppercase group-hover:text-gray-900">{v.display_name.split(' ')[0]}</p>
+              <p className="text-[10px] font-black text-center truncate w-full text-gray-500 uppercase group-hover:text-gray-900 flex items-center justify-center gap-0.5">
+                {v.display_name.split(' ')[0]}
+                {v.is_verified && <BadgeCheck className="w-3 h-3 text-blue-500 flex-shrink-0" />}
+              </p>
             </Link>
           ))}
         </div>
@@ -342,9 +340,11 @@ export default function ProfilePage() {
               <Link key={f.id} href={`/profile/${f.username}`} className="group flex flex-col items-center gap-2 transition-all hover:scale-105">
                 <div className="relative">
                   <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-16 h-16 rounded-2xl object-cover shadow-sm border border-gray-100" />
-                  {f.is_verified && <BadgeCheck className="absolute -top-1 -right-1 w-4 h-4 text-blue-500 bg-white rounded-full" />}
                 </div>
-                <p className="text-xs font-bold text-center truncate w-full text-gray-700 group-hover:text-gray-900">{f.display_name.split(' ')[0]}</p>
+                <p className="text-xs font-bold text-center truncate w-full text-gray-700 group-hover:text-gray-900 flex items-center justify-center gap-0.5">
+                  {f.display_name.split(' ')[0]}
+                  {f.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
+                </p>
               </Link>
             ))}
           </div>
@@ -356,7 +356,6 @@ export default function ProfilePage() {
   const RelationshipWidget = () => {
     if (isWidgetsLoading) return <div className="card-minimal h-32 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
     const hasFamily = familyMembers.length > 0;
-    
     if (!profileUser.relationship_status && !hasFamily) return null;
 
     return (
@@ -381,10 +380,12 @@ export default function ProfilePage() {
                 <div key={fm.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl group transition-all hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100">
                   <div className="relative">
                     <img src={fm.member?.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-xl object-cover shadow-sm" />
-                    {fm.member?.is_verified && <BadgeCheck className="absolute -top-1 -right-1 w-3.5 h-3.5 text-blue-500 bg-white rounded-full" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <Link href={`/profile/${fm.member?.username}`} className="font-bold text-sm hover:underline block truncate text-gray-900">{fm.member?.display_name}</Link>
+                    <Link href={`/profile/${fm.member?.username}`} className="font-bold text-sm hover:underline flex items-center gap-1 truncate text-gray-900">
+                      {fm.member?.display_name}
+                      {fm.member?.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
+                    </Link>
                     <p className="text-[10px] text-gray-500 font-bold uppercase">{fm.relationship_label}</p>
                   </div>
                   {isOwnProfile && <button onClick={() => { setFamilyToDelete(fm.id); setShowFamilyDeleteConfirm(true); }} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2"><Trash2 size={16} /></button>}
@@ -462,7 +463,6 @@ export default function ProfilePage() {
                     </div>
                   )}
 
-                  {/* ✅ ระบบแสดงลิงก์แบบ Instagram (โชว์ใต้ Bio) */}
                   {profileUser.website_url && (
                     <div className="flex items-center gap-2 mt-2 px-1">
                       <LinkIcon size={16} className="text-gray-400" />
