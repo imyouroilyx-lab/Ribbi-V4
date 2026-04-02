@@ -4,7 +4,10 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../../lib/supabase';
 import { useParams, useRouter } from 'next/navigation';
 import NavLayout from '../../../../components/NavLayout';
-import { ChevronLeft, GraduationCap, Briefcase, Heart, Info, Loader2, Star, Calendar } from 'lucide-react';
+import { 
+  ChevronLeft, GraduationCap, Briefcase, Heart, Info, 
+  Loader2, Star, Calendar, BadgeCheck, Link as LinkIcon 
+} from 'lucide-react';
 
 export default function ProfileInfoPage() {
   const params = useParams();
@@ -23,7 +26,7 @@ export default function ProfileInfoPage() {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, username, display_name, profile_img_url, cover_img_url, bio, birthday, hobbies, theme_color, life_events')
+        .select('id, username, display_name, profile_img_url, cover_img_url, bio, birthday, hobbies, theme_color, life_events, is_verified, website_url')
         .eq('username', username)
         .single();
 
@@ -49,12 +52,28 @@ export default function ProfileInfoPage() {
 
   const themeColor = profileUser.theme_color || '#22c55e';
   
-  // จัดเรียง Timeline เอาปีล่าสุดขึ้นก่อน
+  // ✅ Logic การเรียงลำดับใหม่: แม่นยำ 100%
   const lifeEvents = Array.isArray(profileUser.life_events) 
     ? [...profileUser.life_events].sort((a, b) => {
-        const yearA = parseInt(a.end_year) || parseInt(a.start_year) || 0;
-        const yearB = parseInt(b.end_year) || parseInt(b.start_year) || 0;
-        return yearB - yearA;
+        // แปลงปีจบให้เป็นตัวเลข ถ้าเป็น "ปัจจุบัน" หรือว่าง ให้เป็น 9999 (สูงสุด)
+        const getYearValue = (yearStr: string) => {
+          if (!yearStr || yearStr.includes('ปัจจุบัน')) return 9999;
+          const parsed = parseInt(yearStr);
+          return isNaN(parsed) ? 0 : parsed;
+        };
+
+        const endA = getYearValue(a.end_year);
+        const endB = getYearValue(b.end_year);
+
+        // 1. เรียงตามปีที่จบก่อน (ใครจบช้ากว่า/ยังทำอยู่ ขึ้นก่อน)
+        if (endB !== endA) {
+          return endB - endA;
+        }
+
+        // 2. ถ้าปีจบเท่ากัน ให้ดูปีที่เริ่ม (ใครเริ่มทีหลัง ขึ้นก่อน)
+        const startA = parseInt(a.start_year) || 0;
+        const startB = parseInt(b.start_year) || 0;
+        return startB - startA;
       })
     : [];
 
@@ -76,9 +95,14 @@ export default function ProfileInfoPage() {
             <ChevronLeft size={24} className="text-gray-600" />
           </button>
           <div className="flex items-center gap-4">
-            <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover border-2 shadow-sm" style={{ borderColor: themeColor }} alt="" />
+            <div className="relative">
+              <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-14 h-14 rounded-full object-cover border-2 shadow-sm" style={{ borderColor: themeColor }} alt="" />
+            </div>
             <div>
-              <h1 className="text-2xl font-black text-gray-900 leading-tight">เกี่ยวกับฉัน</h1>
+              <h1 className="text-2xl font-black text-gray-900 leading-tight flex items-center gap-2">
+                เกี่ยวกับฉัน
+                {profileUser.is_verified && <BadgeCheck className="w-6 h-6 text-blue-500" />}
+              </h1>
               <p className="text-sm text-gray-500 font-bold tracking-wide">@{profileUser.username}</p>
             </div>
           </div>
@@ -86,18 +110,33 @@ export default function ProfileInfoPage() {
 
         <div className="bg-white rounded-[3rem] p-8 md:p-12 shadow-soft border border-gray-100 space-y-12">
           
-          {profileUser.bio && (
-            <section className="space-y-4">
-              <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-400">
-                <Info size={18} style={{ color: themeColor }} /> แนะนำตัว
-              </h2>
-              <div className="p-5 bg-gray-50 rounded-[2rem] border border-gray-100">
-                <p className="text-gray-800 whitespace-pre-wrap font-medium leading-relaxed">{profileUser.bio}</p>
-              </div>
-            </section>
-          )}
+          {/* แนะนำตัว + ลิงก์เว็บไซต์ */}
+          <section className="space-y-4">
+            <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-400">
+              <Info size={18} style={{ color: themeColor }} /> แนะนำตัว
+            </h2>
+            <div className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100">
+              <p className="text-gray-800 whitespace-pre-wrap font-medium leading-relaxed mb-4">{profileUser.bio || 'ยังไม่ได้เพิ่มข้อมูลแนะนำตัว'}</p>
+              
+              {/* ✅ แสดงลิงก์เว็บไซต์แบบ IG */}
+              {profileUser.website_url && (
+                <div className="flex items-center gap-2 pt-4 border-t border-gray-200/50">
+                  <LinkIcon size={16} className="text-gray-400" />
+                  <a 
+                    href={profileUser.website_url.startsWith('http') ? profileUser.website_url : `https://${profileUser.website_url}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-sm font-black hover:underline transition-all"
+                    style={{ color: themeColor }}
+                  >
+                    {profileUser.website_url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                  </a>
+                </div>
+              )}
+            </div>
+          </section>
 
-          {/* ✅ Section: เหตุการณ์ในชีวิต (Timeline แบบ Facebook) */}
+          {/* Timeline เหตุการณ์ในชีวิต */}
           <section className="space-y-6">
             <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-400 mb-6">
               <Calendar size={18} style={{ color: themeColor }} /> เหตุการณ์ในชีวิต
@@ -107,7 +146,6 @@ export default function ProfileInfoPage() {
               <div className="relative pl-4 md:pl-8 border-l-2 border-gray-100 space-y-10">
                 {lifeEvents.map((event: any, idx: number) => (
                   <div key={idx} className="relative">
-                    {/* จุดกลมๆ บน Timeline */}
                     <div 
                       className="absolute -left-[25px] md:-left-[41px] top-1 w-8 h-8 rounded-full flex items-center justify-center shadow-md border-2 border-white z-10" 
                       style={{ backgroundColor: themeColor }}
@@ -117,7 +155,7 @@ export default function ProfileInfoPage() {
                     
                     <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100 hover:shadow-md transition-shadow hover:bg-white ml-2">
                       <span className="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg mb-2 inline-block" style={{ backgroundColor: `${themeColor}20`, color: themeColor }}>
-                        {event.start_year} {event.end_year ? `- ${event.end_year}` : 'ถึง ปัจจุบัน'}
+                        {event.start_year} — {(!event.end_year || event.end_year.includes('ปัจจุบัน')) ? 'ปัจจุบัน' : event.end_year}
                       </span>
                       <h3 className="text-lg font-black text-gray-900 mt-1 leading-tight">{event.title}</h3>
                       {event.subtitle && <p className="text-sm font-bold text-gray-500 mt-1">{event.subtitle}</p>}
@@ -132,6 +170,7 @@ export default function ProfileInfoPage() {
             )}
           </section>
 
+          {/* ความสนใจ */}
           {profileUser.hobbies && Array.isArray(profileUser.hobbies) && profileUser.hobbies.length > 0 && (
             <section className="space-y-4">
               <h2 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-400">
