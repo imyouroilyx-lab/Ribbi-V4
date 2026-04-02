@@ -162,6 +162,49 @@ export default function EditProfilePage() {
             </div>
           </div>
 
+          {/* ✅ เพิ่มกลับมา: วันเกิดและสีประจำตัว */}
+          <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
+            <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-pink-500">
+              <span className="w-12 h-12 rounded-2xl bg-pink-50 flex items-center justify-center"><Calendar size={24} /></span>
+              วันเกิดและสีประจำตัว
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">วัน/เดือน/ปีเกิด</label>
+                <input type="date" value={formData.birthday} onChange={(e) => setFormData({ ...formData, birthday: e.target.value })} className="input-minimal w-full" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">สีธีมโปรไฟล์ (Theme Color)</label>
+                <div className="flex items-center gap-3">
+                  <input type="color" value={formData.theme_color} onChange={(e) => setFormData({ ...formData, theme_color: e.target.value })} className="w-12 h-12 rounded-xl cursor-pointer border-0 p-0" />
+                  <input type="text" value={formData.theme_color} onChange={(e) => setFormData({ ...formData, theme_color: e.target.value })} className="input-minimal flex-1" placeholder="#9de5a8" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ✅ เพิ่มกลับมา: การทำงานและที่พักอาศัย */}
+          <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
+            <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-orange-500">
+              <span className="w-12 h-12 rounded-2xl bg-orange-50 flex items-center justify-center"><Briefcase size={24} /></span>
+              การทำงานและที่พักอาศัย
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">อาชีพ / ตำแหน่ง</label>
+                <input type="text" value={formData.occupation} onChange={(e) => setFormData({ ...formData, occupation: e.target.value })} className="input-minimal w-full" placeholder="เช่น นักเรียน, ฟรีแลนซ์..." />
+              </div>
+              <div>
+                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">สถานที่ทำงาน / ศึกษา</label>
+                <input type="text" value={formData.workplace} onChange={(e) => setFormData({ ...formData, workplace: e.target.value })} className="input-minimal w-full" placeholder="เช่น มหาวิทยาลัย..., บริษัท..." />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2"><MapPin size={14} /> ที่อยู่ / จังหวัด</label>
+                <input type="text" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="input-minimal w-full" placeholder="เช่น กรุงเทพมหานคร..." />
+              </div>
+            </div>
+          </div>
+
           {/* ตัวตนและลักษณะนิสัย */}
           <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
             <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-purple-500">
@@ -190,6 +233,41 @@ export default function EditProfilePage() {
                   {ENNEAGRAM_OPTIONS.map(e => <option key={e} value={e}>{e}</option>)}
                 </select>
               </div>
+            </div>
+          </div>
+
+          {/* ✅ เพิ่มกลับมา: เพลงและงานอดิเรก */}
+          <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
+            <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-emerald-500">
+              <span className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center"><Music size={24} /></span>
+              เพลงและงานอดิเรก
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+              <div>
+                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">ชื่อเพลงที่ชอบ</label>
+                <input type="text" value={formData.music_name} onChange={(e) => setFormData({ ...formData, music_name: e.target.value })} className="input-minimal w-full" placeholder="เช่น Shape of You..." />
+              </div>
+              <div>
+                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2"><LinkIcon size={14} /> ลิงก์เพลง (Youtube/Spotify)</label>
+                <input type="url" value={formData.music_url} onChange={(e) => setFormData({ ...formData, music_url: e.target.value })} className="input-minimal w-full" placeholder="https://..." />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2"><Hash size={14} /> สิ่งที่สนใจ / งานอดิเรก</label>
+              <div className="flex gap-2 mb-4">
+                <input type="text" value={newHobbyInput} onChange={(e) => setNewHobbyInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddHobby())} className="input-minimal flex-1" placeholder="พิมพ์แล้วกด Enter หรือกดปุ่มบวก" />
+                <button type="button" onClick={handleAddHobby} className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center hover:bg-emerald-100 transition-colors shadow-sm"><Plus size={20} /></button>
+              </div>
+              {formData.hobbies.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {formData.hobbies.map((hobby, index) => (
+                    <span key={index} className="px-4 py-2 bg-gray-50 text-gray-700 text-sm font-bold rounded-xl flex items-center gap-2 border border-gray-200 shadow-sm">
+                      {hobby.name}
+                      <button type="button" onClick={() => setFormData({ ...formData, hobbies: formData.hobbies.filter((_, i) => i !== index) })} className="hover:text-red-500 transition-colors bg-white rounded-full p-0.5 shadow-sm"><X size={14} /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -274,6 +352,7 @@ export default function EditProfilePage() {
             </div>
           </div>
 
+          {/* ปุ่มบันทึก */}
           <div className="sticky bottom-6 z-50">
             <div className="bg-white/80 backdrop-blur-xl p-4 rounded-[2.5rem] shadow-2xl border border-white/50 flex gap-4 max-w-lg mx-auto">
               <button type="submit" disabled={isSaving} className="btn-primary flex-1 py-5 rounded-3xl font-black text-white shadow-xl transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2" style={{ backgroundColor: formData.theme_color }}>
@@ -286,7 +365,7 @@ export default function EditProfilePage() {
       </div>
 
       <AlertModal isOpen={showSaveSuccess} onClose={() => setShowSaveSuccess(false)} title="สำเร็จ!" message="ข้อมูลโปรไฟล์ถูกอัปเดตเรียบร้อยแล้ว" variant="success" />
-      <AlertModal isOpen={showSaveError} onClose={() => setShowSaveError(false)} title="ล้มเหลว" message="ไม่สามารถบันทึกข้อมูลได้" variant="error" />
+      <AlertModal isOpen={showSaveError} onClose={() => setShowSaveError(false)} title="ล้มเหลว" message="ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง" variant="error" />
     </NavLayout>
   );
 }
