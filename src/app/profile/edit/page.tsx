@@ -7,7 +7,7 @@ import NavLayout from '@/components/NavLayout';
 import AlertModal from '@/components/AlertModal';
 import { 
   User as UserIcon, Briefcase, Heart, Music, ChevronLeft, Calendar, Home as HomeIcon,
-  Plus, X, Hash, MapPin, Trash2, Save, Link as LinkIcon, Star
+  Plus, X, Hash, MapPin, Trash2, Save, Link as LinkIcon, Star, Image as ImageIcon
 } from 'lucide-react';
 
 const RELATIONSHIP_OPTIONS = [
@@ -32,7 +32,8 @@ export default function EditProfilePage() {
     music_url: '', music_name: '', theme_color: '#9de5a8',
     relationship_status: '', relationship_custom_name: '',
     website_url: '', zodiac: '', mbti: '', enneagram: '',
-    hobbies: [] as { name: string }[]
+    hobbies: [] as { name: string }[],
+    featured_images: ['', '', '', '', '', ''] // ✅ เพิ่ม State สำหรับ 6 รูปแนะนำ
   });
   
   const [lifeEvents, setLifeEvents] = useState<{id: string, type: string, title: string, subtitle: string, start_year: string, end_year: string}[]>([]);
@@ -50,6 +51,11 @@ export default function EditProfilePage() {
     const { data: userData } = await supabase.from('users').select('*').eq('id', session.user.id).single();
     if (userData) {
       setCurrentUser(userData);
+      
+      // จัดการเตรียมรูปภาพแนะนำ (ถ้าใน DB มีน้อยกว่า 6 ให้เติมช่องว่างให้ครบ)
+      let dbImages = Array.isArray(userData.featured_images) ? userData.featured_images : [];
+      const paddedImages = [...dbImages, '', '', '', '', '', ''].slice(0, 6);
+
       setFormData({
         display_name: userData.display_name || '',
         bio: userData.bio || '',
@@ -68,7 +74,8 @@ export default function EditProfilePage() {
         zodiac: userData.zodiac || '',
         mbti: userData.mbti || '',
         enneagram: userData.enneagram || '',
-        hobbies: Array.isArray(userData.hobbies) ? userData.hobbies : []
+        hobbies: Array.isArray(userData.hobbies) ? userData.hobbies : [],
+        featured_images: paddedImages
       });
       setLifeEvents(Array.isArray(userData.life_events) ? userData.life_events : []);
     }
@@ -79,7 +86,9 @@ export default function EditProfilePage() {
     if (!currentUser) return;
     setIsSaving(true);
     try {
-      // ✅ แปลงค่าว่าง ('') เป็น null เพื่อป้องกัน Database Error
+      // ✅ กรองเอารูปภาพที่กรอก URL จริงๆ เท่านั้น (ตัดช่องว่างออก)
+      const cleanedImages = formData.featured_images.filter(url => url.trim() !== '');
+
       const payload = {
         ...formData,
         birthday: formData.birthday === '' ? null : formData.birthday,
@@ -87,6 +96,7 @@ export default function EditProfilePage() {
         mbti: formData.mbti === '' ? null : formData.mbti,
         enneagram: formData.enneagram === '' ? null : formData.enneagram,
         relationship_status: formData.relationship_status === '' ? null : formData.relationship_status,
+        featured_images: cleanedImages, // ✅ บันทึกรูปแนะนำ
         life_events: lifeEvents 
       };
 
@@ -112,6 +122,12 @@ export default function EditProfilePage() {
     }
     setFormData({ ...formData, hobbies: [...formData.hobbies, { name: newHobbyInput.trim() }] });
     setNewHobbyInput('');
+  };
+
+  const updateFeaturedImage = (index: number, url: string) => {
+    const newImages = [...formData.featured_images];
+    newImages[index] = url;
+    setFormData({ ...formData, featured_images: newImages });
   };
 
   const addLifeEvent = () => {
@@ -280,6 +296,39 @@ export default function EditProfilePage() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* ✅ เพิ่มใหม่: จัดการรูปภาพแนะนำ (5:8) */}
+          <div className="card-minimal bg-white p-8 md:p-12 rounded-[3rem] border border-gray-100 shadow-soft">
+            <h2 className="text-2xl font-black mb-10 flex items-center gap-4 text-indigo-500">
+              <span className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center"><ImageIcon size={24} /></span>
+              รูปภาพแนะนำ (Featured Images)
+            </h2>
+            <p className="text-sm text-gray-400 font-bold mb-8 -mt-6">ใส่ URL รูปภาพที่ต้องการแสดงในโปรไฟล์ (สัดส่วน 5:8 จะสวยที่สุด)</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {formData.featured_images.map((url, index) => (
+                <div key={index} className="space-y-4">
+                  <label className="block text-[11px] font-black text-gray-400 uppercase tracking-widest">ลำดับที่ {index + 1}</label>
+                  <div className="flex gap-4 items-start">
+                    <div className="w-20 h-32 rounded-2xl bg-gray-50 border border-gray-100 overflow-hidden flex-shrink-0 flex items-center justify-center shadow-inner">
+                      {url ? (
+                        <img src={url} className="w-full h-full object-cover" alt="Preview" />
+                      ) : (
+                        <ImageIcon size={20} className="text-gray-200" />
+                      )}
+                    </div>
+                    <input 
+                      type="url" 
+                      value={url} 
+                      onChange={(e) => updateFeaturedImage(index, e.target.value)} 
+                      className="input-minimal flex-1 text-sm py-3" 
+                      placeholder="https://วางลิงก์รูปภาพ..." 
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
