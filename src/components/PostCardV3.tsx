@@ -421,14 +421,16 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
 
       {isEditingPost ? (
         <div className="mb-4 space-y-3">
-          <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full text-sm p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-frog-500 min-h-[120px]" autoFocus />
+          {/* ✅ ปรับ Textarea ให้เป็น text-base (ใหญ่ขึ้น) */}
+          <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full text-base p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-frog-500 min-h-[120px]" autoFocus />
           <div className="flex gap-2 justify-end">
             <button onClick={() => setIsEditingPost(false)} className="px-5 py-2 text-xs font-black text-gray-500 bg-gray-100 rounded-xl">ยกเลิก</button>
             <button onClick={handleUpdatePost} disabled={isSubmitting || !editContent.trim()} className="px-5 py-2 text-xs font-black text-white bg-frog-500 rounded-xl disabled:opacity-50 shadow-sm">บันทึก</button>
           </div>
         </div>
       ) : (
-        <div className="text-sm text-gray-900 mb-4 whitespace-pre-wrap break-words leading-relaxed">{renderTextWithTags(post.content || '')}</div>
+        /* ✅ ปรับขนาดข้อความโพสต์จาก text-sm เป็น text-base (16px) หรือ text-lg (18px) ได้ตรงนี้ครับ */
+        <div className="text-base text-gray-900 mb-4 whitespace-pre-wrap break-words leading-relaxed">{renderTextWithTags(post.content || '')}</div>
       )}
 
       {/* ✅ ดึงระบบ YouTube Embed กลับมาให้แล้วครับ */}
