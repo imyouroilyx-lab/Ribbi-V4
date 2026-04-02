@@ -172,7 +172,7 @@ export default function ProfileFriendsPage() {
               เพื่อนของ {profileUser.display_name}
             </h1>
             <p className="text-gray-400 mt-1 text-[10px] font-black uppercase tracking-widest">
-              สมาชิกทั้งหมด {totalFriends} คน
+              ทั้งหมด {totalFriends} คน
             </p>
           </div>
           
