@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { 
   Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, 
   RefreshCcw, Palette, UserPen, Eraser, MessageSquare, 
-  Users, UserMinus, UserPlus, Check, Image as ImageIcon 
+  Users, UserMinus, UserPlus, Check, Image as ImageIcon, Search 
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -33,6 +33,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
 
   // States สำหรับเพิ่มคนเข้ากลุ่ม
   const [showAddMember, setShowAddMember] = useState(false);
+  const [searchTerm, setSearchTerm] = useState(''); // ✅ State สำหรับค้นหาชื่อเพื่อน
   const [availableFriends, setAvailableFriends] = useState<any[]>([]);
   const [selectedNewMembers, setSelectedNewMembers] = useState<string[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -52,6 +53,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       setGroupName(initialChatData.name || ''); // ✅ เซ็ตค่าเริ่มต้นของชื่อกลุ่ม
       lastId.current = chatId;
       setShowAddMember(false);
+      setSearchTerm(''); // รีเซ็ตคำค้นหา
       setShowImageInput(false);
       setImageUrl('');
     }
@@ -66,6 +68,8 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   useEffect(() => {
     if (showAddMember) {
       loadAvailableFriends();
+    } else {
+      setSearchTerm(''); // รีเซ็ตคำค้นหาเมื่อปิดหน้าต่างเพิ่มสมาชิก
     }
   }, [showAddMember]);
 
@@ -225,6 +229,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
 
       setShowAddMember(false);
       setSelectedNewMembers([]);
+      setSearchTerm('');
       loadParticipants();
       loadMessages();
       onRefreshChats();
@@ -235,6 +240,12 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       setIsAdding(false);
     }
   };
+
+  // ✅ ฟังก์ชันกรองรายชื่อเพื่อนสำหรับค้นหา
+  const filteredFriends = availableFriends.filter(f => 
+    f.display_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    f.username?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const otherUser = initialChatData.other_user;
 
@@ -308,8 +319,8 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                   
                   {isMe && (
                     <div className="absolute -left-16 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 bg-white border rounded-lg p-1 shadow-lg">
-                       <button onClick={() => { setEditingId(m.id); setInput(m.content); }} className="p-1 text-blue-500 hover:bg-blue-50 rounded" title="แก้ไข"><Edit2 size={12}/></button>
-                       <button onClick={() => { if(confirm('ลบข้อความนี้?')) supabase.from('messages').delete().eq('id', m.id).then(() => loadMessages()); }} className="p-1 text-red-500 hover:bg-red-50 rounded" title="ลบทิ้ง"><Trash2 size={12}/></button>
+                        <button onClick={() => { setEditingId(m.id); setInput(m.content); }} className="p-1 text-blue-500 hover:bg-blue-50 rounded" title="แก้ไข"><Edit2 size={12}/></button>
+                        <button onClick={() => { if(confirm('ลบข้อความนี้?')) supabase.from('messages').delete().eq('id', m.id).then(() => loadMessages()); }} className="p-1 text-red-500 hover:bg-red-50 rounded" title="ลบทิ้ง"><Trash2 size={12}/></button>
                     </div>
                   )}
                 </div>
@@ -348,16 +359,36 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                     </div>
 
                     {showAddMember && (
-                      <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100 animate-in fade-in slide-in-from-top-2 space-y-2">
-                        <div className="flex justify-between items-center mb-2">
+                      <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100 animate-in fade-in slide-in-from-top-2 space-y-3">
+                        <div className="flex justify-between items-center">
                           <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">เลือกเพื่อนของคุณ</span>
                           <button onClick={() => setShowAddMember(false)} className="text-[10px] text-gray-400 hover:text-gray-600 font-bold">ปิด</button>
                         </div>
-                        <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
+
+                        {/* ✅ เพิ่มช่องค้นหาชื่อเพื่อน */}
+                        <div className="relative">
+                          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input 
+                            type="text" 
+                            value={searchTerm} 
+                            onChange={e => setSearchTerm(e.target.value)}
+                            placeholder="ค้นหาชื่อเพื่อน..." 
+                            className="w-full pl-9 pr-3 py-2 bg-white border border-gray-100 rounded-xl text-xs outline-none focus:ring-1 focus:ring-frog-300 transition-all shadow-sm"
+                          />
+                          {searchTerm && (
+                            <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar pr-1">
                           {availableFriends.length === 0 ? (
                             <p className="text-xs text-gray-400 text-center py-4 italic">เพื่อนทุกคนอยู่ในกลุ่มนี้แล้ว</p>
+                          ) : filteredFriends.length === 0 ? (
+                            <p className="text-xs text-gray-400 text-center py-4 italic">ไม่พบชื่อ "{searchTerm}"</p>
                           ) : (
-                            availableFriends.map(f => (
+                            filteredFriends.map(f => (
                               <button 
                                 key={f.id} 
                                 onClick={() => setSelectedNewMembers(prev => prev.includes(f.id) ? prev.filter(id => id !== f.id) : [...prev, f.id])}
@@ -372,11 +403,11 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                             ))
                           )}
                         </div>
-                        {availableFriends.length > 0 && (
+                        {selectedNewMembers.length > 0 && (
                           <button 
                             onClick={submitAddMembers} 
-                            disabled={selectedNewMembers.length === 0 || isAdding}
-                            className="w-full py-2.5 mt-2 bg-frog-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-frog-600 disabled:opacity-50 transition-all shadow-sm"
+                            disabled={isAdding}
+                            className="w-full py-2.5 mt-1 bg-frog-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-frog-600 disabled:opacity-50 transition-all shadow-md active:scale-95"
                           >
                             {isAdding ? 'กำลังดึงเข้ากลุ่ม...' : `ดึงเข้ากลุ่ม (${selectedNewMembers.length} คน)`}
                           </button>
