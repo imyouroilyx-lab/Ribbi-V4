@@ -17,7 +17,7 @@ export default function AlertModal({
   onClose,
   title,
   message,
-  buttonText = 'ตลอด',
+  buttonText = 'เสร็จสิ้น',
   variant = 'success'
 }: AlertModalProps) {
   useEffect(() => {
