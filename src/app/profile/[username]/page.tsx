@@ -11,7 +11,7 @@ import {
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, 
   MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Eye, Info,
-  BadgeCheck // ✅ ติ๊กถูก Verified
+  BadgeCheck, Link as LinkIcon // ✅ เพิ่ม LinkIcon
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
@@ -357,7 +357,6 @@ export default function ProfilePage() {
     if (isWidgetsLoading) return <div className="card-minimal h-32 bg-gray-50 animate-pulse rounded-[2.5rem]"></div>;
     const hasFamily = familyMembers.length > 0;
     
-    // ✅ แสดง Widget เสมอถ้ามีสถานะหัวใจ หรือมีคนสำคัญในลิสต์
     if (!profileUser.relationship_status && !hasFamily) return null;
 
     return (
@@ -455,7 +454,30 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="mt-8 space-y-8">
-                  {profileUser.bio && <div className="border-l-4 pl-4 py-1" style={{ borderColor: themeColor }}><p className="text-gray-800 font-medium whitespace-pre-wrap break-words text-base leading-relaxed">{profileUser.bio}</p></div>}
+                  {profileUser.bio && (
+                    <div className="border-l-4 pl-4 py-1" style={{ borderColor: themeColor }}>
+                      <p className="text-gray-800 font-medium whitespace-pre-wrap break-words text-base leading-relaxed">
+                        {profileUser.bio}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* ✅ ระบบแสดงลิงก์แบบ Instagram (โชว์ใต้ Bio) */}
+                  {profileUser.website_url && (
+                    <div className="flex items-center gap-2 mt-2 px-1">
+                      <LinkIcon size={16} className="text-gray-400" />
+                      <a 
+                        href={profileUser.website_url.startsWith('http') ? profileUser.website_url : `https://${profileUser.website_url}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-sm font-black hover:underline transition-all"
+                        style={{ color: themeColor }}
+                      >
+                        {profileUser.website_url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                      </a>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm font-bold text-gray-700">
                     {profileUser.birthday && <div className="flex items-center gap-3"><Calendar className="w-5 h-5 text-frog-500" /> เกิดวันที่ {formatDate(profileUser.birthday)} (อายุ {calculateAge(profileUser.birthday)} ปี)</div>}
                     {profileUser.occupation && <div className="flex items-center gap-3"><Briefcase className="w-5 h-5 text-frog-500" /> {profileUser.occupation}</div>}
