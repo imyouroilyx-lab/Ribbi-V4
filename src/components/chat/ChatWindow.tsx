@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { 
   Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, 
   RefreshCcw, Palette, UserPen, Eraser, MessageSquare, 
-  Users, UserMinus, UserPlus, Check, Image as ImageIcon, Search, Camera
+  Users, UserMinus, UserPlus, Check, Image as ImageIcon, Search, Camera, LogOut
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -45,7 +45,6 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     loadMessages();
     markAsRead();
 
-    // สมัครรับข้อมูล Realtime เมื่อมีข้อความใหม่
     const channel = supabase
       .channel(`chat:${chatId}`)
       .on('postgres_changes', { 
@@ -54,7 +53,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         table: 'messages', 
         filter: `chat_id=eq.${chatId}` 
       }, () => {
-        loadMessages(); // โหลดใหม่เมื่อมีการเปลี่ยนแปลง
+        loadMessages();
       })
       .subscribe();
 
@@ -160,11 +159,10 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content, images });
       await supabase.from('chats').update({ last_message_content: content || '[ส่งรูปภาพ]', last_message_at: new Date().toISOString() }).eq('id', chatId);
     }
-    // loadMessages() จะทำงานอัตโนมัติผ่าน Realtime
     onRefreshChats();
   };
 
-  // ⚙️ 5. ระบบบันทึกการตั้งค่าทั้งหมด
+  // ⚙️ 5. ระบบบันทึกการตั้งค่า
   const saveAllSettings = async () => {
     setIsSaving(true);
     try {
@@ -179,7 +177,6 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} เปลี่ยนสีธีมแชท`, event: 'system' });
       }
       
-      // อัปเดตข้อมูลกลุ่ม (ชื่อและรูป)
       if (initialChatData.is_group) {
         const updates: any = {};
         if (groupName !== initialChatData.name) updates.name = groupName;
@@ -218,6 +215,18 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       if (error) throw error;
       await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} ได้เตะ ${targetName} ออกจากกลุ่ม`, event: 'system' });
       loadParticipants();
+    } catch (err: any) { alert(`ล้มเหลว: ${err.message}`); }
+  };
+
+  // ✅ ใหม่: ฟังก์ชันออกจากกลุ่มเอง
+  const handleLeaveGroup = async () => {
+    if (!confirm('คุณต้องการออกจากกลุ่มนี้ใช่หรือไม่?')) return;
+    try {
+      const { error } = await supabase.from('chat_participants').delete().eq('chat_id', chatId).eq('user_id', currentUser.id);
+      if (error) throw error;
+      await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content: `${currentUser.display_name} ได้ออกจากกลุ่ม`, event: 'system' });
+      onBack(); // กลับหน้าลิสต์แชททันที
+      onRefreshChats();
     } catch (err: any) { alert(`ล้มเหลว: ${err.message}`); }
   };
 
@@ -267,7 +276,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         </div>
       </div>
 
-      {/* Message Area */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fcfdfe]">
         {messages.length === 0 && !isLoading && (
           <div className="h-full flex flex-col items-center justify-center opacity-20 text-gray-900">
@@ -334,7 +343,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                     <button onClick={() => setShowAddMember(!showAddMember)} className="text-[10px] font-bold text-frog-600 flex items-center gap-1"><UserPlus size={12} /> เพิ่มคน</button>
                   </div>
                   {showAddMember && (
-                    <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
+                    <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100 space-y-3 animate-in fade-in">
                       <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="ค้นหาเพื่อน..." className="w-full pl-9 pr-3 py-2 bg-white border border-gray-100 rounded-xl text-xs outline-none" />
@@ -361,7 +370,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                           <span className="text-xs font-bold truncate">{p.user?.display_name}</span>
                         </div>
                         {myRole === 'admin' && p.user?.id !== currentUser.id && (
-                          <button onClick={() => handleKickMember(p.user?.id, p.user?.display_name)} className="p-1.5 text-gray-400 hover:text-red-500"><UserMinus size={14} /></button>
+                          <button onClick={() => handleKickMember(p.user?.id, p.user?.display_name)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"><UserMinus size={14} /></button>
                         )}
                       </div>
                     ))}
@@ -370,19 +379,29 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
               </>
             )}
             <div className="space-y-4">
-              <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><UserPen size={14}/> ชื่อเล่นในแชทนี้</h4>
+              <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><UserPen size={14}/> ชื่อเล่นของคุณในแชทนี้</h4>
               <input value={myNick} onChange={e => setMyNick(e.target.value)} placeholder="ชื่อเล่นของคุณ..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none" />
               {!initialChatData.is_group && <input value={theirNick} onChange={e => setTheirNick(e.target.value)} placeholder="ชื่อเล่นเพื่อน..." className="w-full p-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm outline-none" />}
             </div>
             <div className="space-y-4">
-              <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Palette size={14}/> สีธีม</h4>
+              <h4 className="text-[10px] font-black uppercase text-frog-600 flex items-center gap-2"><Palette size={14}/> สีธีมแชท</h4>
               <div className="grid grid-cols-5 gap-2">
                 {['#22c55e', '#3b82f6', '#ef4444', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#000000', '#64748b', '#f97316'].map(c => (
                   <button key={c} onClick={() => setTempColor(c)} className={`aspect-square rounded-full border-2 ${tempColor === c ? 'border-gray-900 scale-110 shadow-md' : 'border-white'}`} style={{ backgroundColor: c }} />
                 ))}
               </div>
             </div>
-            <button onClick={clearHistoryForMe} className="w-full p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2"><Eraser size={14}/> ล้างแชท (ฝั่งคุณ)</button>
+            
+            <div className="space-y-2 pt-4">
+               <button onClick={clearHistoryForMe} className="w-full p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-red-100 transition-colors"><Eraser size={14}/> ล้างแชท (ฝั่งคุณ)</button>
+               
+               {/* ✅ ใหม่: ปุ่มออกจากกลุ่ม */}
+               {initialChatData.is_group && (
+                 <button onClick={handleLeaveGroup} className="w-full p-4 bg-orange-50 text-orange-600 rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-orange-100 transition-colors">
+                   <LogOut size={14}/> ออกจากกลุ่ม
+                 </button>
+               )}
+            </div>
           </div>
           <div className="p-4 bg-white border-t">
             <button onClick={saveAllSettings} disabled={isSaving} className="w-full py-4 rounded-[1.25rem] text-[12px] font-black uppercase bg-frog-500 text-white shadow-xl active:scale-95 disabled:opacity-50">
@@ -397,19 +416,20 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         {showImageInput && (
           <div className="absolute bottom-full left-0 right-0 p-3 bg-gray-50 border-t border-gray-200 z-10">
             <div className="flex items-center gap-2">
-              <input type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="วาง URL รูปภาพ..." className="flex-1 p-2 bg-white border border-gray-200 rounded-xl text-xs outline-none" />
-              <button type="button" onClick={() => { setImageUrl(''); setShowImageInput(false); }} className="p-2 text-gray-400"><X size={16}/></button>
+              <input type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="วาง URL รูปภาพ..." className="flex-1 p-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-frog-300" />
+              <button type="button" onClick={() => { setImageUrl(''); setShowImageInput(false); }} className="p-2 text-gray-400 hover:text-gray-600 bg-white rounded-xl border border-gray-200"><X size={16}/></button>
             </div>
+            {imageUrl && <img src={imageUrl} className="mt-2 h-20 object-cover rounded-lg shadow-sm border" alt="Preview" />}
           </div>
         )}
         <form onSubmit={handleSend} className="p-3 border-t bg-white flex items-center gap-2 relative">
           {editingId && (
-            <div className="absolute -top-10 left-4 right-4 bg-blue-500 text-white p-2 rounded-t-xl text-[10px] font-bold flex justify-between">
+            <div className="absolute -top-10 left-4 right-4 bg-blue-500 text-white p-2 rounded-t-xl text-[10px] font-bold flex justify-between animate-in slide-in-from-bottom-2">
               <span>กำลังแก้ไขข้อความ...</span>
               <button type="button" onClick={() => { setEditingId(null); setInput(''); }}><X size={14}/></button>
             </div>
           )}
-          <button type="button" onClick={() => setShowImageInput(!showImageInput)} className={`p-2.5 rounded-2xl transition-colors ${showImageInput ? 'bg-frog-100 text-frog-600' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}><ImageIcon size={20} /></button>
+          <button type="button" onClick={() => setShowImageInput(!showImageInput)} className={`p-2.5 rounded-2xl transition-colors ${showImageInput ? 'bg-frog-100 text-frog-600' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`} title="แนบรูปภาพ"><ImageIcon size={20} /></button>
           <input value={input} onChange={e => setInput(e.target.value)} placeholder="พิมพ์ข้อความ..." className="flex-1 p-3.5 bg-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-frog-200 text-gray-900" />
           <button type="submit" disabled={!input.trim() && !imageUrl.trim()} className="p-3.5 text-white rounded-2xl shadow-lg disabled:opacity-50 transition-opacity" style={{ backgroundColor: initialChatData.theme_color || '#22c55e' }}><Send size={20} /></button>
         </form>
