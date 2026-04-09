@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { UserPlus, Mail, Lock, User, AtSign, AlertCircle, CheckCircle, Key } from 'lucide-react'; // ✅ เพิ่มไอคอน Key
 
 // 🤫 ตั้งค่าโค้ดลับของพี่ตรงนี้ (หรือจะเอาไปไว้ใน .env ก็ได้ครับ)
-const SITE_INVITE_CODE = 'CLOSED'; 
+const SITE_INVITE_CODE = 'ONLYROLEPLAYTH'; 
 
 export default function RegisterPage() {
   const router = useRouter();
