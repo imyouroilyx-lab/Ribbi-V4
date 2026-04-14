@@ -149,7 +149,7 @@ export default function UsersPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h1 className="text-xl font-black text-slate-900 flex items-center gap-2"><Users className="text-indigo-600" size={24} /> สมาชิก Ribbi</h1>
-                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">MEMBER DIRECTORY ({totalCount.toLocaleString()})</p>
+                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">จำนวนสมาชิกทั้งหมด ({totalCount.toLocaleString()})</p>
               </div>
               <div className="relative w-full md:w-72">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
