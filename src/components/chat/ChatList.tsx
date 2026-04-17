@@ -140,7 +140,7 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
     <div className="h-full flex flex-col bg-white relative border-r">
       <div className="p-4 border-b space-y-4">
         <div className="flex justify-between items-center px-1">
-          <h2 className="text-xl font-black italic tracking-tighter text-gray-900 uppercase">Messages</h2>
+          <h2 className="text-xl font-black tracking-tighter text-gray-900 uppercase">ข้อความ</h2>
           <div className="flex gap-1">
              <button onClick={() => openCreateModal('single')} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"><Plus size={20}/></button>
              <button onClick={() => openCreateModal('group')} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"><Users size={20}/></button>
