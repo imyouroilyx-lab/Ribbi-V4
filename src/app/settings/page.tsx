@@ -251,7 +251,7 @@ export default function SettingsPage() {
           <div className="mt-12 pt-10 text-center">
             <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-100 rounded-full shadow-sm mb-6">
               <Copyright size={14} className="text-indigo-600" />
-              <span className="text-xs font-black text-slate-800 tracking-tight">RoleplayTH 2022-2026</span>
+              <span className="text-xs font-black text-slate-800 tracking-tight">RoleplayTH 2022</span>
             </div>
             <p className="text-[10px] text-slate-400 font-bold leading-relaxed max-w-xs mx-auto opacity-60">
               สงวนลิขสิทธิ์เนื้อหาและซอฟต์แวร์ตามกฎหมาย <br/>
