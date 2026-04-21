@@ -60,7 +60,7 @@ html.inverted iframe,
 html.inverted canvas,
 html.inverted svg image,
 html.inverted [style*="background-image"] {
-  filter: invert(1) hue-rotate(180deg);
+  filter: invert(0.85) hue-rotate(180deg) brightness(1.05);
 }
 
 /* =============================================
