@@ -43,7 +43,7 @@ export const LIFE_EVENTS: LifeEventDef[] = [
     emoji: '💕',
     gradient: 'from-rose-50 via-pink-50 to-fuchsia-50',
     accentColor: '#f43f5e',
-    cardLabel: 'กำลังคบหากับ',
+    cardLabel: 'กำลังคบหากันอยู่',
   },
   {
     key: 'new_job',
@@ -58,7 +58,7 @@ export const LIFE_EVENTS: LifeEventDef[] = [
     emoji: '💼',
     gradient: 'from-sky-50 via-blue-50 to-indigo-50',
     accentColor: '#3b82f6',
-    cardLabel: 'เริ่มงานใหม่ที่',
+    cardLabel: 'เริ่มงานใหม่',
   },
   {
     key: 'graduation',
@@ -73,7 +73,7 @@ export const LIFE_EVENTS: LifeEventDef[] = [
     emoji: '🎓',
     gradient: 'from-yellow-50 via-amber-50 to-orange-50',
     accentColor: '#f59e0b',
-    cardLabel: 'จบการศึกษาจาก',
+    cardLabel: 'จบการศึกษา',
   },
   {
     key: 'new_baby',
@@ -118,7 +118,7 @@ export const LIFE_EVENTS: LifeEventDef[] = [
     emoji: '🎉',
     gradient: 'from-rose-50 via-red-50 to-orange-50',
     accentColor: '#f43f5e',
-    cardLabel: 'ฉลองครบรอบ',
+    cardLabel: 'ฉลองวันครบรอบ',
   },
   {
     key: 'travel',
@@ -148,7 +148,7 @@ export const LIFE_EVENTS: LifeEventDef[] = [
     emoji: '🤝',
     gradient: 'from-orange-50 via-amber-50 to-yellow-50',
     accentColor: '#f97316',
-    cardLabel: 'เป็นเพื่อนกับ',
+    cardLabel: 'เป็นเพื่อนกันแล้ว',
   },
 ];
 
