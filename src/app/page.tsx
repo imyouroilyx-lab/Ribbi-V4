@@ -87,7 +87,7 @@ export default function HomePage() {
         supabase
           .from('posts')
           .select(`
-            id, content, images, created_at, author_id, target_id, location, mood, activity,
+            id, content, images, created_at, author_id, target_id, location, mood, activity, life_event,
             author:author_id(id, username, display_name, profile_img_url, is_verified),
             target:target_id(id, username, display_name, profile_img_url, is_verified)
           `)
@@ -118,7 +118,7 @@ export default function HomePage() {
       const { data: newPosts, error } = await supabase
         .from('posts')
         .select(`
-          id, content, images, created_at, author_id, target_id, location, mood, activity,
+          id, content, images, created_at, author_id, target_id, location, mood, activity, life_event,
           author:author_id(id, username, display_name, profile_img_url, is_verified),
           target:target_id(id, username, display_name, profile_img_url, is_verified)
         `)
