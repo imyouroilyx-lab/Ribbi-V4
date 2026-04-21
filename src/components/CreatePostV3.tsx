@@ -2,11 +2,134 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { supabase, User } from '@/lib/supabase';
-import { Image, Smile, MapPin, X, Activity, AtSign, Send, Loader2 } from 'lucide-react';
+import { Image, Smile, MapPin, X, Activity, AtSign, Send, Loader2, Sparkles, Heart, Briefcase, GraduationCap, Baby, Home, Star, Plane, Users, ChevronDown } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
 const EmojiPicker = dynamic(() => import('emoji-picker-react'), { ssr: false });
+
+// ============================================================
+// ✅ Life Event Types
+// ============================================================
+export interface LifeEvent {
+  key: string;
+  label: string;
+  placeholder: string;
+  color: string;       // Tailwind text color class
+  bg: string;          // Tailwind bg class (light)
+  border: string;      // Tailwind border class
+  badgeBg: string;     // Tailwind bg for badge in PostCard
+  icon: React.ReactNode;
+  emoji: string;
+}
+
+export const LIFE_EVENTS: LifeEvent[] = [
+  {
+    key: 'relationship',
+    label: 'กำลังคบหากับ',
+    placeholder: 'ชื่อของพวกเขา...',
+    color: 'text-pink-600',
+    bg: 'bg-pink-50',
+    border: 'border-pink-200',
+    badgeBg: 'bg-pink-100 text-pink-700 border-pink-200',
+    icon: <Heart size={18} className="text-pink-500" />,
+    emoji: '💕',
+  },
+  {
+    key: 'new_job',
+    label: 'เริ่มงานใหม่ที่',
+    placeholder: 'ชื่อที่ทำงาน / ตำแหน่ง...',
+    color: 'text-blue-600',
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+    badgeBg: 'bg-blue-100 text-blue-700 border-blue-200',
+    icon: <Briefcase size={18} className="text-blue-500" />,
+    emoji: '💼',
+  },
+  {
+    key: 'graduation',
+    label: 'จบการศึกษาจาก',
+    placeholder: 'ชื่อสถาบัน / คณะ...',
+    color: 'text-yellow-600',
+    bg: 'bg-yellow-50',
+    border: 'border-yellow-200',
+    badgeBg: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    icon: <GraduationCap size={18} className="text-yellow-600" />,
+    emoji: '🎓',
+  },
+  {
+    key: 'new_baby',
+    label: 'ต้อนรับสมาชิกใหม่',
+    placeholder: 'ชื่อเด็กน้อย...',
+    color: 'text-purple-600',
+    bg: 'bg-purple-50',
+    border: 'border-purple-200',
+    badgeBg: 'bg-purple-100 text-purple-700 border-purple-200',
+    icon: <Baby size={18} className="text-purple-500" />,
+    emoji: '👶',
+  },
+  {
+    key: 'moved',
+    label: 'ย้ายไปอยู่ที่',
+    placeholder: 'ที่อยู่ใหม่...',
+    color: 'text-green-600',
+    bg: 'bg-green-50',
+    border: 'border-green-200',
+    badgeBg: 'bg-green-100 text-green-700 border-green-200',
+    icon: <Home size={18} className="text-green-500" />,
+    emoji: '🏠',
+  },
+  {
+    key: 'anniversary',
+    label: 'ครบรอบ',
+    placeholder: 'ครบรอบอะไร...',
+    color: 'text-rose-600',
+    bg: 'bg-rose-50',
+    border: 'border-rose-200',
+    badgeBg: 'bg-rose-100 text-rose-700 border-rose-200',
+    icon: <Star size={18} className="text-rose-500" />,
+    emoji: '🎉',
+  },
+  {
+    key: 'travel',
+    label: 'เดินทางไปที่',
+    placeholder: 'ชื่อสถานที่...',
+    color: 'text-sky-600',
+    bg: 'bg-sky-50',
+    border: 'border-sky-200',
+    badgeBg: 'bg-sky-100 text-sky-700 border-sky-200',
+    icon: <Plane size={18} className="text-sky-500" />,
+    emoji: '✈️',
+  },
+  {
+    key: 'friendship',
+    label: 'เป็นเพื่อนกับ',
+    placeholder: 'ชื่อเพื่อน...',
+    color: 'text-orange-600',
+    bg: 'bg-orange-50',
+    border: 'border-orange-200',
+    badgeBg: 'bg-orange-100 text-orange-700 border-orange-200',
+    icon: <Users size={18} className="text-orange-500" />,
+    emoji: '🤝',
+  },
+];
+
+// helper: encode life event to string for storing in DB
+// format: "key|value"  e.g. "relationship|ออม"
+export function encodeLifeEvent(key: string, value: string) {
+  return `${key}|${value}`;
+}
+
+export function decodeLifeEvent(raw: string): { event: LifeEvent | undefined; value: string } {
+  const idx = raw.indexOf('|');
+  if (idx === -1) return { event: undefined, value: raw };
+  const key = raw.slice(0, idx);
+  const value = raw.slice(idx + 1);
+  const event = LIFE_EVENTS.find(e => e.key === key);
+  return { event, value };
+}
+
+// ============================================================
 
 interface CreatePostProps {
   currentUser: User;
@@ -29,6 +152,11 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
   const [showLocationInput, setShowLocationInput] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ✅ Life Event state
+  const [showLifeEventPicker, setShowLifeEventPicker] = useState(false);
+  const [selectedLifeEvent, setSelectedLifeEvent] = useState<LifeEvent | null>(null);
+  const [lifeEventValue, setLifeEventValue] = useState('');
 
   const [friends, setFriends] = useState<User[]>([]);
   const [showMentions, setShowMentions] = useState(false);
@@ -133,6 +261,10 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
     try {
       const moodText = mood && moodEmoji ? `${moodEmoji} ${mood}` : null;
       const activityText = activity && activityEmoji ? `${activityEmoji} ${activity}` : null;
+      // ✅ encode life event
+      const lifeEventText = selectedLifeEvent && lifeEventValue.trim()
+        ? encodeLifeEvent(selectedLifeEvent.key, lifeEventValue.trim())
+        : null;
 
       const { data: newPost, error } = await supabase.from('posts').insert({
         author_id: currentUser.id,
@@ -142,13 +274,19 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
         mood: moodText,
         activity: activityText,
         location: location.trim() || null,
+        life_event: lifeEventText,   // ✅ ใหม่
       }).select().single();
 
       if (error) throw error;
       if (newPost) await notifyTaggedUsers(content.trim(), newPost.id);
 
-      setContent(''); setImageUrls([]); setNewImageUrl(''); setMood(''); setMoodEmoji(''); setActivity(''); setActivityEmoji(''); setLocation('');
-      setShowImageInput(false); setShowMoodActivityPicker(false); setShowLocationInput(false); setShowMentions(false);
+      // reset
+      setContent(''); setImageUrls([]); setNewImageUrl(''); setMood(''); setMoodEmoji('');
+      setActivity(''); setActivityEmoji(''); setLocation('');
+      setShowImageInput(false); setShowMoodActivityPicker(false); setShowLocationInput(false);
+      setShowMentions(false);
+      // ✅ reset life event
+      setSelectedLifeEvent(null); setLifeEventValue(''); setShowLifeEventPicker(false);
 
       if (onPostCreated) onPostCreated();
     } catch (error) {
@@ -167,8 +305,15 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
           </Link>
           <div className="flex-1 min-w-0">
             <Link href={`/profile/${currentUser.username}`} className="font-black text-sm md:text-base text-gray-900 block truncate">{currentUser.display_name}</Link>
-            {(mood || activity || location) && (
+            {(mood || activity || location || (selectedLifeEvent && lifeEventValue)) && (
               <div className="flex flex-wrap items-center gap-1 text-[10px] md:text-xs text-gray-500 mt-0.5 font-bold uppercase tracking-tight">
+                {/* ✅ Life Event badge */}
+                {selectedLifeEvent && lifeEventValue && (
+                  <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border ${selectedLifeEvent.badgeBg}`}>
+                    <span>{selectedLifeEvent.emoji}</span>
+                    <span>{selectedLifeEvent.label} {lifeEventValue}</span>
+                  </span>
+                )}
                 {mood && <><span className="text-gray-300">รู้สึก</span><span className="text-yellow-600 bg-yellow-50 px-1.5 py-0.5 rounded-md border border-yellow-100">{moodEmoji} {mood}</span></>}
                 {activity && <><span className="mx-0.5 text-gray-200">|</span><span className="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-md border border-blue-100">กำลัง {activityEmoji} {activity}</span></>}
                 {location && <><span className="mx-0.5 text-gray-200">|</span><span className="text-red-500 bg-red-50 px-1.5 py-0.5 rounded-md border border-red-100 flex items-center gap-1"><MapPin size={10} /> {location}</span></>}
@@ -245,14 +390,84 @@ export default function CreatePostV3({ currentUser, targetUser, onPostCreated }:
           </div>
         )}
 
+        {/* ✅ Life Event Picker */}
+        {showLifeEventPicker && (
+          <div className="mb-4 p-4 bg-white rounded-2xl border border-gray-100 shadow-sm animate-in slide-in-from-top-2 space-y-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
+              <Sparkles size={12} className="text-amber-400" />
+              เหตุการณ์สำคัญในชีวิต
+            </p>
+
+            {/* Event grid */}
+            {!selectedLifeEvent ? (
+              <div className="grid grid-cols-2 gap-2">
+                {LIFE_EVENTS.map(ev => (
+                  <button
+                    key={ev.key}
+                    type="button"
+                    onClick={() => setSelectedLifeEvent(ev)}
+                    className={`flex items-center gap-2 p-3 rounded-xl border ${ev.bg} ${ev.border} hover:opacity-80 transition-all text-left`}
+                  >
+                    {ev.icon}
+                    <span className={`text-xs font-black ${ev.color}`}>{ev.label}...</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              /* Value input after picking event type */
+              <div className={`flex items-center gap-3 p-3 rounded-xl border ${selectedLifeEvent.bg} ${selectedLifeEvent.border}`}>
+                <span className="text-2xl">{selectedLifeEvent.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-[10px] font-black uppercase tracking-tight mb-1 ${selectedLifeEvent.color}`}>{selectedLifeEvent.label}</p>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={lifeEventValue}
+                    onChange={e => setLifeEventValue(e.target.value)}
+                    placeholder={selectedLifeEvent.placeholder}
+                    className={`w-full bg-transparent outline-none text-sm font-bold ${selectedLifeEvent.color} placeholder:opacity-40`}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedLifeEvent(null); setLifeEventValue(''); }}
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <ChevronDown size={16} />
+                </button>
+              </div>
+            )}
+
+            {/* Close button */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowLifeEventPicker(false);
+                if (!lifeEventValue.trim()) { setSelectedLifeEvent(null); }
+              }}
+              className="w-full text-center text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-gray-600 transition-colors pt-1"
+            >
+              {selectedLifeEvent && lifeEventValue ? 'ยืนยัน ✓' : 'ปิด'}
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center justify-between pt-3 border-t border-gray-50">
           <div className="flex gap-1 md:gap-2">
             <button type="button" onClick={() => setShowImageInput(!showImageInput)} className={`p-2 md:px-4 md:py-2 rounded-xl flex items-center gap-2 transition-all ${showImageInput ? 'bg-green-50 text-green-600' : 'hover:bg-gray-50 text-gray-500'}`}><Image size={20} className="text-green-500" /><span className="hidden sm:inline text-xs font-bold uppercase tracking-widest">รูปภาพ</span></button>
             <button type="button" onClick={() => setShowMoodActivityPicker(!showMoodActivityPicker)} className={`p-2 md:px-4 md:py-2 rounded-xl flex items-center gap-2 transition-all ${showMoodActivityPicker ? 'bg-yellow-50 text-yellow-600' : 'hover:bg-gray-50 text-gray-500'}`}><Smile size={20} className="text-yellow-500" /><span className="hidden sm:inline text-xs font-bold uppercase tracking-widest">ความรู้สึก</span></button>
             <button type="button" onClick={() => setShowLocationInput(!showLocationInput)} className={`p-2 md:px-4 md:py-2 rounded-xl flex items-center gap-2 transition-all ${showLocationInput ? 'bg-red-50 text-red-600' : 'hover:bg-gray-50 text-gray-500'}`}><MapPin size={20} className="text-red-500" /><span className="hidden sm:inline text-xs font-bold uppercase tracking-widest">เช็คอิน</span></button>
+            {/* ✅ ปุ่ม Life Event */}
+            <button
+              type="button"
+              onClick={() => setShowLifeEventPicker(!showLifeEventPicker)}
+              className={`p-2 md:px-4 md:py-2 rounded-xl flex items-center gap-2 transition-all ${showLifeEventPicker || (selectedLifeEvent && lifeEventValue) ? 'bg-amber-50 text-amber-600' : 'hover:bg-gray-50 text-gray-500'}`}
+            >
+              <Sparkles size={20} className="text-amber-500" />
+              <span className="hidden sm:inline text-xs font-bold uppercase tracking-widest">เหตุการณ์</span>
+            </button>
           </div>
 
-          {/* ✅ เปลี่ยนปุ่มตรงนี้เป็นสีเขียวมาตรฐานของ Tailwind */}
           <button
             type="submit"
             disabled={!content.trim() || isSubmitting}
