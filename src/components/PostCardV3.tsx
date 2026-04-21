@@ -130,7 +130,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
 
   // โหลด taggedUser สำหรับ life_event
   useEffect(() => {
-    const raw = (initialPost as any).life_event as string | undefined;
+    const raw = initialPost.life_event;
     if (!raw) return;
     const { taggedUserId } = decodeLifeEvent(raw);
     if (!taggedUserId) return;
@@ -242,7 +242,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (data) {
       const topLevel = data.filter(c => !c.parent_comment_id);
       const formatted = topLevel.map(c => ({ ...c, replies: data.filter(r => r.parent_comment_id === c.id) }));
-      setComments(formatted as any);
+      setComments(formatted as Comment[]);
       const { data: cLikes } = await supabase.from('comment_likes').select('comment_id, user_id').in('comment_id', data.map(c => c.id));
       if (cLikes) {
         const counts: Record<string, number> = {}; const userLiked = new Set<string>();
@@ -267,7 +267,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     try {
       const { data: newAddedComment, error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: newComment.trim(), image_url: commentImageUrl.trim() || null }).select('*, author:users(id, username, display_name, profile_img_url, is_verified)').single();
       if (error) throw error;
-      if (newAddedComment) setComments(prev => [...prev, { ...newAddedComment, replies: [] } as any]);
+      if (newAddedComment) setComments(prev => [...prev, { ...newAddedComment, replies: [] } as Comment]);
       await sendTagNotifications(newComment, newAddedComment.id);
       setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); setCommentCount(prev => prev + 1);
     } catch (err) { console.error(err); } finally { setIsSubmitting(false); }
@@ -279,7 +279,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     try {
       const { data: newReply, error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: replyContent.trim(), parent_comment_id: parentCommentId, image_url: replyImageUrl.trim() || null }).select('*, author:users(id, username, display_name, profile_img_url, is_verified)').single();
       if (error) throw error;
-      if (newReply) setComments(prev => prev.map(c => c.id === parentCommentId ? { ...c, replies: [...(c.replies || []), newReply] as any } : c));
+      if (newReply) setComments(prev => prev.map(c => c.id === parentCommentId ? { ...c, replies: [...(c.replies || []), newReply as Comment] } : c));
       await sendTagNotifications(replyContent, newReply.id);
       setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false); setCommentCount(prev => prev + 1);
     } catch (err) { console.error(err); } finally { setIsSubmitting(false); }
@@ -402,11 +402,10 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     );
   };
 
-  // ✅ life_event badge สำหรับ header
+  // ✅ life_event badge ใน header
   const lifeEventBadge = useMemo(() => {
-    const raw = (post as any).life_event as string | undefined;
-    if (!raw) return null;
-    const { event } = decodeLifeEvent(raw);
+    if (!post.life_event) return null;
+    const { event } = decodeLifeEvent(post.life_event);
     if (!event) return null;
     return (
       <>
@@ -417,7 +416,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </span>
       </>
     );
-  }, [post]);
+  }, [post.life_event]);
 
   return (
     <div className="card-minimal border border-gray-100 shadow-sm relative">
@@ -484,9 +483,9 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       )}
 
       {/* ✅ Life Event Visual Card */}
-      {!isEditingPost && (post as any).life_event && post.author && (
+      {!isEditingPost && post.life_event && post.author && (
         <LifeEventCard
-          raw={(post as any).life_event}
+          raw={post.life_event}
           authorUser={post.author}
           usersMap={usersMap}
         />
