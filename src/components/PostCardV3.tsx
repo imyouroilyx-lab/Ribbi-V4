@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { getRelativeTime } from '../lib/utils';
 import Link from 'next/link';
-import { LIFE_EVENTS, decodeLifeEvent } from './CreatePostV3';
+import { LifeEventCard, decodeLifeEvent } from './LifeEventCard';
 
 interface Comment {
   id: string;
@@ -77,28 +77,6 @@ const LinkPreview = ({ url }: { url: string }) => {
   );
 };
 
-// ✅ Life Event Banner — แสดงใน PostCard
-const LifeEventBanner = ({ raw }: { raw: string }) => {
-  const { event, value } = decodeLifeEvent(raw);
-  if (!event || !value) return null;
-
-  return (
-    <div className={`mb-4 flex items-center gap-3 px-4 py-3 rounded-2xl border ${event.bg} ${event.border}`}>
-      <span className="text-3xl leading-none">{event.emoji}</span>
-      <div className="min-w-0">
-        <p className={`text-[10px] font-black uppercase tracking-widest ${event.color} opacity-70`}>
-          เหตุการณ์สำคัญในชีวิต
-        </p>
-        <p className={`text-sm font-black ${event.color}`}>
-          {event.label}{' '}
-          <span className="opacity-90">{value}</span>
-        </p>
-      </div>
-      <Sparkles size={16} className={`ml-auto flex-shrink-0 ${event.color} opacity-50`} />
-    </div>
-  );
-};
-
 export default function PostCardV3({ post: initialPost, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
   const [post, setPost] = useState(initialPost);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -142,9 +120,28 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [activeInput, setActiveInput] = useState<'comment' | 'reply' | 'edit_comment' | null>(null);
   const [hasLoadedFriends, setHasLoadedFriends] = useState(false);
 
+  // ✅ usersMap สำหรับ LifeEventCard (dual card ต้องการข้อมูล taggedUser)
+  const [usersMap, setUsersMap] = useState<Record<string, User>>({});
+
   useEffect(() => {
     setPost(initialPost);
     setEditContent(initialPost.content || '');
+  }, [initialPost]);
+
+  // โหลด taggedUser สำหรับ life_event
+  useEffect(() => {
+    const raw = (initialPost as any).life_event as string | undefined;
+    if (!raw) return;
+    const { taggedUserId } = decodeLifeEvent(raw);
+    if (!taggedUserId) return;
+    supabase
+      .from('users')
+      .select('id, username, display_name, profile_img_url, is_verified')
+      .eq('id', taggedUserId)
+      .single()
+      .then(({ data }) => {
+        if (data) setUsersMap(prev => ({ ...prev, [data.id]: data as User }));
+      });
   }, [initialPost]);
 
   useEffect(() => {
@@ -282,9 +279,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     try {
       const { data: newReply, error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: replyContent.trim(), parent_comment_id: parentCommentId, image_url: replyImageUrl.trim() || null }).select('*, author:users(id, username, display_name, profile_img_url, is_verified)').single();
       if (error) throw error;
-      if (newReply) {
-        setComments(prev => prev.map(c => c.id === parentCommentId ? { ...c, replies: [...(c.replies || []), newReply] as any } : c));
-      }
+      if (newReply) setComments(prev => prev.map(c => c.id === parentCommentId ? { ...c, replies: [...(c.replies || []), newReply] as any } : c));
       await sendTagNotifications(replyContent, newReply.id);
       setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false); setCommentCount(prev => prev + 1);
     } catch (err) { console.error(err); } finally { setIsSubmitting(false); }
@@ -329,13 +324,10 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         <div className="p-2 border-b bg-gray-50 flex items-center gap-2"><AtSign size={12} className="text-frog-500" /><span className="text-[10px] font-black uppercase text-gray-500">แท็กเพื่อน</span></div>
         {filteredFriends.map(f => (
           <button key={f.id} onClick={() => insertMention(f)} className="w-full flex items-center gap-3 p-3 hover:bg-frog-50 transition-colors text-left border-b border-gray-50 last:border-0">
-            <div className="relative flex-shrink-0">
-              <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" />
-            </div>
+            <img src={f.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-8 h-8 rounded-full object-cover" />
             <div className="min-w-0">
-              <p className="text-lg font-bold text-gray-900 truncate flex items-center gap-1">
-                {f.display_name}
-                {f.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
+              <p className="text-sm font-bold text-gray-900 truncate flex items-center gap-1">
+                {f.display_name}{f.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
               </p>
               <p className="text-[10px] text-gray-400">@{f.username}</p>
             </div>
@@ -358,7 +350,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           <div className="flex-1 min-w-0">
             {isEditing ? (
               <div className="space-y-2 relative">
-                <textarea value={editCommentContent} onChange={(e) => handleInputChange(e.target.value, 'edit_comment')} className="input-minimal w-full text-sm p-3 bg-white border border-frog-200 rounded-2xl min-h-[80px]" autoFocus />
+                <textarea value={editCommentContent} onChange={e => handleInputChange(e.target.value, 'edit_comment')} className="input-minimal w-full text-sm p-3 bg-white border border-frog-200 rounded-2xl min-h-[80px]" autoFocus />
                 {activeInput === 'edit_comment' && <MentionMenu />}
                 <div className="flex gap-2">
                   <button onClick={() => handleUpdateComment(c.id)} className="text-[10px] font-black text-frog-600 bg-frog-50 px-3 py-1.5 rounded-lg">บันทึก</button>
@@ -368,8 +360,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             ) : (
               <div className="bg-gray-100 rounded-2xl px-3 py-2 inline-block max-w-full relative">
                 <p className="font-bold text-[11px] text-gray-900 flex items-center gap-1">
-                  {c.author?.display_name} 
-                  {c.author?.is_verified && <BadgeCheck className="w-3 h-3 text-blue-500" />}
+                  {c.author?.display_name}{c.author?.is_verified && <BadgeCheck className="w-3 h-3 text-blue-500" />}
                 </p>
                 <p className="text-sm text-gray-800 break-words whitespace-pre-wrap">{renderTextWithTags(c.content)}</p>
                 {c.image_url && <img src={c.image_url} onClick={() => setSelectedImage(c.image_url!)} className="mt-2 rounded-xl max-h-48 object-cover cursor-zoom-in" />}
@@ -387,11 +378,10 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                 </div>
               )}
             </div>
-            
             {replyTo === c.id && (
               <div className="mt-3 space-y-2 relative">
                 <div className="flex gap-2">
-                  <input type="text" value={replyContent} onChange={(e) => handleInputChange(e.target.value, 'reply')} onKeyDown={(e) => e.key === 'Enter' && handleReply(c.id)} placeholder={`ตอบกลับ ${c.author?.display_name.split(' ')[0]}...`} className="input-minimal w-full text-xs py-2 px-3 rounded-xl" autoFocus />
+                  <input type="text" value={replyContent} onChange={e => handleInputChange(e.target.value, 'reply')} onKeyDown={e => e.key === 'Enter' && handleReply(c.id)} placeholder={`ตอบกลับ ${c.author?.display_name.split(' ')[0]}...`} className="input-minimal w-full text-xs py-2 px-3 rounded-xl" autoFocus />
                   <button onClick={() => setShowReplyImageInput(!showReplyImageInput)} className={`p-1.5 rounded-lg transition-colors ${showReplyImageInput ? 'bg-frog-100 text-frog-600' : 'text-gray-400 hover:bg-gray-100'}`}><ImageIcon size={18} /></button>
                   <button onClick={() => handleReply(c.id)} className="p-1.5 text-frog-600 hover:text-frog-700 transition-colors"><Send size={18} /></button>
                   <button onClick={() => setReplyTo(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} /></button>
@@ -412,8 +402,26 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     );
   };
 
+  // ✅ life_event badge สำหรับ header
+  const lifeEventBadge = useMemo(() => {
+    const raw = (post as any).life_event as string | undefined;
+    if (!raw) return null;
+    const { event } = decodeLifeEvent(raw);
+    if (!event) return null;
+    return (
+      <>
+        <span className="w-1 h-1 rounded-full bg-gray-300" />
+        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${event.badgeBg}`}>
+          <span>{event.emoji}</span>
+          <span>{event.label}...</span>
+        </span>
+      </>
+    );
+  }, [post]);
+
   return (
     <div className="card-minimal border border-gray-100 shadow-sm relative">
+      {/* Header */}
       <div className="flex items-start gap-3 mb-4">
         {post.author && (
           <Link href={`/profile/${post.author.username}`} className="flex-shrink-0 relative">
@@ -439,21 +447,10 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <p className="text-[10px] text-gray-400 font-bold uppercase">{getRelativeTime(post.created_at)}</p>
-            {post.location && <><span className="w-1 h-1 rounded-full bg-gray-300"></span><span className="text-[10px] text-red-500 font-bold flex items-center gap-0.5 uppercase tracking-tight"><MapPin size={10} /> {post.location}</span></>}
-            {post.mood && <><span className="w-1 h-1 rounded-full bg-gray-300"></span><span className="text-[10px] bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-bold border border-yellow-100">{post.mood.includes('รู้สึก') ? post.mood : `รู้สึก ${post.mood}`}</span></>}
-            {post.activity && <><span className="w-1 h-1 rounded-full bg-gray-300"></span><span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold border border-blue-100">{post.activity.includes('กำลัง') ? post.activity : `กำลัง ${post.activity}`}</span></>}
-            {/* ✅ Life event badge ใน header */}
-            {(post as any).life_event && (() => {
-              const { event } = decodeLifeEvent((post as any).life_event);
-              if (!event) return null;
-              return (
-                <><span className="w-1 h-1 rounded-full bg-gray-300"></span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${event.badgeBg}`}>
-                  <span>{event.emoji}</span>
-                  <span>{event.label}...</span>
-                </span></>
-              );
-            })()}
+            {post.location && <><span className="w-1 h-1 rounded-full bg-gray-300" /><span className="text-[10px] text-red-500 font-bold flex items-center gap-0.5 uppercase tracking-tight"><MapPin size={10} /> {post.location}</span></>}
+            {post.mood && <><span className="w-1 h-1 rounded-full bg-gray-300" /><span className="text-[10px] bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-bold border border-yellow-100">{post.mood.includes('รู้สึก') ? post.mood : `รู้สึก ${post.mood}`}</span></>}
+            {post.activity && <><span className="w-1 h-1 rounded-full bg-gray-300" /><span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold border border-blue-100">{post.activity.includes('กำลัง') ? post.activity : `กำลัง ${post.activity}`}</span></>}
+            {lifeEventBadge}
           </div>
         </div>
         {(canEditPost || canDeletePost) && (
@@ -464,9 +461,10 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         )}
       </div>
 
+      {/* Content */}
       {isEditingPost ? (
         <div className="mb-4 space-y-3">
-          <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="w-full text-base p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-frog-500 min-h-[120px]" autoFocus />
+          <textarea value={editContent} onChange={e => setEditContent(e.target.value)} className="w-full text-base p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-frog-500 min-h-[120px]" autoFocus />
           <div className="flex gap-2 justify-end">
             <button onClick={() => setIsEditingPost(false)} className="px-5 py-2 text-xs font-black text-gray-500 bg-gray-100 rounded-xl">ยกเลิก</button>
             <button onClick={handleUpdatePost} disabled={isSubmitting || !editContent.trim()} className="px-5 py-2 text-xs font-black text-white bg-frog-500 rounded-xl disabled:opacity-50 shadow-sm">บันทึก</button>
@@ -479,29 +477,29 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           ) : (
             <>
               {renderTextWithTags(post.content?.slice(0, CONTENT_LIMIT) + '...')}
-              <button 
-                onClick={() => setIsExpanded(true)} 
-                className="text-frog-600 font-black hover:underline ml-1 text-sm uppercase tracking-tighter"
-              >
-                ดูเพิ่มเติม
-              </button>
+              <button onClick={() => setIsExpanded(true)} className="text-frog-600 font-black hover:underline ml-1 text-sm uppercase tracking-tighter">ดูเพิ่มเติม</button>
             </>
           )}
         </div>
       )}
 
-      {/* ✅ Life Event Banner — แสดงก่อนรูปภาพ */}
-      {!isEditingPost && (post as any).life_event && (
-        <LifeEventBanner raw={(post as any).life_event} />
+      {/* ✅ Life Event Visual Card */}
+      {!isEditingPost && (post as any).life_event && post.author && (
+        <LifeEventCard
+          raw={(post as any).life_event}
+          authorUser={post.author}
+          usersMap={usersMap}
+        />
       )}
 
+      {/* Link/YouTube preview */}
       {!isEditingPost && post.content && (
         <div className="mb-4">
           {post.content.match(/(https?:\/\/\S+)/g)?.map(url => {
             const ytId = getYouTubeVideoId(url);
             if (ytId) return (
               <div key={url} className="mb-4 rounded-3xl overflow-hidden relative pt-[56.25%] w-full shadow-md bg-black">
-                <iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube.com/embed/${ytId}`} allowFullScreen></iframe>
+                <iframe className="absolute top-0 left-0 w-full h-full" src={`https://www.youtube.com/embed/${ytId}`} allowFullScreen />
               </div>
             );
             return <LinkPreview key={url} url={url} />;
@@ -509,6 +507,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </div>
       )}
 
+      {/* Images */}
       {post.images && post.images.length > 0 && (
         <div className={`grid gap-2 mb-4 ${post.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {post.images.map((img, i) => (
@@ -519,6 +518,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         </div>
       )}
 
+      {/* Like / Comment bar */}
       <div className="flex items-center gap-6 pt-3 border-t border-gray-50">
         <div className="flex items-center gap-1.5">
           <button onClick={handleLike} className={`transition-all active:scale-75 p-1 -ml-1 rounded-full ${isLiked ? 'text-red-500' : 'text-gray-400 hover:bg-red-50'}`}><Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} /></button>
@@ -527,6 +527,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         <button onClick={() => setShowComments(!showComments)} className={`flex items-center gap-2 text-xs font-black transition-colors p-1 -ml-1 rounded-lg ${showComments ? 'text-frog-600 bg-frog-50' : 'text-gray-400 hover:bg-gray-50'}`}><MessageCircle className="w-5 h-5" /> {commentCount}</button>
       </div>
 
+      {/* Comments */}
       {showComments && (
         <div className="mt-4 pt-4 border-t border-gray-50 space-y-4">
           {isCommentsLoading ? (
@@ -536,7 +537,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               <form onSubmit={handleComment} className="space-y-2 relative">
                 <div className="flex gap-2 relative">
                   <div className="relative flex-1">
-                    <input type="text" value={newComment} onChange={(e) => handleInputChange(e.target.value, 'comment')} placeholder="เขียนความคิดเห็น..." className="input-minimal w-full text-sm py-2 px-4 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:ring-2 focus:ring-frog-200" disabled={isSubmitting} />
+                    <input type="text" value={newComment} onChange={e => handleInputChange(e.target.value, 'comment')} placeholder="เขียนความคิดเห็น..." className="input-minimal w-full text-sm py-2 px-4 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:ring-2 focus:ring-frog-200" disabled={isSubmitting} />
                     {activeInput === 'comment' && <MentionMenu />}
                   </div>
                   <button type="button" onClick={() => setShowCommentImageInput(!showCommentImageInput)} className={`p-2 rounded-xl transition-all ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}><ImageIcon size={18} /></button>
@@ -549,13 +550,13 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                   </div>
                 )}
               </form>
-
               <div className="space-y-3">{comments.length === 0 ? <p className="text-center text-gray-300 text-[10px] font-black uppercase py-4">ยังไม่มีความคิดเห็น</p> : comments.map(c => renderCommentItem(c))}</div>
             </>
           )}
         </div>
       )}
 
+      {/* Likers modal */}
       {showLikersModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowLikersModal(false)}>
           <div className="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl p-6 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
@@ -565,25 +566,22 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             </div>
             <div className="max-h-[50vh] overflow-y-auto pr-2 space-y-2 no-scrollbar">
               {isLoadingLikers ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-frog-500" /></div> : likers.length === 0 ? <p className="text-center text-xs font-bold text-gray-400 py-6">ยังไม่มีผู้กดถูกใจ</p> : likers.map((user, idx) => (
-                  <Link key={idx} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors group">
-                    <div className="relative flex-shrink-0">
-                      <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover shadow-sm border border-gray-100" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-sm text-gray-900 truncate group-hover:text-frog-600 flex items-center gap-1">
-                        {user.display_name} 
-                        {user.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500" />}
-                      </p>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase truncate">@{user.username}</p>
-                    </div>
-                  </Link>
-                ))
-              }
+                <Link key={idx} href={`/profile/${user.username}`} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-colors group">
+                  <img src={user.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-10 h-10 rounded-full object-cover shadow-sm border border-gray-100" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm text-gray-900 truncate group-hover:text-frog-600 flex items-center gap-1">
+                      {user.display_name}{user.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-blue-500" />}
+                    </p>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase truncate">@{user.username}</p>
+                  </div>
+                </Link>
+              ))}
             </div>
           </div>
         </div>
       )}
 
+      {/* Image lightbox */}
       {selectedImage && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[120] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setSelectedImage(null)}>
           <img src={selectedImage} className="max-w-[95vw] max-h-[90vh] rounded-2xl shadow-2xl object-contain" />
