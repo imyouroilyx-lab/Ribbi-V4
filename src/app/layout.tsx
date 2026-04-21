@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import PresenceClient from "@/components/PresenceClient"; // ✅ เพิ่มการเชื่อมต่อระบบเช็กสถานะออนไลน์
+import PresenceClient from "@/components/PresenceClient";
+import InvertToggle from "@/components/InvertToggle";
 
-// ✅ ตั้งค่า Google Sans แบบ Variable Font ตามที่พี่ตั้งไว้
 const googleSans = localFont({
   src: [
     {
@@ -31,14 +31,24 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="th" className={googleSans.variable}>
+      <head>
+        {/* ✅ Anti-flash: อ่าน localStorage ก่อน hydrate เพื่อกัน flicker */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                if (localStorage.getItem('ribbi-invert-mode') === 'true') {
+                  document.documentElement.classList.add('inverted');
+                }
+              } catch(e) {}
+            `,
+          }}
+        />
+      </head>
       <body className="antialiased">
-        {/* ส่วนเนื้อหาของหน้าเว็บ */}
         {children}
-
-        {/* ✅ ระบบ Global Presence 
-           วางไว้ตรงนี้เพื่อให้มันเริ่มทำงานทันทีที่เข้าเว็บ 
-           ไม่ว่าจะอยู่หน้าไหน จุดเขียวก็จะซิงก์ตรงความจริงครับ
-        */}
+        {/* ✅ Floating invert toggle — ออกทุกหน้าโดยไม่ต้องแตะ page ใดเลย */}
+        <InvertToggle />
         <PresenceClient />
       </body>
     </html>
