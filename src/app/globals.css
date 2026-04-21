@@ -50,7 +50,7 @@
    ============================================= */
 
 html.inverted {
-  filter: invert(1) hue-rotate(180deg);
+  filter: invert(0.85) hue-rotate(180deg) brightness(1.05);
 }
 
 /* counter-invert media ทั้งหมดให้กลับสีปกติ */
