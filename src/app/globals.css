@@ -50,21 +50,22 @@
    ============================================= */
 
 html.inverted {
-  filter: invert(0.85) hue-rotate(180deg) brightness(1.05);
+  filter: invert(1) hue-rotate(180deg);
 }
 
-/* counter-invert media ทั้งหมดให้กลับสีปกติ */
+/* ✅ counter-invert media ทั้งหมดให้กลับสีปกติ */
 html.inverted img,
 html.inverted video,
 html.inverted iframe,
 html.inverted canvas,
 html.inverted svg image,
-html.inverted [style*="background-image"] {
-  filter: invert(1) hue-rotate(180deg);
+html.inverted picture,
+html.inverted [style*="background-image"],
+html.inverted [style*="background:"] {
+  filter: invert(1) hue-rotate(180deg) !important;
 }
 
-/* ✅ counter-invert สีเขียว frog ทั้งหมดให้กลับมาเป็นเขียวปกติ
-   ครอบทุก class ที่ใช้สี frog โดยไม่ต้องแตะ component ใดเลย */
+/* ✅ counter-invert สีเขียว frog ให้กลับมาเป็นเขียวปกติ */
 html.inverted .btn-primary,
 html.inverted [class*="bg-frog"],
 html.inverted [class*="text-frog"],
