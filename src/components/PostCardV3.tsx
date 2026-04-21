@@ -5,10 +5,11 @@ import { supabase, Post, User } from '../lib/supabase';
 import { 
   Heart, MessageCircle, Trash2, Image as ImageIcon, 
   X, Edit2, Send, Loader2, ChevronRight, MapPin, 
-  Link as LinkIcon, AtSign, BadgeCheck 
+  Link as LinkIcon, AtSign, BadgeCheck, Sparkles
 } from 'lucide-react';
 import { getRelativeTime } from '../lib/utils';
 import Link from 'next/link';
+import { LIFE_EVENTS, decodeLifeEvent } from './CreatePostV3';
 
 interface Comment {
   id: string;
@@ -76,6 +77,28 @@ const LinkPreview = ({ url }: { url: string }) => {
   );
 };
 
+// ✅ Life Event Banner — แสดงใน PostCard
+const LifeEventBanner = ({ raw }: { raw: string }) => {
+  const { event, value } = decodeLifeEvent(raw);
+  if (!event || !value) return null;
+
+  return (
+    <div className={`mb-4 flex items-center gap-3 px-4 py-3 rounded-2xl border ${event.bg} ${event.border}`}>
+      <span className="text-3xl leading-none">{event.emoji}</span>
+      <div className="min-w-0">
+        <p className={`text-[10px] font-black uppercase tracking-widest ${event.color} opacity-70`}>
+          เหตุการณ์สำคัญในชีวิต
+        </p>
+        <p className={`text-sm font-black ${event.color}`}>
+          {event.label}{' '}
+          <span className="opacity-90">{value}</span>
+        </p>
+      </div>
+      <Sparkles size={16} className={`ml-auto flex-shrink-0 ${event.color} opacity-50`} />
+    </div>
+  );
+};
+
 export default function PostCardV3({ post: initialPost, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
   const [post, setPost] = useState(initialPost);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -95,9 +118,8 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   const [likers, setLikers] = useState<any[]>([]); 
   const [isLoadingLikers, setIsLoadingLikers] = useState(false);
 
-  // ✅ ระบบ "ดูเพิ่มเติม"
   const [isExpanded, setIsExpanded] = useState(false);
-  const CONTENT_LIMIT = 300; // ตั้งค่าจำนวนตัวอักษรที่ต้องการให้ตัด
+  const CONTENT_LIMIT = 300;
 
   const [newComment, setNewComment] = useState('');
   const [commentImageUrl, setCommentImageUrl] = useState('');
@@ -366,7 +388,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
               )}
             </div>
             
-            {/* ตอบกลับคอมเมนต์ */}
             {replyTo === c.id && (
               <div className="mt-3 space-y-2 relative">
                 <div className="flex gap-2">
@@ -375,15 +396,12 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                   <button onClick={() => handleReply(c.id)} className="p-1.5 text-frog-600 hover:text-frog-700 transition-colors"><Send size={18} /></button>
                   <button onClick={() => setReplyTo(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} /></button>
                 </div>
-                
-                {/* ✅ เพิ่มกล่อง Input สำหรับใส่ URL รูปภาพตอน Reply กลับมา */}
                 {showReplyImageInput && (
                   <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
                     <input type="url" value={replyImageUrl} onChange={e => setReplyImageUrl(e.target.value)} placeholder="วาง URL รูปภาพที่นี่..." className="input-minimal flex-1 text-xs py-1.5 px-3 bg-white border border-gray-200 rounded-lg outline-none focus:border-frog-300" disabled={isSubmitting} />
                     {replyImageUrl && <img src={replyImageUrl} className="w-6 h-6 rounded-md object-cover border border-gray-200 shadow-sm" alt="Preview" />}
                   </div>
                 )}
-
                 {activeInput === 'reply' && <MentionMenu />}
               </div>
             )}
@@ -424,6 +442,18 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             {post.location && <><span className="w-1 h-1 rounded-full bg-gray-300"></span><span className="text-[10px] text-red-500 font-bold flex items-center gap-0.5 uppercase tracking-tight"><MapPin size={10} /> {post.location}</span></>}
             {post.mood && <><span className="w-1 h-1 rounded-full bg-gray-300"></span><span className="text-[10px] bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-bold border border-yellow-100">{post.mood.includes('รู้สึก') ? post.mood : `รู้สึก ${post.mood}`}</span></>}
             {post.activity && <><span className="w-1 h-1 rounded-full bg-gray-300"></span><span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold border border-blue-100">{post.activity.includes('กำลัง') ? post.activity : `กำลัง ${post.activity}`}</span></>}
+            {/* ✅ Life event badge ใน header */}
+            {(post as any).life_event && (() => {
+              const { event } = decodeLifeEvent((post as any).life_event);
+              if (!event) return null;
+              return (
+                <><span className="w-1 h-1 rounded-full bg-gray-300"></span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${event.badgeBg}`}>
+                  <span>{event.emoji}</span>
+                  <span>{event.label}...</span>
+                </span></>
+              );
+            })()}
           </div>
         </div>
         {(canEditPost || canDeletePost) && (
@@ -458,6 +488,11 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             </>
           )}
         </div>
+      )}
+
+      {/* ✅ Life Event Banner — แสดงก่อนรูปภาพ */}
+      {!isEditingPost && (post as any).life_event && (
+        <LifeEventBanner raw={(post as any).life_event} />
       )}
 
       {!isEditingPost && post.content && (
@@ -498,7 +533,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 text-frog-500 animate-spin" /></div>
           ) : (
             <>
-              {/* คอมเมนต์หลัก */}
               <form onSubmit={handleComment} className="space-y-2 relative">
                 <div className="flex gap-2 relative">
                   <div className="relative flex-1">
@@ -508,8 +542,6 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
                   <button type="button" onClick={() => setShowCommentImageInput(!showCommentImageInput)} className={`p-2 rounded-xl transition-all ${showCommentImageInput ? 'bg-frog-100 text-frog-600' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}><ImageIcon size={18} /></button>
                   <button type="submit" disabled={(!newComment.trim() && !commentImageUrl.trim()) || isSubmitting} className="p-2 bg-frog-500 text-white rounded-xl hover:bg-frog-600 shadow-sm active:scale-95 disabled:opacity-50 transition-colors"><Send size={18} /></button>
                 </div>
-                
-                {/* ✅ เพิ่มกล่อง Input สำหรับใส่ URL รูปภาพคอมเมนต์กลับมา */}
                 {showCommentImageInput && (
                   <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
                     <input type="url" value={commentImageUrl} onChange={e => setCommentImageUrl(e.target.value)} placeholder="วาง URL รูปภาพที่นี่ (https://...)" className="input-minimal flex-1 text-xs py-2 px-3 bg-gray-50 rounded-xl outline-none border border-gray-100 focus:ring-1 focus:ring-frog-300" disabled={isSubmitting} />
