@@ -1,8 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Types
@@ -46,6 +44,7 @@ export interface Post {
   mood?: string | null;
   activity?: string | null;
   location?: string | null;
+  life_event?: string | null;   // ✅ เพิ่ม
   created_at: string;
   author?: User;
   target?: User;
@@ -108,7 +107,18 @@ export interface Notification {
   id: string;
   receiver_id: string;
   sender_id: string;
-  type: 'like' | 'comment' | 'reply' | 'comment_like' | 'friend_request' | 'friend_accept' | 'post_on_profile' | 'tag_post' | 'tag_comment' | 'message';
+  type:
+    | 'like'
+    | 'comment'
+    | 'reply'
+    | 'comment_like'
+    | 'friend_request'
+    | 'friend_accept'
+    | 'post_on_profile'
+    | 'tag_post'
+    | 'tag_comment'
+    | 'message'
+    | 'life_event_tag';  // ✅ เพิ่ม
   is_read: boolean;
   post_id?: string;
   comment_id?: string;
