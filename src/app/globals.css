@@ -1,5 +1,3 @@
-/* ✅ ลบ @import ของเก่าออก เพราะเราใช้ไฟล์ Local แทนแล้ว */
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -11,14 +9,12 @@
 
 @layer base {
   * {
-    /* ✅ เปลี่ยนมาใช้ Variable จากไฟล์ font ที่อัปโหลด */
     font-family: var(--font-google-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   }
   
   body {
     color: var(--foreground);
     background: var(--background);
-    /* ✅ เปลี่ยนมาใช้ Variable จากไฟล์ font ที่อัปโหลด */
     font-family: var(--font-google-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -29,15 +25,12 @@
   .card-minimal {
     @apply bg-white rounded-3xl p-6 shadow-soft;
   }
-
   .btn-primary {
     @apply bg-frog-500 hover:bg-frog-400 text-white font-medium px-6 py-3 rounded-2xl transition shadow-sm hover:shadow-md disabled:opacity-50;
   }
-
   .btn-secondary {
     @apply bg-white hover:bg-gray-50 text-gray-700 font-medium px-6 py-3 rounded-2xl transition border border-gray-200 shadow-sm;
   }
-
   .input-minimal {
     @apply w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:outline-none focus:border-frog-500 focus:ring-2 focus:ring-frog-100 transition;
   }
@@ -47,13 +40,76 @@
   .shadow-soft {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   }
-
   .shadow-soft-lg {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   }
 }
 
-/* Loading Screen Animation */
+/* =============================================
+   ✅ Invert Mode (Dark Mode via CSS filter)
+   ============================================= */
+
+html.inverted {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* counter-invert media ทั้งหมดให้กลับสีปกติ */
+html.inverted img,
+html.inverted video,
+html.inverted iframe,
+html.inverted canvas,
+html.inverted svg image,
+html.inverted [style*="background-image"] {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* =============================================
+   ✅ Invert Toggle Button
+   ============================================= */
+
+.invert-toggle {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 9999;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  transition: background 0.2s, transform 0.15s;
+  background: #1a1a1a;
+  color: #ffffff;
+}
+
+.invert-toggle[data-inverted="true"] {
+  background: #e5e5e5;
+  color: #1a1a1a;
+}
+
+.invert-toggle:hover {
+  transform: scale(1.1);
+}
+
+/* ✅ Responsive: เลื่อนขึ้นถ้าจอเล็ก (กันทับ bottom nav) */
+@media (max-width: 768px) {
+  .invert-toggle {
+    bottom: 5rem; /* ปรับตามความสูง bottom nav ของเว็บ */
+    right: 1rem;
+    width: 40px;
+    height: 40px;
+    font-size: 1rem;
+  }
+}
+
+/* =============================================
+   Loading Screen Animation
+   ============================================= */
 @keyframes frog-jump {
   0%, 100% {
     transform: translateY(0) translateX(0);
