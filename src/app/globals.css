@@ -53,27 +53,13 @@ html.inverted {
   filter: invert(1) hue-rotate(180deg);
 }
 
-/* ✅ counter-invert media ทั้งหมดให้กลับสีปกติ */
+/* counter-invert media ทั้งหมดให้กลับสีปกติ */
 html.inverted img,
 html.inverted video,
 html.inverted iframe,
 html.inverted canvas,
 html.inverted svg image,
-html.inverted picture,
-html.inverted [style*="background-image"],
-html.inverted [style*="background:"] {
-  filter: invert(1) hue-rotate(180deg) !important;
-}
-
-/* ✅ counter-invert สีเขียว frog ให้กลับมาเป็นเขียวปกติ */
-html.inverted .btn-primary,
-html.inverted [class*="bg-frog"],
-html.inverted [class*="text-frog"],
-html.inverted [class*="border-frog"],
-html.inverted [class*="ring-frog"],
-html.inverted [class*="from-frog"],
-html.inverted [class*="to-frog"],
-html.inverted [class*="via-frog"] {
+html.inverted [style*="background-image"] {
   filter: invert(1) hue-rotate(180deg);
 }
 
