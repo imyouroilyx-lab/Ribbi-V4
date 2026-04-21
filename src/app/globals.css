@@ -63,6 +63,19 @@ html.inverted [style*="background-image"] {
   filter: invert(1) hue-rotate(180deg);
 }
 
+/* ✅ counter-invert สีเขียว frog ทั้งหมดให้กลับมาเป็นเขียวปกติ
+   ครอบทุก class ที่ใช้สี frog โดยไม่ต้องแตะ component ใดเลย */
+html.inverted .btn-primary,
+html.inverted [class*="bg-frog"],
+html.inverted [class*="text-frog"],
+html.inverted [class*="border-frog"],
+html.inverted [class*="ring-frog"],
+html.inverted [class*="from-frog"],
+html.inverted [class*="to-frog"],
+html.inverted [class*="via-frog"] {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 /* =============================================
    ✅ Invert Toggle Button
    ============================================= */
@@ -99,7 +112,7 @@ html.inverted [style*="background-image"] {
 /* ✅ Responsive: เลื่อนขึ้นถ้าจอเล็ก (กันทับ bottom nav) */
 @media (max-width: 768px) {
   .invert-toggle {
-    bottom: 5rem; /* ปรับตามความสูง bottom nav ของเว็บ */
+    bottom: 5rem;
     right: 1rem;
     width: 40px;
     height: 40px;
@@ -110,6 +123,7 @@ html.inverted [style*="background-image"] {
 /* =============================================
    Loading Screen Animation
    ============================================= */
+
 @keyframes frog-jump {
   0%, 100% {
     transform: translateY(0) translateX(0);
