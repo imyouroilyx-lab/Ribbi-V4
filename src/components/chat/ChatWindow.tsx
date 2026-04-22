@@ -92,23 +92,14 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   }, [showAddMember]);
 
   const loadParticipants = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('chat_participants')
-      .select('role, user_id, users(id, username, display_name, profile_img_url)')
+      .select('role, user_id, user:user_id(id, username, display_name, profile_img_url)')
       .eq('chat_id', chatId);
 
-    if (error) {
-      console.error("Error loading participants:", error.message);
-      return;
-    }
-
     if (data) {
-      const formattedData = data.map((p: any) => ({
-        ...p,
-        user: p.users // แปลง key ให้เข้ากับโค้ด UI ของคุณที่เรียกใช้ p.user
-      }));
-      setParticipants(formattedData);
-      const me = formattedData.find((p: any) => p.user_id === currentUser.id);
+      setParticipants(data);
+      const me = data.find(p => p.user_id === currentUser.id);
       setMyRole(me?.role || 'member');
     }
   };
@@ -304,6 +295,14 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                 </Link>
               )}
               <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'} gap-1`}>
+                
+                {/* ✅ ส่วนที่เพิ่ม: แสดงชื่อผู้ส่งในกรณีที่เป็นแชทกลุ่มและไม่ใช่เราเอง */}
+                {!isMe && initialChatData.is_group && (
+                  <span className="text-[10px] font-black text-gray-400 ml-1 uppercase tracking-tighter">
+                    {m.sender?.display_name}
+                  </span>
+                )}
+
                 <div className={`relative px-4 py-2.5 rounded-2xl text-[14px] shadow-sm break-words ${isMe ? 'text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'}`} 
                      style={{ backgroundColor: isMe ? (initialChatData.theme_color || '#22c55e') : undefined }}>
                   {m.images && m.images.length > 0 && <img src={m.images[0]} alt="Pic" className="rounded-xl mb-2 max-w-full max-h-64 object-cover" loading="lazy" />}
