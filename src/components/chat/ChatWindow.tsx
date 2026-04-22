@@ -92,14 +92,23 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   }, [showAddMember]);
 
   const loadParticipants = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('chat_participants')
-      .select('role, user_id, user:user_id(id, username, display_name, profile_img_url)')
+      .select('role, user_id, users(id, username, display_name, profile_img_url)')
       .eq('chat_id', chatId);
 
+    if (error) {
+      console.error("Error loading participants:", error.message);
+      return;
+    }
+
     if (data) {
-      setParticipants(data);
-      const me = data.find(p => p.user_id === currentUser.id);
+      const formattedData = data.map((p: any) => ({
+        ...p,
+        user: p.users // แปลง key ให้เข้ากับโค้ด UI ของคุณที่เรียกใช้ p.user
+      }));
+      setParticipants(formattedData);
+      const me = formattedData.find((p: any) => p.user_id === currentUser.id);
       setMyRole(me?.role || 'member');
     }
   };
