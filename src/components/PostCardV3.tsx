@@ -445,7 +445,12 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
             )}
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <p className="text-[10px] text-gray-400 font-bold uppercase">{getRelativeTime(post.created_at)}</p>
+            <Link
+              href={`/post/${post.id}`}
+              className="text-[10px] text-gray-400 font-bold uppercase hover:text-frog-600 hover:underline transition-colors"
+              >
+              {getRelativeTime(post.created_at)}
+            </Link>
             {post.location && <><span className="w-1 h-1 rounded-full bg-gray-300" /><span className="text-[10px] text-red-500 font-bold flex items-center gap-0.5 uppercase tracking-tight"><MapPin size={10} /> {post.location}</span></>}
             {post.mood && <><span className="w-1 h-1 rounded-full bg-gray-300" /><span className="text-[10px] bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-bold border border-yellow-100">{post.mood.includes('รู้สึก') ? post.mood : `รู้สึก ${post.mood}`}</span></>}
             {post.activity && <><span className="w-1 h-1 rounded-full bg-gray-300" /><span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-bold border border-blue-100">{post.activity.includes('กำลัง') ? post.activity : `กำลัง ${post.activity}`}</span></>}
