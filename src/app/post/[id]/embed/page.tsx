@@ -1,4 +1,3 @@
-// app/post/[id]/embed/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -8,36 +7,57 @@ import { Loader2, Heart, MessageCircle, ArrowUpRight } from 'lucide-react';
 
 export default function PostEmbedPage() {
   const params = useParams();
-  const postId = params.id as string;
-  
+  const rawId = params.id;
+  const postId = Array.isArray(rawId) ? rawId[0] : rawId;
+
   const [post, setPost] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (postId) loadPostData();
+    if (postId) {
+      loadPostData();
+    }
   }, [postId]);
 
   const loadPostData = async () => {
+    setIsLoading(true);
+
     try {
-      // ดึงข้อมูลโพสต์ รูปภาพ ผู้โพสต์ และจํานวนนับต่างๆ (ปรับชื่อ Table/Column ให้ตรงกับฐานข้อมูลจริงของคุณ)
       const { data, error } = await supabase
         .from('posts')
         .select(`
-          id,
-          content,
-          image_url,
-          created_at,
-          likes_count, 
-          comments_count,
-          author:author_id(id, username, display_name, profile_img_url, is_verified)
+          *,
+          author:author_id(id, username, display_name, profile_img_url, is_verified),
+          target:target_id(id, username, display_name, profile_img_url, is_verified)
         `)
         .eq('id', postId)
-        .single();
+        .maybeSingle();
 
-      if (error) throw error;
-      if (data) setPost(data);
+      console.log('Embed postId:', postId);
+      console.log('Embed post data:', data);
+      console.log('Embed post error:', error);
+
+      if (error) {
+        console.error('Error loading embed post:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        });
+
+        setPost(null);
+        return;
+      }
+
+      if (!data) {
+        setPost(null);
+        return;
+      }
+
+      setPost(data);
     } catch (error) {
-      console.error('Error loading embed post:', error);
+      console.error('Unexpected error loading embed post:', error);
+      setPost(null);
     } finally {
       setIsLoading(false);
     }
@@ -59,68 +79,127 @@ export default function PostEmbedPage() {
     );
   }
 
-  // สร้างลิงก์กลับไปยังหน้าโพสต์หลักบนเว็บของคุณ
-  const postUrl = `${window.location.origin}/post/${post.id}`;
+  const postUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/post/${post.id}`
+      : `/post/${post.id}`;
+
+  const authorName =
+    post.author?.display_name ||
+    post.author?.username ||
+    'Unknown user';
+
+  const authorUsername =
+    post.author?.username || 'unknown';
+
+  const authorAvatar =
+    post.author?.profile_img_url || '/default-avatar.png';
+
+  // รองรับหลายชื่อ field เผื่อใน posts ไม่ได้ใช้ชื่อ image_url
+  const postImage =
+    post.image_url ||
+    post.media_url ||
+    post.image ||
+    post.photo_url ||
+    post.cover_url ||
+    post.images?.[0] ||
+    post.image_urls?.[0] ||
+    null;
+
+  // กันกรณี likes_count / comments_count ไม่มีจริงในตาราง
+  const likesCount =
+    post.likes_count ??
+    post.like_count ??
+    post.likes?.length ??
+    0;
+
+  const commentsCount =
+    post.comments_count ??
+    post.comment_count ??
+    post.comments?.length ??
+    0;
 
   return (
     <div className="p-4 bg-white border border-gray-200 rounded-2xl shadow-sm max-w-[550px] mx-auto font-sans antialiased">
-      {/* ส่วนหัว: ข้อมูลผู้โพสต์ */}
-      <div className="flex items-center justify-between mb-3">
-        <a href={postUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 group">
-          <img 
-            src={post.author?.profile_img_url || '/default-avatar.png'} 
-            alt={post.author?.display_name}
-            className="w-9 h-9 rounded-full object-cover ring-1 ring-gray-100"
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3 gap-3">
+        <a
+          href={postUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2.5 group min-w-0"
+        >
+          <img
+            src={authorAvatar}
+            alt={authorName}
+            className="w-9 h-9 rounded-full object-cover ring-1 ring-gray-100 shrink-0"
           />
-          <div>
-            <div className="flex items-center gap-1">
-              <span className="text-sm font-bold text-gray-800 group-hover:text-gray-900 group-hover:underline">
-                {post.author?.display_name}
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="text-sm font-bold text-gray-800 group-hover:text-gray-900 group-hover:underline truncate">
+                {authorName}
               </span>
+
               {post.author?.is_verified && (
-                <span className="text-blue-500 text-xs">✨</span> // หรือไอคอน Verified ของคุณ
+                <span className="text-blue-500 text-xs shrink-0">✨</span>
               )}
             </div>
-            <span className="text-xs text-gray-400">@{post.author?.username}</span>
+
+            <span className="text-xs text-gray-400 truncate block">
+              @{authorUsername}
+            </span>
           </div>
         </a>
-        
-        {/* ปุ่มเปิดดูบนเว็บหลัก */}
-        <a 
-          href={postUrl} 
-          target="_blank" 
+
+        <a
+          href={postUrl}
+          target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 bg-gray-50 hover:bg-gray-100 px-2 py-1 rounded-md transition-colors"
+          className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 bg-gray-50 hover:bg-gray-100 px-2 py-1 rounded-md transition-colors shrink-0"
         >
           ดูบนเว็บหลัก <ArrowUpRight className="w-3 h-3" />
         </a>
       </div>
 
-      {/* ส่วนเนื้อหาข้อความ */}
-      <a href={postUrl} target="_blank" rel="noopener noreferrer" className="block text-sm text-gray-700 leading-relaxed mb-3 whitespace-pre-wrap hover:text-gray-900">
-        {post.content}
-      </a>
+      {/* Content */}
+      {post.content && (
+        <a
+          href={postUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block text-sm text-gray-700 leading-relaxed mb-3 whitespace-pre-wrap hover:text-gray-900"
+        >
+          {post.content}
+        </a>
+      )}
 
-      {/* ส่วนรูปภาพ (ถ้ามี) */}
-      {post.image_url && (
-        <a href={postUrl} target="_blank" rel="noopener noreferrer" className="block mb-4 overflow-hidden rounded-xl border border-gray-100 bg-gray-50 max-h-[300px]">
-          <img 
-            src={post.image_url} 
-            alt="Post media" 
-            className="w-full h-full object-cover hover:scale-[1.01] transition-transform duration-250"
+      {/* Image */}
+      {postImage && (
+        <a
+          href={postUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block mb-4 overflow-hidden rounded-xl border border-gray-100 bg-gray-50 max-h-[300px]"
+        >
+          <img
+            src={postImage}
+            alt="Post media"
+            className="w-full h-full object-cover hover:scale-[1.01] transition-transform duration-200"
           />
         </a>
       )}
 
-      {/* แถบแสดงจำนวน หัวใจ และ คอมเมนต์ (Read-only กดไม่ได้) */}
+      {/* Footer */}
       <div className="flex items-center gap-4 pt-3 border-t border-gray-100 text-gray-500 text-xs font-semibold">
         <div className="flex items-center gap-1.5">
           <Heart className="w-4 h-4 text-gray-400" />
-          <span>{post.likes_count || 0}</span>
+          <span>{likesCount}</span>
         </div>
+
         <div className="flex items-center gap-1.5">
           <MessageCircle className="w-4 h-4 text-gray-400" />
-          <span>{post.comments_count || 0}</span>
+          <span>{commentsCount}</span>
         </div>
       </div>
     </div>
