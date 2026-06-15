@@ -13,16 +13,20 @@ import {
 } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
 
-interface Comment {
+interface EmbedComment {
   id: string;
   post_id: string;
   author_id: string;
   content: string;
-  image_url?: string;
-  parent_comment_id?: string;
+  image_url?: string | null;
   created_at: string;
-  author?: any;
-  replies?: Comment[];
+  author?: {
+    id: string;
+    username: string;
+    display_name: string;
+    profile_img_url?: string | null;
+    is_verified?: boolean;
+  } | null;
 }
 
 export default function PostEmbedPage() {
@@ -34,12 +38,14 @@ export default function PostEmbedPage() {
   const [likeCount, setLikeCount] = useState(0);
   const [commentCount, setCommentCount] = useState(0);
 
-  const [comments, setComments] = useState<Comment[]>([]);
+  const [comments, setComments] = useState<EmbedComment[]>([]);
   const [showComments, setShowComments] = useState(false);
-  const [isCommentsLoading, setIsCommentsLoading] = useState(false);
   const [hasLoadedComments, setHasLoadedComments] = useState(false);
+  const [isCommentsLoading, setIsCommentsLoading] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
+
+  const COMMENT_LIMIT = 10;
 
   useEffect(() => {
     if (postId) {
@@ -67,12 +73,8 @@ export default function PostEmbedPage() {
         .eq('id', postId)
         .maybeSingle();
 
-      console.log('Embed postId:', postId);
-      console.log('Embed post data:', data);
-      console.log('Embed post error:', error);
-
       if (error) {
-        console.error('Error loading embed post:', {
+        console.error('Embed post error:', {
           message: error.message,
           details: error.details,
           hint: error.hint,
@@ -90,30 +92,28 @@ export default function PostEmbedPage() {
 
       setPost(data);
 
+      // เบา: ใช้ head count อย่างเดียว ไม่ดึง rows จริง
       const [likesRes, commentsRes] = await Promise.all([
         supabase
           .from('likes')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .eq('post_id', data.id),
 
         supabase
           .from('comments')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .eq('post_id', data.id),
       ]);
 
-      if (likesRes.error) {
-        console.warn('Embed likes count error:', likesRes.error);
+      if (!likesRes.error) {
+        setLikeCount(likesRes.count || 0);
       }
 
-      if (commentsRes.error) {
-        console.warn('Embed comments count error:', commentsRes.error);
+      if (!commentsRes.error) {
+        setCommentCount(commentsRes.count || 0);
       }
-
-      setLikeCount(likesRes.count || 0);
-      setCommentCount(commentsRes.count || 0);
     } catch (error) {
-      console.error('Unexpected error loading embed post:', error);
+      console.error('Unexpected embed post error:', error);
       setPost(null);
     } finally {
       setIsLoading(false);
@@ -126,20 +126,25 @@ export default function PostEmbedPage() {
     setIsCommentsLoading(true);
 
     try {
+      // เบา: โหลดเฉพาะ top-level comments 10 อันล่าสุด ไม่โหลด replies
       const { data, error } = await supabase
         .from('comments')
         .select(`
-          *,
+          id,
+          post_id,
+          author_id,
+          content,
+          image_url,
+          created_at,
           author:author_id(id, username, display_name, profile_img_url, is_verified)
         `)
         .eq('post_id', post.id)
-        .order('created_at', { ascending: true });
-
-      console.log('Embed comments data:', data);
-      console.log('Embed comments error:', error);
+        .is('parent_comment_id', null)
+        .order('created_at', { ascending: false })
+        .limit(COMMENT_LIMIT);
 
       if (error) {
-        console.error('Error loading embed comments:', {
+        console.error('Embed comments error:', {
           message: error.message,
           details: error.details,
           hint: error.hint,
@@ -151,18 +156,10 @@ export default function PostEmbedPage() {
         return;
       }
 
-      const allComments = (data || []) as Comment[];
-      const topLevel = allComments.filter(comment => !comment.parent_comment_id);
-
-      const formatted = topLevel.map(comment => ({
-        ...comment,
-        replies: allComments.filter(reply => reply.parent_comment_id === comment.id),
-      }));
-
-      setComments(formatted);
+      setComments((data || []) as EmbedComment[]);
       setHasLoadedComments(true);
     } catch (error) {
-      console.error('Unexpected error loading embed comments:', error);
+      console.error('Unexpected embed comments error:', error);
       setComments([]);
       setHasLoadedComments(true);
     } finally {
@@ -170,11 +167,20 @@ export default function PostEmbedPage() {
     }
   };
 
+  const getAbsoluteUrl = (path: string) => {
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}${path}`;
+    }
+
+    return path;
+  };
+
   const renderTextWithTags = useMemo(() => {
     return (text: string) => {
       if (!text) return null;
 
-      const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|#[a-zA-Z0-9_ก-๙]+|https?:\/\/[^\s]+)/g;
+      const regex =
+        /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|#[a-zA-Z0-9_ก-๙]+|https?:\/\/[^\s]+)/g;
 
       return text.split(regex).map((part, index) => {
         if (!part) return null;
@@ -188,7 +194,7 @@ export default function PostEmbedPage() {
           return (
             <a
               key={index}
-              href={`/profile/${username}`}
+              href={getAbsoluteUrl(`/profile/${username}`)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-frog-600 font-bold hover:underline"
@@ -204,7 +210,7 @@ export default function PostEmbedPage() {
           return (
             <a
               key={index}
-              href={`/profile/${username}`}
+              href={getAbsoluteUrl(`/profile/${username}`)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-frog-600 font-bold hover:underline"
@@ -241,24 +247,6 @@ export default function PostEmbedPage() {
     };
   }, []);
 
-  const getPostUrl = () => {
-    if (typeof window !== 'undefined') {
-      return `${window.location.origin}/post/${post.id}`;
-    }
-
-    return `/post/${post.id}`;
-  };
-
-  const getProfileUrl = (username?: string) => {
-    if (!username) return '#';
-
-    if (typeof window !== 'undefined') {
-      return `${window.location.origin}/profile/${username}`;
-    }
-
-    return `/profile/${username}`;
-  };
-
   if (isLoading) {
     return (
       <main className="min-h-screen w-full bg-transparent px-3 py-5 overflow-y-auto">
@@ -279,28 +267,26 @@ export default function PostEmbedPage() {
     );
   }
 
-  const postUrl = getPostUrl();
+  const postUrl = getAbsoluteUrl(`/post/${post.id}`);
 
   const authorName =
     post.author?.display_name ||
     post.author?.username ||
     'Unknown user';
 
-  const authorUsername =
-    post.author?.username || 'unknown';
+  const authorUsername = post.author?.username || 'unknown';
 
   const authorAvatar =
     post.author?.profile_img_url || 'https://iili.io/qbtgKBt.png';
 
-  const images =
-    Array.isArray(post.images)
-      ? post.images.filter(Boolean)
-      : [];
+  const images = Array.isArray(post.images)
+    ? post.images.filter(Boolean)
+    : [];
 
   const content = post.content || '';
   const isLongContent = content.length > 700;
 
-  const renderCommentItem = (comment: Comment, isReply = false) => {
+  const renderCommentItem = (comment: EmbedComment) => {
     const commentAuthorName =
       comment.author?.display_name ||
       comment.author?.username ||
@@ -313,58 +299,54 @@ export default function PostEmbedPage() {
       comment.author?.profile_img_url || 'https://iili.io/qbtgKBt.png';
 
     return (
-      <div
-        key={comment.id}
-        className={`${isReply ? 'ml-8 mt-2' : 'mb-4'}`}
-      >
-        <div className="flex gap-2">
-          <a
-            href={getProfileUrl(commentAuthorUsername)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0"
-          >
-            <img
-              src={commentAuthorAvatar}
-              alt={commentAuthorName}
-              className="w-8 h-8 rounded-full object-cover ring-1 ring-gray-100"
-            />
-          </a>
+      <div key={comment.id} className="flex gap-2">
+        <a
+          href={getAbsoluteUrl(`/profile/${commentAuthorUsername}`)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0"
+        >
+          <img
+            src={commentAuthorAvatar}
+            alt={commentAuthorName}
+            className="w-8 h-8 rounded-full object-cover ring-1 ring-gray-100"
+            loading="lazy"
+          />
+        </a>
 
-          <div className="flex-1 min-w-0">
-            <div className="inline-block max-w-full bg-gray-100 rounded-2xl px-3 py-2">
-              <a
-                href={getProfileUrl(commentAuthorUsername)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-bold text-[11px] text-gray-900 flex items-center gap-1 hover:underline"
-              >
-                {commentAuthorName}
-                {comment.author?.is_verified && (
-                  <BadgeCheck className="w-3 h-3 text-blue-500 shrink-0" />
-                )}
-              </a>
+        <div className="flex-1 min-w-0">
+          <div className="inline-block max-w-full bg-gray-100 rounded-2xl px-3 py-2">
+            <a
+              href={getAbsoluteUrl(`/profile/${commentAuthorUsername}`)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-bold text-[11px] text-gray-900 flex items-center gap-1 hover:underline"
+            >
+              {commentAuthorName}
 
-              {comment.content && (
-                <p className="text-sm text-gray-800 break-words whitespace-pre-wrap">
-                  {renderTextWithTags(comment.content)}
-                </p>
+              {comment.author?.is_verified && (
+                <BadgeCheck className="w-3 h-3 text-blue-500 shrink-0" />
               )}
+            </a>
 
-              {comment.image_url && (
-                <img
-                  src={comment.image_url}
-                  alt="Comment media"
-                  className="mt-2 rounded-xl max-h-48 object-cover"
-                />
-              )}
-            </div>
+            {comment.content && (
+              <p className="text-sm text-gray-800 break-words whitespace-pre-wrap">
+                {renderTextWithTags(comment.content)}
+              </p>
+            )}
 
-            <div className="flex items-center gap-2 mt-1 ml-2 text-[10px] font-bold text-gray-400 uppercase">
-              <span>{getRelativeTime(comment.created_at)}</span>
-            </div>
+            {comment.image_url && (
+              <img
+                src={comment.image_url}
+                alt="Comment media"
+                className="mt-2 rounded-xl max-h-40 object-cover"
+                loading="lazy"
+              />
+            )}
+          </div>
 
-            {comment.replies?.map(reply => renderCommentItem(reply, true))}
+          <div className="mt-1 ml-2 text-[10px] font-bold text-gray-400 uppercase">
+            {getRelativeTime(comment.created_at)}
           </div>
         </div>
       </div>
@@ -378,7 +360,7 @@ export default function PostEmbedPage() {
           {/* Header */}
           <div className="flex items-start justify-between mb-3 gap-3">
             <a
-              href={getProfileUrl(authorUsername)}
+              href={getAbsoluteUrl(`/profile/${authorUsername}`)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2.5 group min-w-0"
@@ -387,6 +369,7 @@ export default function PostEmbedPage() {
                 src={authorAvatar}
                 alt={authorName}
                 className="w-10 h-10 rounded-full object-cover ring-1 ring-gray-100 shrink-0"
+                loading="lazy"
               />
 
               <div className="min-w-0">
@@ -430,7 +413,7 @@ export default function PostEmbedPage() {
             <div
               className={`block text-sm text-gray-800 leading-relaxed mb-4 whitespace-pre-wrap break-words ${
                 isLongContent
-                  ? 'max-h-[240px] overflow-y-auto pr-2 rounded-xl'
+                  ? 'max-h-[220px] overflow-y-auto pr-2 rounded-xl'
                   : ''
               }`}
             >
@@ -500,7 +483,7 @@ export default function PostEmbedPage() {
               <span>{commentCount}</span>
             </button>
 
-            {showComments && (
+            {showComments ? (
               <button
                 type="button"
                 onClick={() => setShowComments(false)}
@@ -508,9 +491,7 @@ export default function PostEmbedPage() {
               >
                 ปิด <X className="w-3 h-3" />
               </button>
-            )}
-
-            {!showComments && (
+            ) : (
               <div className="ml-auto">
                 <span className="text-[10px] text-gray-300 uppercase tracking-wider">
                   Embedded Post
@@ -519,7 +500,7 @@ export default function PostEmbedPage() {
             )}
           </div>
 
-          {/* Comments */}
+          {/* Lightweight Comments */}
           {showComments && (
             <div className="mt-4 pt-4 border-t border-gray-100 max-h-[320px] overflow-y-auto pr-1">
               {isCommentsLoading ? (
@@ -531,9 +512,22 @@ export default function PostEmbedPage() {
                   ยังไม่มีความคิดเห็น
                 </p>
               ) : (
-                <div className="space-y-3">
-                  {comments.map(comment => renderCommentItem(comment))}
-                </div>
+                <>
+                  <div className="space-y-3">
+                    {comments.map(comment => renderCommentItem(comment))}
+                  </div>
+
+                  {commentCount > COMMENT_LIMIT && (
+                    <a
+                      href={postUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 block text-center text-xs font-black text-frog-600 hover:underline"
+                    >
+                      ดูความคิดเห็นทั้งหมดบนเว็บหลัก
+                    </a>
+                  )}
+                </>
               )}
             </div>
           )}
