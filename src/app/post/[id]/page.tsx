@@ -67,7 +67,7 @@ export default function PostPage() {
 
   const handleCopyEmbed = () => {
     if (typeof window !== 'undefined') {
-      const embedCode = `<iframe src="${window.location.origin}/post/${postId}/embed" width="100%" height="380" style="border:none; max-width:600px; width:100%;" frameborder="0" scrolling="no"></iframe>`;
+      const embedCode = `<iframe src="${window.location.origin}/post/${postId}/embed" width="100%" height="520" style="border:none; max-width:650px; width:100%; border-radius:18px; overflow:hidden;" frameborder="0" scrolling="auto"></iframe>`;
       navigator.clipboard.writeText(embedCode);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000); // เปลี่ยนสถานะปุ่มกลับหลังจาก 2 วินาที
@@ -139,7 +139,7 @@ export default function PostPage() {
             
             <div className="relative group">
               <code className="text-xs text-gray-600 bg-gray-100 p-3 rounded-xl block overflow-x-auto select-all break-all whitespace-normal border border-gray-200/50 font-mono leading-relaxed">
-                {`<iframe src="${typeof window !== 'undefined' ? window.location.origin : ''}/post/${postId}/embed" width="100%" height="380" style="border:none; max-width:600px;" frameborder="0" scrolling="no"></iframe>`}
+                {`<iframe src="${typeof window !== 'undefined' ? window.location.origin : ''}/post/${postId}/embed" width="100%" height="520" style="border:none; max-width:650px; width:100%; border-radius:18px; overflow:hidden;" frameborder="0" scrolling="auto"></iframe>`}
               </code>
             </div>
             <p className="text-[11px] text-gray-400">
