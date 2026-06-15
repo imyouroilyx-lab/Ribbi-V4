@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useParams } from 'next/navigation';
 import {
@@ -9,8 +9,21 @@ import {
   MessageCircle,
   ArrowUpRight,
   BadgeCheck,
+  X,
 } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
+
+interface Comment {
+  id: string;
+  post_id: string;
+  author_id: string;
+  content: string;
+  image_url?: string;
+  parent_comment_id?: string;
+  created_at: string;
+  author?: any;
+  replies?: Comment[];
+}
 
 export default function PostEmbedPage() {
   const params = useParams();
@@ -20,6 +33,12 @@ export default function PostEmbedPage() {
   const [post, setPost] = useState<any>(null);
   const [likeCount, setLikeCount] = useState(0);
   const [commentCount, setCommentCount] = useState(0);
+
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [showComments, setShowComments] = useState(false);
+  const [isCommentsLoading, setIsCommentsLoading] = useState(false);
+  const [hasLoadedComments, setHasLoadedComments] = useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -27,6 +46,12 @@ export default function PostEmbedPage() {
       loadPostData();
     }
   }, [postId]);
+
+  useEffect(() => {
+    if (showComments && !hasLoadedComments && post?.id) {
+      loadComments();
+    }
+  }, [showComments, hasLoadedComments, post?.id]);
 
   const loadPostData = async () => {
     setIsLoading(true);
@@ -95,6 +120,145 @@ export default function PostEmbedPage() {
     }
   };
 
+  const loadComments = async () => {
+    if (!post?.id) return;
+
+    setIsCommentsLoading(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select(`
+          *,
+          author:author_id(id, username, display_name, profile_img_url, is_verified)
+        `)
+        .eq('post_id', post.id)
+        .order('created_at', { ascending: true });
+
+      console.log('Embed comments data:', data);
+      console.log('Embed comments error:', error);
+
+      if (error) {
+        console.error('Error loading embed comments:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        });
+
+        setComments([]);
+        setHasLoadedComments(true);
+        return;
+      }
+
+      const allComments = (data || []) as Comment[];
+      const topLevel = allComments.filter(comment => !comment.parent_comment_id);
+
+      const formatted = topLevel.map(comment => ({
+        ...comment,
+        replies: allComments.filter(reply => reply.parent_comment_id === comment.id),
+      }));
+
+      setComments(formatted);
+      setHasLoadedComments(true);
+    } catch (error) {
+      console.error('Unexpected error loading embed comments:', error);
+      setComments([]);
+      setHasLoadedComments(true);
+    } finally {
+      setIsCommentsLoading(false);
+    }
+  };
+
+  const renderTextWithTags = useMemo(() => {
+    return (text: string) => {
+      if (!text) return null;
+
+      const regex = /(@\[.*?\]\([a-zA-Z0-9_]+\)|@[a-zA-Z0-9_]+|#[a-zA-Z0-9_ก-๙]+|https?:\/\/[^\s]+)/g;
+
+      return text.split(regex).map((part, index) => {
+        if (!part) return null;
+
+        const mdMention = part.match(/^@\[(.*?)\]\(([a-zA-Z0-9_]+)\)$/);
+
+        if (mdMention) {
+          const displayName = mdMention[1];
+          const username = mdMention[2];
+
+          return (
+            <a
+              key={index}
+              href={`/profile/${username}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-frog-600 font-bold hover:underline"
+            >
+              {displayName}
+            </a>
+          );
+        }
+
+        if (part.startsWith('@')) {
+          const username = part.slice(1);
+
+          return (
+            <a
+              key={index}
+              href={`/profile/${username}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-frog-600 font-bold hover:underline"
+            >
+              {part}
+            </a>
+          );
+        }
+
+        if (part.startsWith('#')) {
+          return (
+            <span key={index} className="text-blue-500 font-bold">
+              {part}
+            </span>
+          );
+        }
+
+        if (part.startsWith('http')) {
+          return (
+            <a
+              key={index}
+              href={part}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:underline break-all"
+            >
+              {part}
+            </a>
+          );
+        }
+
+        return <span key={index}>{part}</span>;
+      });
+    };
+  }, []);
+
+  const getPostUrl = () => {
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/post/${post.id}`;
+    }
+
+    return `/post/${post.id}`;
+  };
+
+  const getProfileUrl = (username?: string) => {
+    if (!username) return '#';
+
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/profile/${username}`;
+    }
+
+    return `/profile/${username}`;
+  };
+
   if (isLoading) {
     return (
       <main className="min-h-screen w-full bg-transparent px-3 py-5 overflow-y-auto">
@@ -115,10 +279,7 @@ export default function PostEmbedPage() {
     );
   }
 
-  const postUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/post/${post.id}`
-      : `/post/${post.id}`;
+  const postUrl = getPostUrl();
 
   const authorName =
     post.author?.display_name ||
@@ -139,6 +300,77 @@ export default function PostEmbedPage() {
   const content = post.content || '';
   const isLongContent = content.length > 700;
 
+  const renderCommentItem = (comment: Comment, isReply = false) => {
+    const commentAuthorName =
+      comment.author?.display_name ||
+      comment.author?.username ||
+      'Unknown user';
+
+    const commentAuthorUsername =
+      comment.author?.username || 'unknown';
+
+    const commentAuthorAvatar =
+      comment.author?.profile_img_url || 'https://iili.io/qbtgKBt.png';
+
+    return (
+      <div
+        key={comment.id}
+        className={`${isReply ? 'ml-8 mt-2' : 'mb-4'}`}
+      >
+        <div className="flex gap-2">
+          <a
+            href={getProfileUrl(commentAuthorUsername)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0"
+          >
+            <img
+              src={commentAuthorAvatar}
+              alt={commentAuthorName}
+              className="w-8 h-8 rounded-full object-cover ring-1 ring-gray-100"
+            />
+          </a>
+
+          <div className="flex-1 min-w-0">
+            <div className="inline-block max-w-full bg-gray-100 rounded-2xl px-3 py-2">
+              <a
+                href={getProfileUrl(commentAuthorUsername)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-bold text-[11px] text-gray-900 flex items-center gap-1 hover:underline"
+              >
+                {commentAuthorName}
+                {comment.author?.is_verified && (
+                  <BadgeCheck className="w-3 h-3 text-blue-500 shrink-0" />
+                )}
+              </a>
+
+              {comment.content && (
+                <p className="text-sm text-gray-800 break-words whitespace-pre-wrap">
+                  {renderTextWithTags(comment.content)}
+                </p>
+              )}
+
+              {comment.image_url && (
+                <img
+                  src={comment.image_url}
+                  alt="Comment media"
+                  className="mt-2 rounded-xl max-h-48 object-cover"
+                />
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 mt-1 ml-2 text-[10px] font-bold text-gray-400 uppercase">
+              <span>{getRelativeTime(comment.created_at)}</span>
+            </div>
+
+            {comment.replies?.map(reply => renderCommentItem(reply, true))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <main className="min-h-screen w-full bg-transparent px-3 py-5 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
       <article className="w-full max-w-[620px] mx-auto bg-white border border-gray-200 rounded-2xl shadow-sm font-sans antialiased overflow-hidden">
@@ -146,7 +378,7 @@ export default function PostEmbedPage() {
           {/* Header */}
           <div className="flex items-start justify-between mb-3 gap-3">
             <a
-              href={postUrl}
+              href={getProfileUrl(authorUsername)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2.5 group min-w-0"
@@ -195,18 +427,15 @@ export default function PostEmbedPage() {
 
           {/* Content */}
           {content && (
-            <a
-              href={postUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`block text-sm text-gray-800 leading-relaxed mb-4 whitespace-pre-wrap break-words hover:text-gray-900 ${
+            <div
+              className={`block text-sm text-gray-800 leading-relaxed mb-4 whitespace-pre-wrap break-words ${
                 isLongContent
                   ? 'max-h-[240px] overflow-y-auto pr-2 rounded-xl'
                   : ''
               }`}
             >
-              {content}
-            </a>
+              {renderTextWithTags(content)}
+            </div>
           )}
 
           {/* Images */}
@@ -258,17 +487,56 @@ export default function PostEmbedPage() {
               <span>{likeCount}</span>
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowComments(prev => !prev)}
+              className={`flex items-center gap-1.5 rounded-lg transition-colors ${
+                showComments
+                  ? 'text-frog-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
               <MessageCircle className="w-4 h-4 text-gray-400" />
               <span>{commentCount}</span>
-            </div>
+            </button>
 
-            <div className="ml-auto">
-              <span className="text-[10px] text-gray-300 uppercase tracking-wider">
-                Embedded Post
-              </span>
-            </div>
+            {showComments && (
+              <button
+                type="button"
+                onClick={() => setShowComments(false)}
+                className="ml-auto text-[10px] text-gray-400 hover:text-gray-600 flex items-center gap-1"
+              >
+                ปิด <X className="w-3 h-3" />
+              </button>
+            )}
+
+            {!showComments && (
+              <div className="ml-auto">
+                <span className="text-[10px] text-gray-300 uppercase tracking-wider">
+                  Embedded Post
+                </span>
+              </div>
+            )}
           </div>
+
+          {/* Comments */}
+          {showComments && (
+            <div className="mt-4 pt-4 border-t border-gray-100 max-h-[320px] overflow-y-auto pr-1">
+              {isCommentsLoading ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+                </div>
+              ) : comments.length === 0 ? (
+                <p className="text-center text-gray-300 text-[10px] font-black uppercase py-4">
+                  ยังไม่มีความคิดเห็น
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {comments.map(comment => renderCommentItem(comment))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </article>
     </main>
