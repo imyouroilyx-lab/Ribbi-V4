@@ -13,6 +13,14 @@ import {
 } from 'lucide-react';
 import { getRelativeTime } from '@/lib/utils';
 
+interface EmbedUser {
+  id: string;
+  username: string;
+  display_name: string;
+  profile_img_url?: string | null;
+  is_verified?: boolean;
+}
+
 interface EmbedComment {
   id: string;
   post_id: string;
@@ -20,14 +28,12 @@ interface EmbedComment {
   content: string;
   image_url?: string | null;
   created_at: string;
-  author?: {
-    id: string;
-    username: string;
-    display_name: string;
-    profile_img_url?: string | null;
-    is_verified?: boolean;
-  } | null;
+  author?: EmbedUser | null;
 }
+
+type RawEmbedComment = Omit<EmbedComment, 'author'> & {
+  author?: EmbedUser | EmbedUser[] | null;
+};
 
 export default function PostEmbedPage() {
   const params = useParams();
@@ -92,7 +98,6 @@ export default function PostEmbedPage() {
 
       setPost(data);
 
-      // เบา: ใช้ head count อย่างเดียว ไม่ดึง rows จริง
       const [likesRes, commentsRes] = await Promise.all([
         supabase
           .from('likes')
@@ -107,10 +112,14 @@ export default function PostEmbedPage() {
 
       if (!likesRes.error) {
         setLikeCount(likesRes.count || 0);
+      } else {
+        console.warn('Embed likes count error:', likesRes.error);
       }
 
       if (!commentsRes.error) {
         setCommentCount(commentsRes.count || 0);
+      } else {
+        console.warn('Embed comments count error:', commentsRes.error);
       }
     } catch (error) {
       console.error('Unexpected embed post error:', error);
@@ -126,7 +135,6 @@ export default function PostEmbedPage() {
     setIsCommentsLoading(true);
 
     try {
-      // เบา: โหลดเฉพาะ top-level comments 10 อันล่าสุด ไม่โหลด replies
       const { data, error } = await supabase
         .from('comments')
         .select(`
@@ -156,7 +164,16 @@ export default function PostEmbedPage() {
         return;
       }
 
-      setComments((data || []) as EmbedComment[]);
+      const rows = (data || []) as unknown as RawEmbedComment[];
+
+      const normalizedComments: EmbedComment[] = rows.map(comment => ({
+        ...comment,
+        author: Array.isArray(comment.author)
+          ? comment.author[0] || null
+          : comment.author || null,
+      }));
+
+      setComments(normalizedComments);
       setHasLoadedComments(true);
     } catch (error) {
       console.error('Unexpected embed comments error:', error);
