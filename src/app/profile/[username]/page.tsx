@@ -11,12 +11,16 @@ import {
   MapPin, Calendar, Briefcase, Home as HomeIcon, 
   Edit, UserPlus, UserCheck, Heart, Users, 
   MessageCircle, Loader2, ExternalLink, Trash2, Plus, Clock, Info,
-  BadgeCheck, Link as LinkIcon, Fingerprint, Image as ImageIcon, X, Maximize2
+  BadgeCheck, Link as LinkIcon, Fingerprint, Image as ImageIcon, X, Maximize2,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import Link from 'next/link';
 import { calculateAge } from '../../../lib/utils';
+import { getStoryElapsedText } from '../../../lib/story-utils';
+import type { Story, StoryAuthor } from '../../../types/story';
 
 const POSTS_PER_PAGE = 10;
+const STORY_DURATION_MS = 5000;
 
 interface FamilyMember {
   id: string;
@@ -46,6 +50,16 @@ const getRelationshipText = (status: string) => {
   }
 };
 
+function normalizeStoryAuthor(author: Story['author']): StoryAuthor | null {
+  if (!author) return null;
+  if (Array.isArray(author)) return author[0] ?? null;
+  return author;
+}
+
+function getStoryAuthorName(author: StoryAuthor | null) {
+  return author?.display_name || author?.username || 'Story';
+}
+
 export default function ProfilePage() {
   const params = useParams();
   const router = useRouter();
@@ -73,6 +87,12 @@ export default function ProfilePage() {
 
   // ✅ States สำหรับระบบดูรูปเต็ม
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  // ✅ States สำหรับสตอรี่บนหน้าโปรไฟล์
+  const [profileStories, setProfileStories] = useState<Story[]>([]);
+  const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
+  const [showStoryViewer, setShowStoryViewer] = useState(false);
+  const [storyProgress, setStoryProgress] = useState(0);
   
   const [showDeletePostConfirm, setShowDeletePostConfirm] = useState(false);
   const [postToDelete, setPostToDelete] = useState<string | null>(null);
@@ -100,6 +120,7 @@ export default function ProfilePage() {
     if (profileUser && currentUser) {
       loadSecondaryData(profileUser.id, currentUser.id);
       loadPosts(profileUser.id);
+      loadProfileStories(profileUser.id);
     }
   }, [profileUser?.id, currentUser?.id, refreshTrigger]);
 
@@ -141,6 +162,42 @@ export default function ProfilePage() {
       setHasMore((data?.length || 0) === POSTS_PER_PAGE);
     } catch (err) { console.error(err); }
     finally { setIsPostsLoading(false); }
+  };
+
+  const loadProfileStories = async (targetId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('stories')
+        .select(`
+          id,
+          author_id,
+          image_url,
+          caption,
+          created_at,
+          expires_at,
+          author:author_id (
+            id,
+            username,
+            display_name,
+            profile_img_url,
+            is_verified
+          )
+        `)
+        .eq('author_id', targetId)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error loading profile stories:', error);
+        setProfileStories([]);
+        return;
+      }
+
+      setProfileStories((data ?? []) as Story[]);
+    } catch (err) {
+      console.error(err);
+      setProfileStories([]);
+    }
   };
 
   const loadSecondaryData = async (targetId: string, authId: string) => {
@@ -186,6 +243,73 @@ export default function ProfilePage() {
       setHasMore(data.length === POSTS_PER_PAGE);
     } else { setHasMore(false); }
     setIsLoadingMore(false);
+  };
+
+  const markProfileStoryAsViewed = async (story: Story) => {
+    if (!currentUser || story.author_id === currentUser.id) return;
+
+    const { error } = await supabase
+      .from('story_views')
+      .upsert(
+        {
+          story_id: story.id,
+          viewer_id: currentUser.id,
+        },
+        {
+          onConflict: 'story_id,viewer_id',
+          ignoreDuplicates: true,
+        }
+      );
+
+    if (error) {
+      console.error('Error marking profile story as viewed:', error);
+    }
+  };
+
+  const openProfileStoryViewer = async (startIndex = 0) => {
+    if (!profileStories.length) return;
+
+    const safeIndex = Math.max(0, Math.min(startIndex, profileStories.length - 1));
+    const story = profileStories[safeIndex];
+
+    setSelectedStoryIndex(safeIndex);
+    setShowStoryViewer(true);
+    setStoryProgress(0);
+
+    await markProfileStoryAsViewed(story);
+  };
+
+  const closeProfileStoryViewer = () => {
+    setShowStoryViewer(false);
+    setSelectedStoryIndex(0);
+    setStoryProgress(0);
+  };
+
+  const goToPreviousProfileStory = async () => {
+    if (selectedStoryIndex <= 0) return;
+
+    const nextIndex = selectedStoryIndex - 1;
+    const story = profileStories[nextIndex];
+
+    setSelectedStoryIndex(nextIndex);
+    setStoryProgress(0);
+
+    await markProfileStoryAsViewed(story);
+  };
+
+  const goToNextProfileStory = async () => {
+    if (selectedStoryIndex < profileStories.length - 1) {
+      const nextIndex = selectedStoryIndex + 1;
+      const story = profileStories[nextIndex];
+
+      setSelectedStoryIndex(nextIndex);
+      setStoryProgress(0);
+
+      await markProfileStoryAsViewed(story);
+      return;
+    }
+
+    closeProfileStoryViewer();
   };
 
   const handleSendMessage = async () => {
@@ -241,6 +365,38 @@ export default function ProfilePage() {
     setShowFamilyDeleteConfirm(false);
   };
 
+  const themeColor = profileUser?.theme_color || '#9de5a8';
+  const isOwnProfile = currentUser?.id === profileUser?.id;
+  const hasProfileStories = profileStories.length > 0;
+  const selectedStory = showStoryViewer ? profileStories[selectedStoryIndex] : null;
+  const selectedStoryAuthor = selectedStory ? normalizeStoryAuthor(selectedStory.author) : null;
+  const canGoPreviousStory = selectedStoryIndex > 0;
+  const canGoNextStory = selectedStoryIndex < profileStories.length - 1;
+
+  useEffect(() => {
+    if (!showStoryViewer || !selectedStory) return;
+
+    setStoryProgress(0);
+
+    const startedAt = Date.now();
+
+    const interval = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const nextProgress = Math.min((elapsed / STORY_DURATION_MS) * 100, 100);
+
+      setStoryProgress(nextProgress);
+
+      if (nextProgress >= 100) {
+        window.clearInterval(interval);
+        goToNextProfileStory();
+      }
+    }, 50);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [selectedStory?.id, showStoryViewer]);
+
   if (isProfileLoading || !profileUser || !currentUser) return (
     <NavLayout>
       <div className="flex flex-col items-center justify-center py-20">
@@ -249,9 +405,6 @@ export default function ProfilePage() {
       </div>
     </NavLayout>
   );
-
-  const themeColor = profileUser.theme_color || '#9de5a8';
-  const isOwnProfile = currentUser.id === profileUser.id;
 
   // ✅ แก้ไข: ย่อขนาดรูปภาพแนะนำโดยการเพิ่มคอลัมน์ใน Grid (3/5/6 คอลัมน์) และปรับ Padding การ์ด
   const FeaturedImagesWidget = () => {
@@ -395,8 +548,31 @@ export default function ProfilePage() {
               </div>
               <div className="px-6 md:px-10 pb-8 relative bg-white z-10">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 relative z-20 mb-4">
-                  <div className="w-36 h-36 md:w-48 md:h-48 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px] -mt-20 md:-mt-28" style={{ borderColor: themeColor }}>
-                    <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover bg-gray-50" />
+                  <div
+                    className={`w-36 h-36 md:w-48 md:h-48 rounded-full p-1.5 shadow-xl flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px] -mt-20 md:-mt-28 ${
+                      hasProfileStories
+                        ? 'bg-gradient-to-br from-pink-400 via-purple-500 to-sky-400'
+                        : 'bg-white'
+                    }`}
+                    style={{
+                      borderColor: hasProfileStories ? 'transparent' : themeColor
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (hasProfileStories) {
+                          openProfileStoryViewer(0);
+                        }
+                      }}
+                      disabled={!hasProfileStories}
+                      className={`w-full h-full rounded-full bg-white p-[3px] ${
+                        hasProfileStories ? 'cursor-pointer active:scale-95 transition-transform' : 'cursor-default'
+                      }`}
+                      aria-label={hasProfileStories ? 'ดูสตอรี่ของผู้ใช้นี้' : undefined}
+                    >
+                      <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover bg-gray-50" />
+                    </button>
                   </div>
                   
                   <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 pb-2 pt-2 md:pt-0">
@@ -555,6 +731,122 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* ✅ Story Viewer จากหน้าโปรไฟล์ */}
+      {showStoryViewer && selectedStory && (
+        <div
+          className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={closeProfileStoryViewer}
+        >
+          <div
+            className="relative bg-slate-950 rounded-[2rem] overflow-hidden shadow-2xl border border-white/10"
+            style={{
+              width: 'min(420px, calc((100vh - 4rem) * 9 / 16), calc(100vw - 2rem))',
+              aspectRatio: '9 / 16',
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="absolute top-0 left-0 right-0 h-40 z-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent pointer-events-none" />
+            <div className="absolute left-0 right-0 bottom-0 h-64 z-10 bg-gradient-to-t from-black/95 via-black/70 to-transparent pointer-events-none" />
+
+            <button
+              type="button"
+              onClick={closeProfileStoryViewer}
+              className="absolute top-6 right-3 z-30 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="absolute top-0 left-0 right-0 z-30 flex gap-1 px-3 pt-3">
+              {profileStories.map((story, index) => (
+                <div
+                  key={story.id}
+                  className="h-1 flex-1 rounded-full bg-white/25 overflow-hidden"
+                >
+                  <div
+                    className="h-full rounded-full bg-white transition-[width] duration-75 ease-linear"
+                    style={{
+                      width:
+                        index < selectedStoryIndex
+                          ? '100%'
+                          : index === selectedStoryIndex
+                            ? `${storyProgress}%`
+                            : '0%',
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="absolute top-10 left-3 right-14 z-30 flex items-center gap-2">
+              <img
+                src={selectedStoryAuthor?.profile_img_url || 'https://iili.io/qbtgKBt.png'}
+                className="w-9 h-9 rounded-xl object-cover border border-white/20"
+                alt=""
+                onError={(event) => {
+                  event.currentTarget.src = 'https://iili.io/qbtgKBt.png';
+                }}
+              />
+
+              <div className="min-w-0">
+                <p className="text-white text-xs font-black truncate flex items-center gap-1 drop-shadow">
+                  {getStoryAuthorName(selectedStoryAuthor)}
+                  {selectedStoryAuthor?.is_verified && (
+                    <BadgeCheck className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                  )}
+                </p>
+
+                <p className="text-white/75 text-[10px] font-bold drop-shadow">
+                  {getStoryElapsedText(selectedStory.created_at)}
+                  {profileStories.length > 1 && (
+                    <>
+                      {' '}
+                      · {selectedStoryIndex + 1}/{profileStories.length}
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {canGoPreviousStory && (
+              <button
+                type="button"
+                onClick={goToPreviousProfileStory}
+                className="absolute left-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+              >
+                <ChevronLeft size={22} />
+              </button>
+            )}
+
+            {canGoNextStory && (
+              <button
+                type="button"
+                onClick={goToNextProfileStory}
+                className="absolute right-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+              >
+                <ChevronRight size={22} />
+              </button>
+            )}
+
+            <img
+              src={selectedStory.image_url}
+              alt=""
+              className="w-full h-full object-contain bg-black"
+              onError={(event) => {
+                event.currentTarget.src = 'https://iili.io/qbtgKBt.png';
+              }}
+            />
+
+            <div className="absolute left-0 right-0 bottom-0 z-30 p-4">
+              {selectedStory.caption && (
+                <p className="text-white text-sm leading-relaxed mb-3 break-words drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
+                  {selectedStory.caption}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ✅ Modal แสดงรูปภาพเต็มหน้าจอ */}
       {selectedImage && (
