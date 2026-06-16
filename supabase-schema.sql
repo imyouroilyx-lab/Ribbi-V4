@@ -477,3 +477,67 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+
+-- =====================================================
+-- STORIES TABLE
+-- ระบบสตอรี่หายเองภายใน 24 ชั่วโมง
+-- เก็บแค่ URL รูปภาพ ไม่อัปโหลดไฟล์
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS stories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  author_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  image_url TEXT NOT NULL,
+  caption TEXT,
+
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '24 hours')
+);
+
+CREATE INDEX IF NOT EXISTS idx_stories_expires_at
+ON stories(expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_stories_created_at
+ON stories(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_stories_author_created_at
+ON stories(author_id, created_at DESC);
+
+ALTER TABLE stories ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Active stories are viewable by everyone" ON stories;
+DROP POLICY IF EXISTS "Users can create own stories" ON stories;
+DROP POLICY IF EXISTS "Users can delete own stories" ON stories;
+
+CREATE POLICY "Active stories are viewable by everyone"
+ON stories
+FOR SELECT
+USING (expires_at > NOW());
+
+CREATE POLICY "Users can create own stories"
+ON stories
+FOR INSERT
+WITH CHECK ((SELECT auth.uid()) = author_id);
+
+CREATE POLICY "Users can delete own stories"
+ON stories
+FOR DELETE
+USING ((SELECT auth.uid()) = author_id);
+
+
+-- =====================================================
+-- STORIES CLEANUP CRON
+-- =====================================================
+
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+SELECT cron.schedule(
+  'delete-expired-stories-every-hour',
+  '0 * * * *',
+  $$
+    DELETE FROM stories
+    WHERE expires_at < NOW();
+  $$
+);
