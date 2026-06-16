@@ -549,14 +549,8 @@ export default function ProfilePage() {
               <div className="px-6 md:px-10 pb-8 relative bg-white z-10">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 relative z-20 mb-4">
                   <div
-                    className={`w-36 h-36 md:w-48 md:h-48 rounded-full p-1.5 shadow-xl flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px] -mt-20 md:-mt-28 ${
-                      hasProfileStories
-                        ? 'bg-gradient-to-br from-pink-400 via-purple-500 to-sky-400'
-                        : 'bg-white'
-                    }`}
-                    style={{
-                      borderColor: hasProfileStories ? 'transparent' : themeColor
-                    }}
+                    className="w-36 h-36 md:w-48 md:h-48 rounded-full p-1.5 shadow-xl bg-white flex-shrink-0 mx-auto md:mx-0 border-4 md:border-[6px] -mt-20 md:-mt-28"
+                    style={{ borderColor: themeColor }}
                   >
                     <button
                       type="button"
@@ -566,12 +560,23 @@ export default function ProfilePage() {
                         }
                       }}
                       disabled={!hasProfileStories}
-                      className={`w-full h-full rounded-full bg-white p-[3px] ${
+                      className={`relative w-full h-full rounded-full bg-white ${
                         hasProfileStories ? 'cursor-pointer active:scale-95 transition-transform' : 'cursor-default'
                       }`}
                       aria-label={hasProfileStories ? 'ดูสตอรี่ของผู้ใช้นี้' : undefined}
                     >
-                      <img src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'} className="w-full h-full rounded-full object-cover bg-gray-50" />
+                      {hasProfileStories && (
+                        <span
+                          className="absolute -inset-[3px] rounded-full border-[3px] pointer-events-none"
+                          style={{ borderColor: themeColor }}
+                        />
+                      )}
+                  
+                      <img
+                        src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
+                        className="w-full h-full rounded-full object-cover bg-gray-50"
+                        alt=""
+                      />
                     </button>
                   </div>
                   
