@@ -480,8 +480,7 @@ CREATE TRIGGER on_auth_user_created
 
 -- =====================================================
 -- STORIES TABLE
--- ระบบสตอรี่หายเองภายใน 24 ชั่วโมง
--- เก็บแค่ URL รูปภาพ ไม่อัปโหลดไฟล์
+-- Story system: image URL only, auto-expire in 24 hours
 -- =====================================================
 
 CREATE TABLE IF NOT EXISTS stories (
@@ -493,7 +492,13 @@ CREATE TABLE IF NOT EXISTS stories (
   caption TEXT,
 
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '24 hours')
+  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '24 hours'),
+
+  CONSTRAINT stories_image_url_length_check
+    CHECK (char_length(image_url) <= 2000),
+
+  CONSTRAINT stories_image_url_protocol_check
+    CHECK (image_url ~* '^https?://')
 );
 
 CREATE INDEX IF NOT EXISTS idx_stories_expires_at
@@ -504,6 +509,11 @@ ON stories(created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_stories_author_created_at
 ON stories(author_id, created_at DESC);
+
+
+-- =====================================================
+-- STORIES RLS
+-- =====================================================
 
 ALTER TABLE stories ENABLE ROW LEVEL SECURITY;
 
@@ -529,15 +539,31 @@ USING ((SELECT auth.uid()) = author_id);
 
 -- =====================================================
 -- STORIES CLEANUP CRON
+-- Delete expired stories every hour
 -- =====================================================
 
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
-SELECT cron.schedule(
-  'delete-expired-stories-every-hour',
-  '0 * * * *',
-  $$
-    DELETE FROM stories
-    WHERE expires_at < NOW();
-  $$
-);
+DO $$
+DECLARE
+  existing_job_id BIGINT;
+BEGIN
+  SELECT jobid
+  INTO existing_job_id
+  FROM cron.job
+  WHERE jobname = 'delete-expired-stories-every-hour'
+  LIMIT 1;
+
+  IF existing_job_id IS NOT NULL THEN
+    PERFORM cron.unschedule(existing_job_id);
+  END IF;
+
+  PERFORM cron.schedule(
+    'delete-expired-stories-every-hour',
+    '0 * * * *',
+    $cron$
+      DELETE FROM stories
+      WHERE expires_at < NOW();
+    $cron$
+  );
+END $$;
