@@ -511,6 +511,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
                 <div className="relative w-full aspect-[9/16] bg-slate-950 rounded-[1.75rem] overflow-hidden shadow-xl border border-gray-100">
                   <div className="absolute top-0 left-0 right-0 h-32 z-10 bg-gradient-to-b from-black/75 via-black/35 to-transparent pointer-events-none" />
+                  <div className="absolute left-0 right-0 bottom-0 h-56 z-10 bg-gradient-to-t from-black/95 via-black/65 to-transparent pointer-events-none" />
 
                   <div className="absolute top-10 left-3 right-3 z-20 flex items-center gap-2">
                     <img
@@ -571,8 +572,8 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                   )}
 
                   {caption.trim() && (
-                    <div className="absolute left-0 right-0 bottom-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
-                      <p className="text-white text-sm leading-relaxed break-words">
+                    <div className="absolute left-0 right-0 bottom-0 z-20 p-4">
+                      <p className="text-white text-sm leading-relaxed break-words drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
                         {caption.trim()}
                       </p>
                     </div>
@@ -598,7 +599,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
             }}
           >
             <div className="absolute top-0 left-0 right-0 h-40 z-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent pointer-events-none" />
-            <div className="absolute left-0 right-0 bottom-0 h-44 z-10 bg-gradient-to-t from-black/85 via-black/45 to-transparent pointer-events-none" />
+            <div className="absolute left-0 right-0 bottom-0 h-64 z-10 bg-gradient-to-t from-black/95 via-black/70 to-transparent pointer-events-none" />
 
             <button
               type="button"
@@ -685,7 +686,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
             <div className="absolute left-0 right-0 bottom-0 z-30 p-4">
               {selectedStory.caption && (
-                <p className="text-white text-sm leading-relaxed mb-3 break-words drop-shadow">
+                <p className="text-white text-sm leading-relaxed mb-3 break-words drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
                   {selectedStory.caption}
                 </p>
               )}
