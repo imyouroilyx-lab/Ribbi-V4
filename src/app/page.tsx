@@ -7,7 +7,6 @@ import NavLayout from '@/components/NavLayout';
 import PostCardV3 from '@/components/PostCardV3';
 import CreatePostV3 from '@/components/CreatePostV3';
 import ConfirmModal from '@/components/ConfirmModal';
-import CreateStoryBox from '@/components/CreateStoryBox';
 import StoriesBar from '@/components/StoriesBar';
 import Link from 'next/link';
 import { Users, Circle, ChevronRight, RefreshCw, Loader2, ArrowRight, BadgeCheck } from 'lucide-react';
@@ -28,7 +27,6 @@ export default function HomePage() {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [storyRefreshTrigger, setStoryRefreshTrigger] = useState(0);
   
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [postToDelete, setPostToDelete] = useState<string | null>(null);
@@ -191,10 +189,6 @@ export default function HomePage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleStoryCreated = () => {
-    setStoryRefreshTrigger(prev => prev + 1);
-  };
-
   const handleDeletePost = async () => {
     if (!postToDelete) return;
     try {
@@ -270,9 +264,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            <StoriesBar key={storyRefreshTrigger} currentUserId={currentUser.id} />
-
-            <CreateStoryBox userId={currentUser.id} onCreated={handleStoryCreated} />
+            <StoriesBar currentUser={currentUser} />
 
             <CreatePostV3 currentUser={currentUser} onPostCreated={handlePostCreated} />
 
