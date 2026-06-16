@@ -1,8 +1,8 @@
 export type StoryAuthor = {
   id: string
-  username: string | null
-  display_name: string | null
-  profile_img_url: string | null
+  username?: string | null
+  display_name?: string | null
+  profile_img_url?: string | null
   is_verified?: boolean | null
 }
 
