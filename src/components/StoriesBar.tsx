@@ -50,6 +50,8 @@ function getFirstName(name: string) {
 
 export default function StoriesBar({ currentUser }: StoriesBarProps) {
   const [stories, setStories] = useState<Story[]>([]);
+  const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(new Set());
+
   const [selectedGroup, setSelectedGroup] = useState<StoryGroup | null>(null);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
 
@@ -64,6 +66,22 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
   const [viewerCount, setViewerCount] = useState(0);
 
   const [loading, setLoading] = useState(true);
+
+  async function fetchViewedStories() {
+    const { data, error } = await supabase
+      .from('story_views')
+      .select('story_id')
+      .eq('viewer_id', currentUser.id);
+
+    if (error) {
+      console.error('Error loading viewed stories:', error);
+      setViewedStoryIds(new Set());
+      return;
+    }
+
+    const ids = new Set((data ?? []).map((item: any) => item.story_id as string));
+    setViewedStoryIds(ids);
+  }
 
   async function fetchStories() {
     setLoading(true);
@@ -89,14 +107,16 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
       .order('created_at', { ascending: false })
       .limit(200);
 
-    setLoading(false);
-
     if (error) {
       console.error('Error loading stories:', error);
+      setLoading(false);
       return;
     }
 
     setStories((data ?? []) as Story[]);
+    await fetchViewedStories();
+
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -151,8 +171,38 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
   const trimmedImageUrl = imageUrl.trim();
   const canShowPreview = validateStoryImageUrl(trimmedImageUrl);
 
+  function hasUnviewedStories(group: StoryGroup) {
+    if (group.authorId === currentUser.id) {
+      return true;
+    }
+
+    return group.stories.some((story) => !viewedStoryIds.has(story.id));
+  }
+
+  function getStoryRingClass(group: StoryGroup) {
+    if (hasUnviewedStories(group)) {
+      return 'bg-gradient-to-br from-pink-400 via-purple-500 to-sky-400';
+    }
+
+    return 'bg-slate-200';
+  }
+
+  function getStoryInnerClass(group: StoryGroup) {
+    if (hasUnviewedStories(group)) {
+      return 'bg-white';
+    }
+
+    return 'bg-white/95';
+  }
+
   async function markStoryAsViewed(story: Story) {
     if (story.author_id === currentUser.id) return;
+
+    setViewedStoryIds((prev) => {
+      const next = new Set(prev);
+      next.add(story.id);
+      return next;
+    });
 
     const { error } = await supabase
       .from('story_views')
@@ -391,20 +441,27 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
               const story = group.latestStory;
               const author = normalizeAuthor(story.author);
               const displayName = getDisplayName(author);
+              const groupHasUnviewed = hasUnviewedStories(group);
 
               return (
                 <button
                   key={group.authorId}
                   type="button"
                   onClick={() => openStoryGroup(group)}
-                  className="flex flex-col items-center gap-1 flex-shrink-0 w-16 group"
+                  className={`flex flex-col items-center gap-1 flex-shrink-0 w-16 group transition-opacity ${
+                    groupHasUnviewed ? 'opacity-100' : 'opacity-70 hover:opacity-100'
+                  }`}
                 >
                   <div className="relative">
-                    <div className="w-14 h-14 rounded-2xl p-[2px] bg-gradient-to-br from-pink-400 via-purple-500 to-sky-400 shadow-sm group-hover:scale-105 transition-transform">
-                      <div className="w-full h-full rounded-2xl bg-white p-[2px]">
+                    <div
+                      className={`w-14 h-14 rounded-2xl p-[2px] shadow-sm group-hover:scale-105 transition-transform ${getStoryRingClass(group)}`}
+                    >
+                      <div className={`w-full h-full rounded-2xl p-[2px] ${getStoryInnerClass(group)}`}>
                         <img
                           src={author?.profile_img_url || story.image_url}
-                          className="w-full h-full rounded-[0.85rem] object-cover"
+                          className={`w-full h-full rounded-[0.85rem] object-cover ${
+                            groupHasUnviewed ? '' : 'grayscale-[20%]'
+                          }`}
                           loading="lazy"
                           alt=""
                           onError={(event) => {
@@ -415,13 +472,23 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                     </div>
 
                     {group.stories.length > 1 && (
-                      <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-slate-900 text-white border-2 border-white text-[9px] font-black flex items-center justify-center">
+                      <span
+                        className={`absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full border-2 border-white text-[9px] font-black flex items-center justify-center ${
+                          groupHasUnviewed
+                            ? 'bg-slate-900 text-white'
+                            : 'bg-slate-200 text-slate-500'
+                        }`}
+                      >
                         {group.stories.length}
                       </span>
                     )}
                   </div>
 
-                  <p className="text-[10px] font-bold truncate w-full text-center text-gray-700 flex items-center justify-center gap-0.5">
+                  <p
+                    className={`text-[10px] font-bold truncate w-full text-center flex items-center justify-center gap-0.5 ${
+                      groupHasUnviewed ? 'text-gray-800' : 'text-gray-400'
+                    }`}
+                  >
                     {getFirstName(displayName)}
                     {author?.is_verified && (
                       <BadgeCheck className="w-3 h-3 text-blue-500 flex-shrink-0" />
