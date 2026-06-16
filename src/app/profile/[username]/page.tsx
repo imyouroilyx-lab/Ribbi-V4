@@ -566,15 +566,14 @@ export default function ProfilePage() {
                       aria-label={hasProfileStories ? 'ดูสตอรี่ของผู้ใช้นี้' : undefined}
                     >
                       {hasProfileStories && (
-                        <span
-                          className="absolute -inset-[3px] rounded-full border-[3px] pointer-events-none"
-                          style={{ borderColor: themeColor }}
-                        />
+                        <span className="absolute -inset-[4px] rounded-full p-[2px] bg-[conic-gradient(from_180deg,#ff4d8d,#b45cff,#4aa8ff,#41e6a4,#ffd166,#ff4d8d)] pointer-events-none">
+                          <span className="block w-full h-full rounded-full bg-white" />
+                        </span>
                       )}
                   
                       <img
                         src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
-                        className="w-full h-full rounded-full object-cover bg-gray-50"
+                        className="relative z-10 w-full h-full rounded-full object-cover bg-gray-50"
                         alt=""
                       />
                     </button>
