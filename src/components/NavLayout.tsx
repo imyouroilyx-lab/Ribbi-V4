@@ -30,7 +30,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastPlayedRef = useRef<number>(0);
 
-  const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
+  useOnlineStatus(currentUser?.id || null);
 
   const refreshNavBadges = useCallback(async () => {
     if (!currentUser?.id) return;
@@ -61,7 +61,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
       const playPromise = audioRef.current.play();
       
       if (playPromise !== undefined) {
-        playPromise.catch((err) => {
+        playPromise.catch(() => {
           console.warn("Audio play blocked. Need user interaction first.");
         });
       }
@@ -232,7 +232,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           {navItems.map(item => (
             <Link key={item.label} href={item.href} className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${pathname === item.href ? 'bg-frog-500 text-white font-bold shadow-lg shadow-frog-100' : 'text-gray-500 hover:bg-gray-50'}`}>
               <item.icon size={20}/> <span className="text-sm font-medium">{item.label}</span>
-              {(item.count ?? 0) > 0 && <span className={`ml-auto w-2.5 h-2.5 rounded-full ${pathname === item.href ? 'bg-white' : 'bg-red-500'}`} aria-label="มีรายการใหม่" />}
+              {(item.count ?? 0) > 0 && <span className={`ml-auto text-[10px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full font-black ${pathname === item.href ? 'bg-white text-frog-600' : 'bg-red-500 text-white'}`}>{item.count}</span>}
             </Link>
           ))}
           <Link href="/settings" className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${pathname === '/settings' ? 'bg-frog-500 text-white font-bold' : 'text-gray-500 hover:bg-gray-50'}`}>
@@ -269,7 +269,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               {navItems.map(item => (
                 <Link key={item.label} href={item.href} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl active:bg-frog-50 transition-colors">
                   <div className="flex items-center gap-3"><item.icon size={20} className="text-gray-400"/><span className="font-bold text-sm text-gray-700">{item.label}</span></div>
-                  {(item.count ?? 0) > 0 && <span className="w-2.5 h-2.5 rounded-full bg-red-500" aria-label="มีรายการใหม่" />}
+                  {(item.count ?? 0) > 0 && <span className="bg-red-500 text-white text-[10px] min-w-[20px] h-[20px] flex items-center justify-center rounded-full font-black">{item.count}</span>}
                 </Link>
               ))}
               <Link href="/settings" className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl"><Settings size={20} className="text-gray-400"/> <span className="font-bold text-sm text-gray-700">ตั้งค่า</span></Link>
