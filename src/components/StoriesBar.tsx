@@ -115,12 +115,12 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
     return Array.from(map.entries())
       .map(([authorId, authorStories]) => {
         const sortedStories = [...authorStories].sort((a, b) => {
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         });
 
         return {
           authorId,
-          latestStory: sortedStories[0],
+          latestStory: sortedStories[sortedStories.length - 1],
           stories: sortedStories,
         };
       })
@@ -141,7 +141,12 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
   }, [groupedStories, currentUser.id]);
 
   const selectedStory = selectedGroup?.stories[selectedStoryIndex] ?? null;
-  const selectedAuthor = selectedGroup ? normalizeAuthor(selectedGroup.latestStory.author) : null;
+  const selectedAuthor = selectedStory
+    ? normalizeAuthor(selectedStory.author)
+    : selectedGroup
+      ? normalizeAuthor(selectedGroup.latestStory.author)
+      : null;
+
   const trimmedImageUrl = imageUrl.trim();
   const canShowPreview = validateStoryImageUrl(trimmedImageUrl);
 
@@ -150,12 +155,18 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
     const { error } = await supabase
       .from('story_views')
-      .insert({
-        story_id: story.id,
-        viewer_id: currentUser.id,
-      });
+      .upsert(
+        {
+          story_id: story.id,
+          viewer_id: currentUser.id,
+        },
+        {
+          onConflict: 'story_id,viewer_id',
+          ignoreDuplicates: true,
+        }
+      );
 
-    if (error && error.code !== '23505') {
+    if (error) {
       console.error('Error marking story as viewed:', error);
     }
   }
@@ -575,23 +586,45 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
       {selectedGroup && selectedStory && (
         <div
           onClick={closeStoryViewer}
-          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200"
         >
           <div
             onClick={(event) => event.stopPropagation()}
-            className="relative w-full max-w-md max-h-[92vh] bg-slate-950 rounded-[2rem] overflow-hidden shadow-2xl border border-white/10"
+            className="relative bg-slate-950 rounded-[2rem] overflow-hidden shadow-2xl border border-white/10"
+            style={{
+              width: 'min(420px, calc((100vh - 4rem) * 9 / 16), calc(100vw - 2rem))',
+              aspectRatio: '9 / 16',
+            }}
           >
-            <div className="absolute top-0 left-0 right-0 h-36 z-10 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none" />
+            <div className="absolute top-0 left-0 right-0 h-36 z-10 bg-gradient-to-b from-black/85 via-black/45 to-transparent pointer-events-none" />
+            <div className="absolute left-0 right-0 bottom-0 h-44 z-10 bg-gradient-to-t from-black/85 via-black/45 to-transparent pointer-events-none" />
 
             <button
               type="button"
               onClick={closeStoryViewer}
-              className="absolute top-3 right-3 z-20 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+              className="absolute top-3 right-3 z-30 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
             >
               <X size={18} />
             </button>
 
-            <div className="absolute top-3 left-3 right-14 z-20 flex items-center gap-2">
+            {selectedGroup.stories.length > 1 && (
+              <div className="absolute top-0 left-0 right-0 z-30 flex gap-1 p-3">
+                {selectedGroup.stories.map((story, index) => (
+                  <div
+                    key={story.id}
+                    className="h-1 flex-1 rounded-full bg-white/25 overflow-hidden"
+                  >
+                    <div
+                      className={`h-full rounded-full ${
+                        index <= selectedStoryIndex ? 'bg-white' : 'bg-transparent'
+                      }`}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="absolute top-5 left-3 right-14 z-30 flex items-center gap-2">
               <img
                 src={selectedAuthor?.profile_img_url || 'https://iili.io/qbtgKBt.png'}
                 className="w-9 h-9 rounded-xl object-cover border border-white/20"
@@ -608,7 +641,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                     <BadgeCheck className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                   )}
                 </p>
-                <p className="text-white/70 text-[10px] font-bold drop-shadow">
+                <p className="text-white/75 text-[10px] font-bold drop-shadow">
                   {getStoryElapsedText(selectedStory.created_at)}
                   {selectedGroup.stories.length > 1 && (
                     <>
@@ -620,40 +653,21 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
               </div>
             </div>
 
-            {selectedGroup.stories.length > 1 && (
-              <div className="absolute top-0 left-0 right-0 z-20 flex gap-1 p-3">
-                {selectedGroup.stories.map((story) => (
-                  <div
-                    key={story.id}
-                    className="h-1 flex-1 rounded-full bg-white/25 overflow-hidden"
-                  >
-                    <div
-                      className={`h-full rounded-full ${
-                        selectedGroup.stories.findIndex((item) => item.id === story.id) <= selectedStoryIndex
-                          ? 'bg-white'
-                          : 'bg-transparent'
-                      }`}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-
             {selectedStoryIndex > 0 && (
               <button
                 type="button"
                 onClick={goToPreviousStory}
-                className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+                className="absolute left-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
               >
                 <ChevronLeft size={22} />
               </button>
             )}
 
-            {selectedGroup.stories.length > 1 && (
+            {selectedStoryIndex < selectedGroup.stories.length - 1 && (
               <button
                 type="button"
                 onClick={goToNextStory}
-                className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 z-30 w-10 h-10 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
               >
                 <ChevronRight size={22} />
               </button>
@@ -662,23 +676,23 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
             <img
               src={selectedStory.image_url}
               alt=""
-              className="w-full max-h-[78vh] object-contain bg-black"
+              className="w-full h-full object-contain bg-black"
               onError={(event) => {
                 event.currentTarget.src = 'https://iili.io/qbtgKBt.png';
               }}
             />
 
-            <div className="p-4 bg-slate-950">
+            <div className="absolute left-0 right-0 bottom-0 z-30 p-4">
               {selectedStory.caption && (
-                <p className="text-white text-sm leading-relaxed mb-3">
+                <p className="text-white text-sm leading-relaxed mb-3 break-words drop-shadow">
                   {selectedStory.caption}
                 </p>
               )}
 
               {currentUser.id === selectedStory.author_id && (
-                <div className="mb-3 rounded-2xl bg-white/5 border border-white/10 p-3">
+                <div className="mb-3 rounded-2xl bg-black/35 backdrop-blur-sm border border-white/10 p-3">
                   <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-white/60 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                    <p className="text-white/70 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
                       <Eye size={13} />
                       คนดูสตอรี่
                     </p>
@@ -689,7 +703,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                   </div>
 
                   {storyViewers.length === 0 ? (
-                    <p className="text-white/35 text-xs font-bold">
+                    <p className="text-white/40 text-xs font-bold">
                       ยังไม่มีคนดู
                     </p>
                   ) : (
@@ -715,7 +729,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                         )}
                       </div>
 
-                      <p className="text-white/40 text-[10px] font-bold truncate">
+                      <p className="text-white/45 text-[10px] font-bold truncate">
                         {storyViewers
                           .slice(0, 2)
                           .map((viewer) => viewer.display_name || viewer.username)
@@ -732,7 +746,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                 <button
                   type="button"
                   onClick={() => handleDeleteStory(selectedStory.id)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-red-400/30 text-red-300 text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-red-400/40 bg-black/25 backdrop-blur-sm text-red-200 text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-colors"
                 >
                   <Trash2 size={14} />
                   ลบสตอรี่
