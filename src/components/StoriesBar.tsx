@@ -8,9 +8,9 @@ import { BadgeCheck, ChevronLeft, ChevronRight, Loader2, Plus, Trash2, X } from 
 
 type CurrentUser = {
   id: string;
-  username: string | null;
-  display_name: string | null;
-  profile_img_url: string | null;
+  username?: string | null;
+  display_name?: string | null;
+  profile_img_url?: string | null;
   is_verified?: boolean | null;
 };
 
