@@ -46,7 +46,10 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
 
     supabase
       .from('chat_participants')
-      .update({ last_read_at: new Date().toISOString() })
+      .update({
+        unread_count: 0,
+        last_read_at: new Date().toISOString()
+      })
       .eq('chat_id', chatId)
       .eq('user_id', currentUserId)
       .then(({ error }) => {
@@ -109,9 +112,21 @@ export default function ChatList({ chats, currentUserId, selectedChatId, onSelec
         if (newGroup) {
           // 2. เพิ่มสมาชิก (รวมตัวเองและเพื่อน)
           const participants = [
-            { chat_id: newGroup.id, user_id: currentUserId, role: 'admin', last_read_at: new Date().toISOString() }, 
-            ...selectedFriendIds.map(id => ({ chat_id: newGroup.id, user_id: id, role: 'member' }))
+            {
+              chat_id: newGroup.id,
+              user_id: currentUserId,
+              role: 'admin',
+              unread_count: 0,
+              last_read_at: new Date().toISOString()
+            }, 
+            ...selectedFriendIds.map(id => ({
+              chat_id: newGroup.id,
+              user_id: id,
+              role: 'member',
+              unread_count: 0
+            }))
           ];
+
           const { error: partError } = await supabase.from('chat_participants').insert(participants);
           if (partError) throw partError;
 
