@@ -567,3 +567,56 @@ BEGIN
     $cron$
   );
 END $$;
+
+-- =====================================================
+-- STORY VIEWS
+-- เก็บว่าใครดูสตอรี่ไหนแล้ว
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS story_views (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+  viewer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  viewed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+  CONSTRAINT story_views_unique_view UNIQUE (story_id, viewer_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_story_views_story_id
+ON story_views(story_id);
+
+CREATE INDEX IF NOT EXISTS idx_story_views_viewer_id
+ON story_views(viewer_id);
+
+CREATE INDEX IF NOT EXISTS idx_story_views_viewed_at
+ON story_views(viewed_at DESC);
+
+ALTER TABLE story_views ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can create own story views" ON story_views;
+DROP POLICY IF EXISTS "Story owners can view story viewers" ON story_views;
+DROP POLICY IF EXISTS "Users can view own story views" ON story_views;
+
+CREATE POLICY "Users can create own story views"
+ON story_views
+FOR INSERT
+WITH CHECK ((SELECT auth.uid()) = viewer_id);
+
+CREATE POLICY "Story owners can view story viewers"
+ON story_views
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM stories
+    WHERE stories.id = story_views.story_id
+    AND stories.author_id = (SELECT auth.uid())
+  )
+);
+
+CREATE POLICY "Users can view own story views"
+ON story_views
+FOR SELECT
+USING ((SELECT auth.uid()) = viewer_id);
