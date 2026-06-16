@@ -141,6 +141,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
   }, [groupedStories, currentUser.id]);
 
   const selectedStory = selectedGroup?.stories[selectedStoryIndex] ?? null;
+
   const selectedAuthor = selectedStory
     ? normalizeAuthor(selectedStory.author)
     : selectedGroup
@@ -511,7 +512,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                 <div className="relative w-full aspect-[9/16] bg-slate-950 rounded-[1.75rem] overflow-hidden shadow-xl border border-gray-100">
                   <div className="absolute top-0 left-0 right-0 h-32 z-10 bg-gradient-to-b from-black/75 via-black/35 to-transparent pointer-events-none" />
 
-                  <div className="absolute top-3 left-3 right-3 z-20 flex items-center gap-2">
+                  <div className="absolute top-10 left-3 right-3 z-20 flex items-center gap-2">
                     <img
                       src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
                       className="w-9 h-9 rounded-xl object-cover border border-white/20"
@@ -596,19 +597,19 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
               aspectRatio: '9 / 16',
             }}
           >
-            <div className="absolute top-0 left-0 right-0 h-36 z-10 bg-gradient-to-b from-black/85 via-black/45 to-transparent pointer-events-none" />
+            <div className="absolute top-0 left-0 right-0 h-40 z-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent pointer-events-none" />
             <div className="absolute left-0 right-0 bottom-0 h-44 z-10 bg-gradient-to-t from-black/85 via-black/45 to-transparent pointer-events-none" />
 
             <button
               type="button"
               onClick={closeStoryViewer}
-              className="absolute top-3 right-3 z-30 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+              className="absolute top-6 right-3 z-30 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
             >
               <X size={18} />
             </button>
 
             {selectedGroup.stories.length > 1 && (
-              <div className="absolute top-0 left-0 right-0 z-30 flex gap-1 p-3">
+              <div className="absolute top-0 left-0 right-0 z-30 flex gap-1 px-3 pt-3">
                 {selectedGroup.stories.map((story, index) => (
                   <div
                     key={story.id}
@@ -624,7 +625,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
               </div>
             )}
 
-            <div className="absolute top-5 left-3 right-14 z-30 flex items-center gap-2">
+            <div className="absolute top-10 left-3 right-14 z-30 flex items-center gap-2">
               <img
                 src={selectedAuthor?.profile_img_url || 'https://iili.io/qbtgKBt.png'}
                 className="w-9 h-9 rounded-xl object-cover border border-white/20"
