@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase'; 
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { Home, Users, User, Settings, LogOut, Menu, X, MessageCircle, Bell, ArrowLeft, Loader2 } from 'lucide-react';
+import { Home, Users, Settings, LogOut, Menu, X, MessageCircle, Bell, ArrowLeft } from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 const CACHE_KEY = 'ribbi_user_cache';
@@ -31,6 +31,20 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   const lastPlayedRef = useRef<number>(0);
 
   const { onlineUsers } = useOnlineStatus(currentUser?.id || null);
+
+  const refreshNavBadges = useCallback(async () => {
+    if (!currentUser?.id) return;
+
+    const { data, error } = await supabase.rpc('get_user_app_data', {
+      user_uuid: currentUser.id,
+    });
+
+    if (!error && data) {
+      setUnreadNotif(data.unread_notifications || 0);
+      setFriendReq(data.pending_friends || 0);
+      setUnreadMsg(data.unread_messages || 0);
+    }
+  }, [currentUser?.id]);
 
   // ✅ 1. ฟังก์ชันเล่นเสียง (แก้ Path เป็น /sounds/ribbi.wav)
   const playNotificationSound = useCallback(() => {
@@ -85,16 +99,41 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setShowMobileMenu(false); 
-    if (currentUser?.id) {
-      supabase.rpc('get_user_app_data', { user_uuid: currentUser.id }).then(({ data }) => {
-        if (data) {
-          setUnreadNotif(data.unread_notifications || 0);
-          setFriendReq(data.pending_friends || 0);
-          setUnreadMsg(data.unread_messages || 0);
-        }
-      });
-    }
-  }, [pathname, currentUser?.id]);
+    refreshNavBadges();
+  }, [pathname, refreshNavBadges]);
+
+  // ✅ เช็ก badge แบบไม่ realtime:
+  // - ตอนกลับมาโฟกัสแท็บ
+  // - ตอนเปิดแท็บกลับมา
+  // - ทุก 30 วินาที
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    refreshNavBadges();
+
+    const interval = window.setInterval(() => {
+      refreshNavBadges();
+    }, 30000);
+
+    const handleFocus = () => {
+      refreshNavBadges();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshNavBadges();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentUser?.id, refreshNavBadges]);
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -193,7 +232,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           {navItems.map(item => (
             <Link key={item.label} href={item.href} className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${pathname === item.href ? 'bg-frog-500 text-white font-bold shadow-lg shadow-frog-100' : 'text-gray-500 hover:bg-gray-50'}`}>
               <item.icon size={20}/> <span className="text-sm font-medium">{item.label}</span>
-              {(item.count ?? 0) > 0 && <span className={`ml-auto text-[10px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full font-black ${pathname === item.href ? 'bg-white text-frog-600' : 'bg-red-500 text-white'}`}>{item.count}</span>}
+              {(item.count ?? 0) > 0 && <span className={`ml-auto w-2.5 h-2.5 rounded-full ${pathname === item.href ? 'bg-white' : 'bg-red-500'}`} aria-label="มีรายการใหม่" />}
             </Link>
           ))}
           <Link href="/settings" className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all ${pathname === '/settings' ? 'bg-frog-500 text-white font-bold' : 'text-gray-500 hover:bg-gray-50'}`}>
@@ -230,7 +269,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
               {navItems.map(item => (
                 <Link key={item.label} href={item.href} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl active:bg-frog-50 transition-colors">
                   <div className="flex items-center gap-3"><item.icon size={20} className="text-gray-400"/><span className="font-bold text-sm text-gray-700">{item.label}</span></div>
-                  {(item.count ?? 0) > 0 && <span className="bg-red-500 text-white text-[10px] min-w-[20px] h-[20px] flex items-center justify-center rounded-full font-black">{item.count}</span>}
+                  {(item.count ?? 0) > 0 && <span className="w-2.5 h-2.5 rounded-full bg-red-500" aria-label="มีรายการใหม่" />}
                 </Link>
               ))}
               <Link href="/settings" className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl"><Settings size={20} className="text-gray-400"/> <span className="font-bold text-sm text-gray-700">ตั้งค่า</span></Link>
@@ -250,7 +289,7 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           <Link key={item.label} href={item.href} className={`flex flex-col items-center gap-0.5 relative ${pathname === item.href ? 'text-frog-500' : 'text-gray-400'}`}>
             <div className="relative p-1">
               <item.icon size={22} className={pathname === item.href ? 'stroke-[2.5px]' : 'stroke-[1.5px]'} />
-              {(item.count ?? 0) > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] min-w-[16px] h-[16px] flex items-center justify-center rounded-full border-2 border-white font-black">{item.count}</span>}
+              {(item.count ?? 0) > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white" aria-label="มีรายการใหม่" />}
             </div>
             <span className="text-[9px] font-black uppercase tracking-tighter">{item.label}</span>
           </Link>
