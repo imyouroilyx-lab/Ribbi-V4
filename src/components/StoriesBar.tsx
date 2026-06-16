@@ -711,28 +711,26 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
               <X size={18} />
             </button>
 
-            {selectedGroup.stories.length > 1 && (
-              <div className="absolute top-0 left-0 right-0 z-30 flex gap-1 px-3 pt-3">
-                {selectedGroup.stories.map((story, index) => (
+            <div className="absolute top-0 left-0 right-0 z-30 flex gap-1 px-3 pt-3">
+              {selectedGroup.stories.map((story, index) => (
+                <div
+                  key={story.id}
+                  className="h-1 flex-1 rounded-full bg-white/25 overflow-hidden"
+                >
                   <div
-                    key={story.id}
-                    className="h-1 flex-1 rounded-full bg-white/25 overflow-hidden"
-                  >
-                    <div
-                      className="h-full rounded-full bg-white transition-[width] duration-75 ease-linear"
-                      style={{
-                        width:
-                          index < selectedStoryIndex
-                            ? '100%'
-                            : index === selectedStoryIndex
-                              ? `${storyProgress}%`
-                              : '0%',
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
+                    className="h-full rounded-full bg-white transition-[width] duration-75 ease-linear"
+                    style={{
+                      width:
+                        index < selectedStoryIndex
+                          ? '100%'
+                          : index === selectedStoryIndex
+                            ? `${storyProgress}%`
+                            : '0%',
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
 
             <div className="absolute top-10 left-3 right-14 z-30 flex items-center gap-2">
               <img
