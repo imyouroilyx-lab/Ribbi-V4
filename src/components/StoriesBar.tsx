@@ -34,6 +34,8 @@ type StoryGroup = {
   stories: Story[];
 };
 
+const STORY_DURATION_MS = 5000;
+
 function normalizeAuthor(author: Story['author']): StoryAuthor | null {
   if (!author) return null;
   if (Array.isArray(author)) return author[0] ?? null;
@@ -51,20 +53,17 @@ function getFirstName(name: string) {
 export default function StoriesBar({ currentUser }: StoriesBarProps) {
   const [stories, setStories] = useState<Story[]>([]);
   const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(new Set());
-
   const [selectedGroup, setSelectedGroup] = useState<StoryGroup | null>(null);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
-
+  const [storyProgress, setStoryProgress] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [imageUrl, setImageUrl] = useState('');
   const [caption, setCaption] = useState('');
   const [previewImageError, setPreviewImageError] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [createErrorText, setCreateErrorText] = useState('');
-
   const [storyViewers, setStoryViewers] = useState<StoryAuthor[]>([]);
   const [viewerCount, setViewerCount] = useState(0);
-
   const [loading, setLoading] = useState(true);
 
   async function fetchViewedStories() {
@@ -115,7 +114,6 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
     setStories((data ?? []) as Story[]);
     await fetchViewedStories();
-
     setLoading(false);
   }
 
@@ -160,6 +158,10 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
     return groupedStories.filter((group) => group.authorId !== currentUser.id);
   }, [groupedStories, currentUser.id]);
 
+  const viewerGroups = useMemo(() => {
+    return groupedStories;
+  }, [groupedStories]);
+
   const selectedStory = selectedGroup?.stories[selectedStoryIndex] ?? null;
 
   const selectedAuthor = selectedStory
@@ -167,6 +169,19 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
     : selectedGroup
       ? normalizeAuthor(selectedGroup.latestStory.author)
       : null;
+
+  const selectedGroupIndex = selectedGroup
+    ? viewerGroups.findIndex((group) => group.authorId === selectedGroup.authorId)
+    : -1;
+
+  const canGoPreviousStory =
+    selectedStoryIndex > 0 || selectedGroupIndex > 0;
+
+  const canGoNextStory =
+    selectedGroup
+      ? selectedStoryIndex < selectedGroup.stories.length - 1 ||
+        selectedGroupIndex < viewerGroups.length - 1
+      : false;
 
   const trimmedImageUrl = imageUrl.trim();
   const canShowPreview = validateStoryImageUrl(trimmedImageUrl);
@@ -267,14 +282,28 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
     setSelectedGroup(group);
     setSelectedStoryIndex(0);
+    setStoryProgress(0);
 
     await markStoryAsViewed(firstStory);
     await fetchStoryViewers(firstStory.id, firstStory.author_id);
   }
 
+  async function openStoryAt(group: StoryGroup, storyIndex: number) {
+    const safeIndex = Math.max(0, Math.min(storyIndex, group.stories.length - 1));
+    const story = group.stories[safeIndex];
+
+    setSelectedGroup(group);
+    setSelectedStoryIndex(safeIndex);
+    setStoryProgress(0);
+
+    await markStoryAsViewed(story);
+    await fetchStoryViewers(story.id, story.author_id);
+  }
+
   function closeStoryViewer() {
     setSelectedGroup(null);
     setSelectedStoryIndex(0);
+    setStoryProgress(0);
     setStoryViewers([]);
     setViewerCount(0);
   }
@@ -290,12 +319,17 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
     if (selectedStoryIndex > 0) {
       const nextIndex = selectedStoryIndex - 1;
-      const nextStory = selectedGroup.stories[nextIndex];
+      await openStoryAt(selectedGroup, nextIndex);
+      return;
+    }
 
-      setSelectedStoryIndex(nextIndex);
+    const currentGroupIndex = viewerGroups.findIndex(
+      (group) => group.authorId === selectedGroup.authorId
+    );
 
-      await markStoryAsViewed(nextStory);
-      await fetchStoryViewers(nextStory.id, nextStory.author_id);
+    if (currentGroupIndex > 0) {
+      const previousGroup = viewerGroups[currentGroupIndex - 1];
+      await openStoryAt(previousGroup, previousGroup.stories.length - 1);
     }
   }
 
@@ -304,16 +338,46 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
     if (selectedStoryIndex < selectedGroup.stories.length - 1) {
       const nextIndex = selectedStoryIndex + 1;
-      const nextStory = selectedGroup.stories[nextIndex];
-
-      setSelectedStoryIndex(nextIndex);
-
-      await markStoryAsViewed(nextStory);
-      await fetchStoryViewers(nextStory.id, nextStory.author_id);
-    } else {
-      closeStoryViewer();
+      await openStoryAt(selectedGroup, nextIndex);
+      return;
     }
+
+    const currentGroupIndex = viewerGroups.findIndex(
+      (group) => group.authorId === selectedGroup.authorId
+    );
+
+    if (currentGroupIndex >= 0 && currentGroupIndex < viewerGroups.length - 1) {
+      const nextGroup = viewerGroups[currentGroupIndex + 1];
+      await openStoryAt(nextGroup, 0);
+      return;
+    }
+
+    closeStoryViewer();
   }
+
+  useEffect(() => {
+    if (!selectedGroup || !selectedStory) return;
+
+    setStoryProgress(0);
+
+    const startedAt = Date.now();
+
+    const interval = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const nextProgress = Math.min((elapsed / STORY_DURATION_MS) * 100, 100);
+
+      setStoryProgress(nextProgress);
+
+      if (nextProgress >= 100) {
+        window.clearInterval(interval);
+        goToNextStory();
+      }
+    }, 50);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [selectedStory?.id]);
 
   async function handleCreateStory() {
     setCreateErrorText('');
@@ -346,6 +410,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
     setCaption('');
     setPreviewImageError(false);
     setShowCreateModal(false);
+
     await fetchStories();
   }
 
@@ -366,75 +431,71 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
   return (
     <>
-      <div className="card-minimal bg-white/90 border border-gray-100 shadow-soft p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
-            Stories
-          </h3>
-          <p className="text-[10px] font-bold text-gray-300">
-            หายภายใน 24 ชม.
-          </p>
-        </div>
-
-        <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
-          <div className="flex flex-col items-center gap-1 flex-shrink-0 w-16">
-            <button
-              type="button"
-              onClick={() => {
-                if (ownGroup) {
-                  openStoryGroup(ownGroup);
-                } else {
-                  setShowCreateModal(true);
-                }
-              }}
-              className="relative group"
-            >
-              <div
-                className={`w-14 h-14 rounded-2xl p-[2px] shadow-sm group-hover:scale-105 transition-transform ${
-                  ownGroup
-                    ? 'bg-gradient-to-br from-pink-400 via-purple-500 to-sky-400'
-                    : 'bg-slate-200'
-                }`}
-              >
-                <div className="w-full h-full rounded-2xl bg-white p-[2px]">
-                  <img
-                    src={
-                      ownGroup?.latestStory.image_url ||
-                      currentUser.profile_img_url ||
-                      'https://iili.io/qbtgKBt.png'
-                    }
-                    className="w-full h-full rounded-[0.85rem] object-cover"
-                    loading="lazy"
-                    alt=""
-                    onError={(event) => {
-                      event.currentTarget.src = 'https://iili.io/qbtgKBt.png';
-                    }}
-                  />
-                </div>
-              </div>
-
-              <span
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setShowCreateModal(true);
-                }}
-                className="absolute -right-1 -bottom-1 w-6 h-6 rounded-full bg-frog-500 border-2 border-white text-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform"
-              >
-                <Plus size={14} strokeWidth={3} />
-              </span>
-            </button>
-
-            <p className="text-[10px] font-bold truncate w-full text-center text-gray-700">
-              ของคุณ
+      <section className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-4 overflow-hidden">
+        <div className="flex items-center justify-between mb-4 px-1">
+          <div>
+            <h2 className="text-sm font-black text-gray-900 tracking-tight">
+              Stories
+            </h2>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+              หายภายใน 24 ชม.
             </p>
           </div>
+        </div>
+
+        <div className="flex gap-3 overflow-x-auto pb-1 custom-scrollbar">
+          <button
+            type="button"
+            onClick={() => {
+              if (ownGroup) {
+                openStoryGroup(ownGroup);
+              } else {
+                setShowCreateModal(true);
+              }
+            }}
+            className="relative group"
+          >
+            <div
+              className={`w-16 h-16 rounded-[1.35rem] p-[2px] ${
+                ownGroup ? getStoryRingClass(ownGroup) : 'bg-slate-200'
+              }`}
+            >
+              <div
+                className={`w-full h-full rounded-[1.2rem] p-[2px] ${
+                  ownGroup ? getStoryInnerClass(ownGroup) : 'bg-white'
+                }`}
+              >
+                <img
+                  src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
+                  className="w-full h-full rounded-[1rem] object-cover"
+                  alt=""
+                  onError={(event) => {
+                    event.currentTarget.src = 'https://iili.io/qbtgKBt.png';
+                  }}
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setShowCreateModal(true);
+              }}
+              className="absolute -right-1 -bottom-1 w-6 h-6 rounded-full bg-frog-500 border-2 border-white text-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform"
+            >
+              <Plus size={14} strokeWidth={3} />
+            </button>
+
+            <p className="mt-1 text-[10px] font-black text-gray-500 w-16 truncate">
+              ของคุณ
+            </p>
+          </button>
 
           {loading ? (
-            <div className="flex items-center gap-2 text-gray-400 px-2">
-              <Loader2 className="w-4 h-4 animate-spin text-frog-500" />
-              <p className="text-[10px] font-black uppercase tracking-widest">
-                กำลังโหลด...
-              </p>
+            <div className="flex items-center gap-2 text-xs font-bold text-gray-400 px-2">
+              <Loader2 className="animate-spin" size={16} />
+              กำลังโหลด...
             </div>
           ) : (
             otherGroups.map((group) => {
@@ -452,43 +513,28 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                     groupHasUnviewed ? 'opacity-100' : 'opacity-70 hover:opacity-100'
                   }`}
                 >
-                  <div className="relative">
-                    <div
-                      className={`w-14 h-14 rounded-2xl p-[2px] shadow-sm group-hover:scale-105 transition-transform ${getStoryRingClass(group)}`}
-                    >
-                      <div className={`w-full h-full rounded-2xl p-[2px] ${getStoryInnerClass(group)}`}>
+                  <div className={`w-16 h-16 rounded-[1.35rem] p-[2px] ${getStoryRingClass(group)}`}>
+                    <div className={`w-full h-full rounded-[1.2rem] p-[2px] ${getStoryInnerClass(group)}`}>
+                      <div className="relative w-full h-full">
                         <img
-                          src={author?.profile_img_url || story.image_url}
-                          className={`w-full h-full rounded-[0.85rem] object-cover ${
-                            groupHasUnviewed ? '' : 'grayscale-[20%]'
-                          }`}
-                          loading="lazy"
+                          src={author?.profile_img_url || 'https://iili.io/qbtgKBt.png'}
+                          className="w-full h-full rounded-[1rem] object-cover"
                           alt=""
                           onError={(event) => {
                             event.currentTarget.src = 'https://iili.io/qbtgKBt.png';
                           }}
                         />
+
+                        {group.stories.length > 1 && (
+                          <span className="absolute -right-1 -top-1 min-w-[18px] h-[18px] px-1 rounded-full bg-slate-950 text-white text-[9px] font-black flex items-center justify-center border-2 border-white">
+                            {group.stories.length}
+                          </span>
+                        )}
                       </div>
                     </div>
-
-                    {group.stories.length > 1 && (
-                      <span
-                        className={`absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full border-2 border-white text-[9px] font-black flex items-center justify-center ${
-                          groupHasUnviewed
-                            ? 'bg-slate-900 text-white'
-                            : 'bg-slate-200 text-slate-500'
-                        }`}
-                      >
-                        {group.stories.length}
-                      </span>
-                    )}
                   </div>
 
-                  <p
-                    className={`text-[10px] font-bold truncate w-full text-center flex items-center justify-center gap-0.5 ${
-                      groupHasUnviewed ? 'text-gray-800' : 'text-gray-400'
-                    }`}
-                  >
+                  <p className="text-[10px] font-black text-gray-500 w-16 truncate flex items-center justify-center gap-0.5">
                     {getFirstName(displayName)}
                     {author?.is_verified && (
                       <BadgeCheck className="w-3 h-3 text-blue-500 flex-shrink-0" />
@@ -499,23 +545,23 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
             })
           )}
         </div>
-      </div>
+      </section>
 
       {showCreateModal && (
         <div
+          className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={closeCreateModal}
-          className="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4 animate-in fade-in duration-200"
         >
           <div
-            onClick={(event) => event.stopPropagation()}
             className="w-full max-w-4xl bg-white rounded-[2rem] shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
           >
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <div>
-                <h3 className="font-black text-sm text-gray-900">
+                <h3 className="text-lg font-black text-gray-900">
                   เพิ่มสตอรี่
                 </h3>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs font-bold text-gray-400">
                   วางลิงก์รูปภาพจากเว็บไซต์ใดก็ได้ แล้วดูตัวอย่างก่อนลง
                 </p>
               </div>
@@ -523,14 +569,14 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
               <button
                 type="button"
                 onClick={closeCreateModal}
-                className="w-9 h-9 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition-colors"
+                className="w-10 h-10 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition-colors"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_360px] gap-5 p-5">
-              <div className="space-y-3">
+            <div className="grid md:grid-cols-[1fr_320px] gap-5 p-5">
+              <div className="space-y-4">
                 <input
                   value={imageUrl}
                   onChange={(event) => {
@@ -542,21 +588,20 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                   className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-frog-400 transition-colors"
                 />
 
-                <input
+                <textarea
                   value={caption}
                   onChange={(event) => setCaption(event.target.value)}
                   placeholder="แคปชัน ไม่ใส่ก็ได้"
                   maxLength={280}
-                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-frog-400 transition-colors"
+                  className="w-full min-h-[130px] px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-frog-400 transition-colors resize-none"
                 />
 
-                <p className="text-[10px] text-gray-400 leading-relaxed">
-                  สตอรี่จะหายจากหน้าเว็บภายใน 24 ชั่วโมง หากรูปเสีย ลิงก์หมดอายุ
-                  หรือเว็บไซต์ต้นทางไม่อนุญาตให้แสดงผล จะเป็นความรับผิดชอบของผู้ลงสตอรี่
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  สตอรี่จะหายจากหน้าเว็บภายใน 24 ชั่วโมง หากรูปเสีย ลิงก์หมดอายุ หรือเว็บไซต์ต้นทางไม่อนุญาตให้แสดงผล จะเป็นความรับผิดชอบของผู้ลงสตอรี่
                 </p>
 
                 {createErrorText && (
-                  <p className="text-xs font-bold text-red-500">
+                  <p className="text-xs font-bold text-red-500 bg-red-50 border border-red-100 rounded-2xl px-4 py-3">
                     {createErrorText}
                   </p>
                 )}
@@ -565,39 +610,37 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                   type="button"
                   onClick={handleCreateStory}
                   disabled={createLoading}
-                  className="w-full py-3 rounded-2xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-frog-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full h-12 rounded-2xl bg-frog-500 text-white text-xs font-black uppercase tracking-widest hover:bg-frog-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                 >
+                  {createLoading && <Loader2 className="animate-spin" size={16} />}
                   {createLoading ? 'กำลังลงสตอรี่...' : 'ลงสตอรี่'}
                 </button>
               </div>
 
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-2">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">
                   ตัวอย่างสตอรี่
                 </p>
 
-                <div className="relative w-full aspect-[9/16] bg-slate-950 rounded-[1.75rem] overflow-hidden shadow-xl border border-gray-100">
-                  <div className="absolute top-0 left-0 right-0 h-32 z-10 bg-gradient-to-b from-black/75 via-black/35 to-transparent pointer-events-none" />
-                  <div className="absolute left-0 right-0 bottom-0 h-56 z-10 bg-gradient-to-t from-black/95 via-black/65 to-transparent pointer-events-none" />
-
-                  <div className="absolute top-10 left-3 right-3 z-20 flex items-center gap-2">
+                <div className="relative w-full aspect-[9/16] rounded-[1.5rem] bg-slate-950 overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-32 z-10 bg-gradient-to-b from-black/80 to-transparent" />
+                  <div className="absolute top-4 left-4 right-4 z-20 flex items-center gap-2">
                     <img
                       src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
-                      className="w-9 h-9 rounded-xl object-cover border border-white/20"
+                      className="w-8 h-8 rounded-xl object-cover border border-white/20"
                       alt=""
                       onError={(event) => {
                         event.currentTarget.src = 'https://iili.io/qbtgKBt.png';
                       }}
                     />
-
                     <div className="min-w-0">
-                      <p className="text-white text-xs font-black truncate flex items-center gap-1 drop-shadow">
+                      <p className="text-white text-xs font-black truncate flex items-center gap-1">
                         {currentUser.display_name || currentUser.username || 'คุณ'}
                         {currentUser.is_verified && (
                           <BadgeCheck className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                         )}
                       </p>
-                      <p className="text-white/70 text-[10px] font-bold drop-shadow">
+                      <p className="text-white/60 text-[10px] font-bold">
                         เมื่อสักครู่
                       </p>
                     </div>
@@ -606,41 +649,33 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                   {canShowPreview && !previewImageError ? (
                     <img
                       src={trimmedImageUrl}
-                      alt=""
                       className="w-full h-full object-contain bg-black"
+                      alt=""
                       onError={() => setPreviewImageError(true)}
                     />
                   ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-center px-8">
-                      <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center mb-3">
-                        <ImageOff className="w-7 h-7 text-white/50" />
-                      </div>
-                      <p className="text-white/80 text-xs font-black">
-                        ยังไม่มีตัวอย่างรูป
-                      </p>
-                      <p className="text-white/40 text-[10px] mt-1 leading-relaxed">
+                    <div className="w-full h-full flex flex-col items-center justify-center text-center text-white/40 px-6">
+                      <ImageOff size={32} className="mb-3" />
+                      <p className="text-sm font-black">ยังไม่มีตัวอย่างรูป</p>
+                      <p className="text-xs mt-1">
                         วาง URL รูปภาพที่ถูกต้องเพื่อดูตัวอย่างก่อนลงสตอรี่
                       </p>
                     </div>
                   )}
 
                   {previewImageError && (
-                    <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-center px-8">
-                      <div className="w-14 h-14 rounded-2xl bg-red-500/15 flex items-center justify-center mb-3">
-                        <ImageOff className="w-7 h-7 text-red-300" />
-                      </div>
-                      <p className="text-white text-xs font-black">
-                        โหลดตัวอย่างไม่ได้
-                      </p>
-                      <p className="text-white/50 text-[10px] mt-1 leading-relaxed">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center text-white/50 px-6 bg-black">
+                      <ImageOff size={32} className="mb-3" />
+                      <p className="text-sm font-black">โหลดตัวอย่างไม่ได้</p>
+                      <p className="text-xs mt-1">
                         ลิงก์อาจไม่ใช่รูปโดยตรง หรือเว็บต้นทางไม่อนุญาตให้แสดงผล
                       </p>
                     </div>
                   )}
 
                   {caption.trim() && (
-                    <div className="absolute left-0 right-0 bottom-0 z-20 p-4">
-                      <p className="text-white text-sm leading-relaxed break-words drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
+                    <div className="absolute left-0 right-0 bottom-0 z-20 p-4 bg-gradient-to-t from-black/90 to-transparent">
+                      <p className="text-white text-sm leading-relaxed break-words">
                         {caption.trim()}
                       </p>
                     </div>
@@ -654,16 +689,16 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
       {selectedGroup && selectedStory && (
         <div
+          className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
           onClick={closeStoryViewer}
-          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200"
         >
           <div
-            onClick={(event) => event.stopPropagation()}
             className="relative bg-slate-950 rounded-[2rem] overflow-hidden shadow-2xl border border-white/10"
             style={{
               width: 'min(420px, calc((100vh - 4rem) * 9 / 16), calc(100vw - 2rem))',
               aspectRatio: '9 / 16',
             }}
+            onClick={(event) => event.stopPropagation()}
           >
             <div className="absolute top-0 left-0 right-0 h-40 z-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent pointer-events-none" />
             <div className="absolute left-0 right-0 bottom-0 h-64 z-10 bg-gradient-to-t from-black/95 via-black/70 to-transparent pointer-events-none" />
@@ -684,9 +719,15 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                     className="h-1 flex-1 rounded-full bg-white/25 overflow-hidden"
                   >
                     <div
-                      className={`h-full rounded-full ${
-                        index <= selectedStoryIndex ? 'bg-white' : 'bg-transparent'
-                      }`}
+                      className="h-full rounded-full bg-white transition-[width] duration-75 ease-linear"
+                      style={{
+                        width:
+                          index < selectedStoryIndex
+                            ? '100%'
+                            : index === selectedStoryIndex
+                              ? `${storyProgress}%`
+                              : '0%',
+                      }}
                     />
                   </div>
                 ))}
@@ -710,6 +751,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                     <BadgeCheck className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                   )}
                 </p>
+
                 <p className="text-white/75 text-[10px] font-bold drop-shadow">
                   {getStoryElapsedText(selectedStory.created_at)}
                   {selectedGroup.stories.length > 1 && (
@@ -722,7 +764,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
               </div>
             </div>
 
-            {selectedStoryIndex > 0 && (
+            {canGoPreviousStory && (
               <button
                 type="button"
                 onClick={goToPreviousStory}
@@ -732,7 +774,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
               </button>
             )}
 
-            {selectedStoryIndex < selectedGroup.stories.length - 1 && (
+            {canGoNextStory && (
               <button
                 type="button"
                 onClick={goToNextStory}
@@ -782,8 +824,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                           <img
                             key={viewer.id}
                             src={viewer.profile_img_url || 'https://iili.io/qbtgKBt.png'}
-                            className="w-8 h-8 rounded-full object-cover border-2 border-slate-950"
-                            title={viewer.display_name || viewer.username || ''}
+                            className="w-7 h-7 rounded-full object-cover border-2 border-slate-950"
                             alt=""
                             onError={(event) => {
                               event.currentTarget.src = 'https://iili.io/qbtgKBt.png';
@@ -792,13 +833,13 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                         ))}
 
                         {viewerCount > 8 && (
-                          <div className="w-8 h-8 rounded-full bg-white/10 border-2 border-slate-950 flex items-center justify-center text-white text-[10px] font-black">
+                          <span className="w-7 h-7 rounded-full bg-white text-slate-900 text-[10px] font-black flex items-center justify-center border-2 border-slate-950">
                             +{viewerCount - 8}
-                          </div>
+                          </span>
                         )}
                       </div>
 
-                      <p className="text-white/45 text-[10px] font-bold truncate">
+                      <p className="text-white/55 text-[10px] font-bold truncate">
                         {storyViewers
                           .slice(0, 2)
                           .map((viewer) => viewer.display_name || viewer.username)
@@ -817,7 +858,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                   onClick={() => handleDeleteStory(selectedStory.id)}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-red-400/40 bg-black/25 backdrop-blur-sm text-red-200 text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-colors"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={13} />
                   ลบสตอรี่
                 </button>
               )}
