@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getStoryExpiresText, validateStoryImageUrl } from '@/lib/story-utils';
 import type { Story, StoryAuthor } from '@/types/story';
-import { BadgeCheck, ChevronLeft, ChevronRight, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { BadgeCheck, ChevronLeft, ChevronRight, ImageOff, Loader2, Plus, Trash2, X } from 'lucide-react';
 
 type CurrentUser = {
   id: string;
@@ -46,6 +46,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [imageUrl, setImageUrl] = useState('');
   const [caption, setCaption] = useState('');
+  const [previewImageError, setPreviewImageError] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [createErrorText, setCreateErrorText] = useState('');
 
@@ -128,6 +129,8 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
   const selectedStory = selectedGroup?.stories[selectedStoryIndex] ?? null;
   const selectedAuthor = selectedGroup ? normalizeAuthor(selectedGroup.latestStory.author) : null;
+  const trimmedImageUrl = imageUrl.trim();
+  const canShowPreview = validateStoryImageUrl(trimmedImageUrl);
 
   function openStoryGroup(group: StoryGroup) {
     setSelectedGroup(group);
@@ -137,6 +140,12 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
   function closeStoryViewer() {
     setSelectedGroup(null);
     setSelectedStoryIndex(0);
+  }
+
+  function closeCreateModal() {
+    setShowCreateModal(false);
+    setCreateErrorText('');
+    setPreviewImageError(false);
   }
 
   function goToPreviousStory() {
@@ -160,7 +169,6 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
   async function handleCreateStory() {
     setCreateErrorText('');
 
-    const trimmedImageUrl = imageUrl.trim();
     const trimmedCaption = caption.trim();
 
     if (!validateStoryImageUrl(trimmedImageUrl)) {
@@ -187,6 +195,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
     setImageUrl('');
     setCaption('');
+    setPreviewImageError(false);
     setShowCreateModal(false);
     await fetchStories();
   }
@@ -328,12 +337,12 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
 
       {showCreateModal && (
         <div
-          onClick={() => setShowCreateModal(false)}
+          onClick={closeCreateModal}
           className="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4 animate-in fade-in duration-200"
         >
           <div
             onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl overflow-hidden"
+            className="w-full max-w-4xl bg-white rounded-[2rem] shadow-2xl overflow-hidden"
           >
             <div className="p-5 border-b border-gray-100 flex items-center justify-between">
               <div>
@@ -341,54 +350,134 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                   เพิ่มสตอรี่
                 </h3>
                 <p className="text-xs text-gray-400 mt-1">
-                  วางลิงก์รูปภาพจากเว็บไซต์ใดก็ได้
+                  วางลิงก์รูปภาพจากเว็บไซต์ใดก็ได้ แล้วดูตัวอย่างก่อนลง
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={() => setShowCreateModal(false)}
+                onClick={closeCreateModal}
                 className="w-9 h-9 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition-colors"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="p-5 space-y-3">
-              <input
-                value={imageUrl}
-                onChange={(event) => setImageUrl(event.target.value)}
-                placeholder="URL รูปภาพ"
-                className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-frog-400 transition-colors"
-              />
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_360px] gap-5 p-5">
+              <div className="space-y-3">
+                <input
+                  value={imageUrl}
+                  onChange={(event) => {
+                    setImageUrl(event.target.value);
+                    setPreviewImageError(false);
+                    setCreateErrorText('');
+                  }}
+                  placeholder="URL รูปภาพ"
+                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-frog-400 transition-colors"
+                />
 
-              <input
-                value={caption}
-                onChange={(event) => setCaption(event.target.value)}
-                placeholder="แคปชัน ไม่ใส่ก็ได้"
-                maxLength={280}
-                className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-frog-400 transition-colors"
-              />
+                <input
+                  value={caption}
+                  onChange={(event) => setCaption(event.target.value)}
+                  placeholder="แคปชัน ไม่ใส่ก็ได้"
+                  maxLength={280}
+                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-frog-400 transition-colors"
+                />
 
-              <p className="text-[10px] text-gray-400 leading-relaxed">
-                สตอรี่จะหายจากหน้าเว็บภายใน 24 ชั่วโมง หากรูปเสีย ลิงก์หมดอายุ
-                หรือเว็บไซต์ต้นทางไม่อนุญาตให้แสดงผล จะเป็นความรับผิดชอบของผู้ลงสตอรี่
-              </p>
-
-              {createErrorText && (
-                <p className="text-xs font-bold text-red-500">
-                  {createErrorText}
+                <p className="text-[10px] text-gray-400 leading-relaxed">
+                  สตอรี่จะหายจากหน้าเว็บภายใน 24 ชั่วโมง หากรูปเสีย ลิงก์หมดอายุ
+                  หรือเว็บไซต์ต้นทางไม่อนุญาตให้แสดงผล จะเป็นความรับผิดชอบของผู้ลงสตอรี่
                 </p>
-              )}
 
-              <button
-                type="button"
-                onClick={handleCreateStory}
-                disabled={createLoading}
-                className="w-full py-3 rounded-2xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-frog-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {createLoading ? 'กำลังลงสตอรี่...' : 'ลงสตอรี่'}
-              </button>
+                {createErrorText && (
+                  <p className="text-xs font-bold text-red-500">
+                    {createErrorText}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleCreateStory}
+                  disabled={createLoading}
+                  className="w-full py-3 rounded-2xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-frog-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {createLoading ? 'กำลังลงสตอรี่...' : 'ลงสตอรี่'}
+                </button>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-2">
+                  ตัวอย่างสตอรี่
+                </p>
+
+                <div className="relative w-full aspect-[9/16] bg-slate-950 rounded-[1.75rem] overflow-hidden shadow-xl border border-gray-100">
+                  <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2">
+                    <img
+                      src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
+                      className="w-9 h-9 rounded-xl object-cover border border-white/20"
+                      alt=""
+                      onError={(event) => {
+                        event.currentTarget.src = 'https://iili.io/qbtgKBt.png';
+                      }}
+                    />
+
+                    <div className="min-w-0">
+                      <p className="text-white text-xs font-black truncate flex items-center gap-1">
+                        {currentUser.display_name || currentUser.username || 'คุณ'}
+                        {currentUser.is_verified && (
+                          <BadgeCheck className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                        )}
+                      </p>
+                      <p className="text-white/60 text-[10px] font-bold">
+                        จะหายใน 24 ชม.
+                      </p>
+                    </div>
+                  </div>
+
+                  {canShowPreview && !previewImageError ? (
+                    <img
+                      src={trimmedImageUrl}
+                      alt=""
+                      className="w-full h-full object-contain bg-black"
+                      onError={() => setPreviewImageError(true)}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-center px-8">
+                      <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center mb-3">
+                        <ImageOff className="w-7 h-7 text-white/50" />
+                      </div>
+                      <p className="text-white/80 text-xs font-black">
+                        ยังไม่มีตัวอย่างรูป
+                      </p>
+                      <p className="text-white/40 text-[10px] mt-1 leading-relaxed">
+                        วาง URL รูปภาพที่ถูกต้องเพื่อดูตัวอย่างก่อนลงสตอรี่
+                      </p>
+                    </div>
+                  )}
+
+                  {previewImageError && (
+                    <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-center px-8">
+                      <div className="w-14 h-14 rounded-2xl bg-red-500/15 flex items-center justify-center mb-3">
+                        <ImageOff className="w-7 h-7 text-red-300" />
+                      </div>
+                      <p className="text-white text-xs font-black">
+                        โหลดตัวอย่างไม่ได้
+                      </p>
+                      <p className="text-white/50 text-[10px] mt-1 leading-relaxed">
+                        ลิงก์อาจไม่ใช่รูปโดยตรง หรือเว็บต้นทางไม่อนุญาตให้แสดงผล
+                      </p>
+                    </div>
+                  )}
+
+                  {caption.trim() && (
+                    <div className="absolute left-0 right-0 bottom-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+                      <p className="text-white text-sm leading-relaxed break-words">
+                        {caption.trim()}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
