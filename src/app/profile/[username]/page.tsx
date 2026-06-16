@@ -90,6 +90,7 @@ export default function ProfilePage() {
 
   // ✅ States สำหรับสตอรี่บนหน้าโปรไฟล์
   const [profileStories, setProfileStories] = useState<Story[]>([]);
+  const [viewedProfileStoryIds, setViewedProfileStoryIds] = useState<Set<string>>(new Set());
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
   const [showStoryViewer, setShowStoryViewer] = useState(false);
   const [storyProgress, setStoryProgress] = useState(0);
@@ -121,6 +122,7 @@ export default function ProfilePage() {
       loadSecondaryData(profileUser.id, currentUser.id);
       loadPosts(profileUser.id);
       loadProfileStories(profileUser.id);
+      loadViewedProfileStories();
     }
   }, [profileUser?.id, currentUser?.id, refreshTrigger]);
 
@@ -200,6 +202,24 @@ export default function ProfilePage() {
     }
   };
 
+  const loadViewedProfileStories = async () => {
+    if (!currentUser) return;
+
+    const { data, error } = await supabase
+      .from('story_views')
+      .select('story_id')
+      .eq('viewer_id', currentUser.id);
+
+    if (error) {
+      console.error('Error loading viewed profile stories:', error);
+      setViewedProfileStoryIds(new Set());
+      return;
+    }
+
+    const ids = new Set((data ?? []).map((item: any) => item.story_id as string));
+    setViewedProfileStoryIds(ids);
+  };
+
   const loadSecondaryData = async (targetId: string, authId: string) => {
     setIsWidgetsLoading(true);
     try {
@@ -247,6 +267,12 @@ export default function ProfilePage() {
 
   const markProfileStoryAsViewed = async (story: Story) => {
     if (!currentUser || story.author_id === currentUser.id) return;
+
+    setViewedProfileStoryIds((prev) => {
+      const next = new Set(prev);
+      next.add(story.id);
+      return next;
+    });
 
     const { error } = await supabase
       .from('story_views')
@@ -368,6 +394,9 @@ export default function ProfilePage() {
   const themeColor = profileUser?.theme_color || '#9de5a8';
   const isOwnProfile = currentUser?.id === profileUser?.id;
   const hasProfileStories = profileStories.length > 0;
+  const hasUnviewedProfileStories = isOwnProfile
+    ? hasProfileStories
+    : profileStories.some((story) => !viewedProfileStoryIds.has(story.id));
   const selectedStory = showStoryViewer ? profileStories[selectedStoryIndex] : null;
   const selectedStoryAuthor = selectedStory ? normalizeStoryAuthor(selectedStory.author) : null;
   const canGoPreviousStory = selectedStoryIndex > 0;
@@ -565,12 +594,12 @@ export default function ProfilePage() {
                       }`}
                       aria-label={hasProfileStories ? 'ดูสตอรี่ของผู้ใช้นี้' : undefined}
                     >
-                      {hasProfileStories && (
+                      {hasUnviewedProfileStories && (
                         <span className="absolute -inset-[4px] rounded-full p-[2px] bg-[conic-gradient(from_180deg,#ff4d8d,#b45cff,#4aa8ff,#41e6a4,#ffd166,#ff4d8d)] pointer-events-none">
                           <span className="block w-full h-full rounded-full bg-white" />
                         </span>
                       )}
-                  
+
                       <img
                         src={profileUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
                         className="relative z-10 w-full h-full rounded-full object-cover bg-gray-50"
