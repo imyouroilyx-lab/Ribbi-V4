@@ -1,35 +1,60 @@
 export function validateStoryImageUrl(input: string) {
-  if (!input) return false
+  if (!input) return false;
 
-  const trimmed = input.trim()
+  const trimmed = input.trim();
 
-  if (trimmed.length > 2000) return false
+  if (trimmed.length > 2000) return false;
 
   try {
-    const url = new URL(trimmed)
+    const url = new URL(trimmed);
 
-    return url.protocol === 'https:' || url.protocol === 'http:'
+    return url.protocol === 'https:' || url.protocol === 'http:';
   } catch {
-    return false
+    return false;
   }
 }
 
 export function getStoryExpiresText(expiresAt: string) {
-  const expires = new Date(expiresAt).getTime()
-  const now = Date.now()
+  const expires = new Date(expiresAt).getTime();
+  const now = Date.now();
 
-  const diffMs = expires - now
+  const diffMs = expires - now;
 
   if (diffMs <= 0) {
-    return 'หมดอายุแล้ว'
+    return 'หมดอายุแล้ว';
   }
 
-  const diffMinutes = Math.floor(diffMs / 1000 / 60)
-  const diffHours = Math.floor(diffMinutes / 60)
+  const diffMinutes = Math.floor(diffMs / 1000 / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
 
   if (diffHours > 0) {
-    return `เหลือ ${diffHours} ชม.`
+    return `เหลือ ${diffHours} ชม.`;
   }
 
-  return `เหลือ ${diffMinutes} นาที`
+  return `เหลือ ${diffMinutes} นาที`;
+}
+
+export function getStoryElapsedText(createdAt: string) {
+  const created = new Date(createdAt).getTime();
+  const now = Date.now();
+
+  const diffMs = now - created;
+
+  if (diffMs < 60 * 1000) {
+    return 'เมื่อสักครู่';
+  }
+
+  const diffMinutes = Math.floor(diffMs / 1000 / 60);
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes} นาที`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+
+  if (diffHours < 24) {
+    return `${diffHours} ชม.`;
+  }
+
+  return '24 ชม.';
 }
