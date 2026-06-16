@@ -2,9 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { getStoryExpiresText, validateStoryImageUrl } from '@/lib/story-utils';
+import { getStoryElapsedText, validateStoryImageUrl } from '@/lib/story-utils';
 import type { Story, StoryAuthor } from '@/types/story';
-import { BadgeCheck, ChevronLeft, ChevronRight, ImageOff, Loader2, Plus, Trash2, X } from 'lucide-react';
+import {
+  BadgeCheck,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  ImageOff,
+  Loader2,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react';
 
 type CurrentUser = {
   id: string;
@@ -49,6 +59,9 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
   const [previewImageError, setPreviewImageError] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [createErrorText, setCreateErrorText] = useState('');
+
+  const [storyViewers, setStoryViewers] = useState<StoryAuthor[]>([]);
+  const [viewerCount, setViewerCount] = useState(0);
 
   const [loading, setLoading] = useState(true);
 
@@ -132,14 +145,76 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
   const trimmedImageUrl = imageUrl.trim();
   const canShowPreview = validateStoryImageUrl(trimmedImageUrl);
 
-  function openStoryGroup(group: StoryGroup) {
+  async function markStoryAsViewed(story: Story) {
+    if (story.author_id === currentUser.id) return;
+
+    const { error } = await supabase
+      .from('story_views')
+      .insert({
+        story_id: story.id,
+        viewer_id: currentUser.id,
+      });
+
+    if (error && error.code !== '23505') {
+      console.error('Error marking story as viewed:', error);
+    }
+  }
+
+  async function fetchStoryViewers(storyId: string, storyAuthorId: string) {
+    if (storyAuthorId !== currentUser.id) {
+      setStoryViewers([]);
+      setViewerCount(0);
+      return;
+    }
+
+    const { data, error, count } = await supabase
+      .from('story_views')
+      .select(`
+        viewer:viewer_id (
+          id,
+          username,
+          display_name,
+          profile_img_url,
+          is_verified
+        )
+      `, { count: 'exact' })
+      .eq('story_id', storyId)
+      .order('viewed_at', { ascending: false });
+
+    if (error) {
+      console.error('Error loading story viewers:', error);
+      setStoryViewers([]);
+      setViewerCount(0);
+      return;
+    }
+
+    const viewers =
+      data
+        ?.map((item: any) => {
+          if (Array.isArray(item.viewer)) return item.viewer[0];
+          return item.viewer;
+        })
+        .filter(Boolean) ?? [];
+
+    setStoryViewers(viewers);
+    setViewerCount(count || viewers.length);
+  }
+
+  async function openStoryGroup(group: StoryGroup) {
+    const firstStory = group.stories[0];
+
     setSelectedGroup(group);
     setSelectedStoryIndex(0);
+
+    await markStoryAsViewed(firstStory);
+    await fetchStoryViewers(firstStory.id, firstStory.author_id);
   }
 
   function closeStoryViewer() {
     setSelectedGroup(null);
     setSelectedStoryIndex(0);
+    setStoryViewers([]);
+    setViewerCount(0);
   }
 
   function closeCreateModal() {
@@ -148,19 +223,31 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
     setPreviewImageError(false);
   }
 
-  function goToPreviousStory() {
+  async function goToPreviousStory() {
     if (!selectedGroup) return;
 
     if (selectedStoryIndex > 0) {
-      setSelectedStoryIndex((prev) => prev - 1);
+      const nextIndex = selectedStoryIndex - 1;
+      const nextStory = selectedGroup.stories[nextIndex];
+
+      setSelectedStoryIndex(nextIndex);
+
+      await markStoryAsViewed(nextStory);
+      await fetchStoryViewers(nextStory.id, nextStory.author_id);
     }
   }
 
-  function goToNextStory() {
+  async function goToNextStory() {
     if (!selectedGroup) return;
 
     if (selectedStoryIndex < selectedGroup.stories.length - 1) {
-      setSelectedStoryIndex((prev) => prev + 1);
+      const nextIndex = selectedStoryIndex + 1;
+      const nextStory = selectedGroup.stories[nextIndex];
+
+      setSelectedStoryIndex(nextIndex);
+
+      await markStoryAsViewed(nextStory);
+      await fetchStoryViewers(nextStory.id, nextStory.author_id);
     } else {
       closeStoryViewer();
     }
@@ -411,7 +498,9 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                 </p>
 
                 <div className="relative w-full aspect-[9/16] bg-slate-950 rounded-[1.75rem] overflow-hidden shadow-xl border border-gray-100">
-                  <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2">
+                  <div className="absolute top-0 left-0 right-0 h-32 z-10 bg-gradient-to-b from-black/75 via-black/35 to-transparent pointer-events-none" />
+
+                  <div className="absolute top-3 left-3 right-3 z-20 flex items-center gap-2">
                     <img
                       src={currentUser.profile_img_url || 'https://iili.io/qbtgKBt.png'}
                       className="w-9 h-9 rounded-xl object-cover border border-white/20"
@@ -422,14 +511,14 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                     />
 
                     <div className="min-w-0">
-                      <p className="text-white text-xs font-black truncate flex items-center gap-1">
+                      <p className="text-white text-xs font-black truncate flex items-center gap-1 drop-shadow">
                         {currentUser.display_name || currentUser.username || 'คุณ'}
                         {currentUser.is_verified && (
                           <BadgeCheck className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                         )}
                       </p>
-                      <p className="text-white/60 text-[10px] font-bold">
-                        จะหายใน 24 ชม.
+                      <p className="text-white/70 text-[10px] font-bold drop-shadow">
+                        เมื่อสักครู่
                       </p>
                     </div>
                   </div>
@@ -492,6 +581,8 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
             onClick={(event) => event.stopPropagation()}
             className="relative w-full max-w-md max-h-[92vh] bg-slate-950 rounded-[2rem] overflow-hidden shadow-2xl border border-white/10"
           >
+            <div className="absolute top-0 left-0 right-0 h-36 z-10 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none" />
+
             <button
               type="button"
               onClick={closeStoryViewer}
@@ -511,14 +602,14 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
               />
 
               <div className="min-w-0">
-                <p className="text-white text-xs font-black truncate flex items-center gap-1">
+                <p className="text-white text-xs font-black truncate flex items-center gap-1 drop-shadow">
                   {getDisplayName(selectedAuthor)}
                   {selectedAuthor?.is_verified && (
                     <BadgeCheck className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                   )}
                 </p>
-                <p className="text-white/60 text-[10px] font-bold">
-                  {getStoryExpiresText(selectedStory.expires_at)}
+                <p className="text-white/70 text-[10px] font-bold drop-shadow">
+                  {getStoryElapsedText(selectedStory.created_at)}
                   {selectedGroup.stories.length > 1 && (
                     <>
                       {' '}
@@ -530,7 +621,7 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
             </div>
 
             {selectedGroup.stories.length > 1 && (
-              <div className="absolute top-0 left-0 right-0 z-10 flex gap-1 p-3">
+              <div className="absolute top-0 left-0 right-0 z-20 flex gap-1 p-3">
                 {selectedGroup.stories.map((story) => (
                   <div
                     key={story.id}
@@ -582,6 +673,59 @@ export default function StoriesBar({ currentUser }: StoriesBarProps) {
                 <p className="text-white text-sm leading-relaxed mb-3">
                   {selectedStory.caption}
                 </p>
+              )}
+
+              {currentUser.id === selectedStory.author_id && (
+                <div className="mb-3 rounded-2xl bg-white/5 border border-white/10 p-3">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-white/60 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                      <Eye size={13} />
+                      คนดูสตอรี่
+                    </p>
+
+                    <p className="text-white text-[10px] font-black">
+                      {viewerCount} คน
+                    </p>
+                  </div>
+
+                  {storyViewers.length === 0 ? (
+                    <p className="text-white/35 text-xs font-bold">
+                      ยังไม่มีคนดู
+                    </p>
+                  ) : (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex -space-x-2 overflow-hidden">
+                        {storyViewers.slice(0, 8).map((viewer) => (
+                          <img
+                            key={viewer.id}
+                            src={viewer.profile_img_url || 'https://iili.io/qbtgKBt.png'}
+                            className="w-8 h-8 rounded-full object-cover border-2 border-slate-950"
+                            title={viewer.display_name || viewer.username || ''}
+                            alt=""
+                            onError={(event) => {
+                              event.currentTarget.src = 'https://iili.io/qbtgKBt.png';
+                            }}
+                          />
+                        ))}
+
+                        {viewerCount > 8 && (
+                          <div className="w-8 h-8 rounded-full bg-white/10 border-2 border-slate-950 flex items-center justify-center text-white text-[10px] font-black">
+                            +{viewerCount - 8}
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="text-white/40 text-[10px] font-bold truncate">
+                        {storyViewers
+                          .slice(0, 2)
+                          .map((viewer) => viewer.display_name || viewer.username)
+                          .filter(Boolean)
+                          .join(', ')}
+                        {viewerCount > 2 ? ' และคนอื่น ๆ' : ''}
+                      </p>
+                    </div>
+                  )}
+                </div>
               )}
 
               {currentUser.id === selectedStory.author_id && (
