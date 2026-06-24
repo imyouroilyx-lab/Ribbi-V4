@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ChatList from './chat/ChatList';
@@ -30,6 +30,7 @@ export interface Chat {
 export default function MessagesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -41,81 +42,178 @@ export default function MessagesPage() {
   useEffect(() => {
     const chatIdFromUrl = searchParams.get('chat');
     if (chatIdFromUrl) setSelectedChatId(chatIdFromUrl);
-    
-    const init = async () => {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) { router.push('/login'); return; }
-      const { data: userData } = await supabase.from('users').select('*').eq('id', authUser.id).single();
-      if (userData) {
-        setCurrentUser(userData);
-        await loadChats(userData.id);
-      }
-      setIsLoading(false);
-    };
-    init();
   }, [searchParams]);
 
-  const loadChats = async (userId: string) => {
+  const loadChats = useCallback(async (userId: string) => {
+    if (!userId) return;
+
     try {
-      const { data: partData, error: partError } = await supabase.from('chat_participants').select(`
-        chat_id, unread_count, 
-        chats:chat_id (*)
-      `).eq('user_id', userId);
+      const { data: partData, error: partError } = await supabase
+        .from('chat_participants')
+        .select(`
+          chat_id,
+          unread_count,
+          chats:chat_id (
+            id,
+            is_group,
+            name,
+            group_img_url,
+            last_message_at,
+            last_message_content,
+            theme_color,
+            created_by
+          )
+        `)
+        .eq('user_id', userId);
 
       if (partError || !partData) return;
 
-      const chatIds = partData.map((p: any) => p.chat_id);
-      
+      const chatIds = partData.map((p: any) => p.chat_id).filter(Boolean);
+
+      if (chatIds.length === 0) {
+        setChats([]);
+        return;
+      }
+
       const [membersRes, nicknamesRes] = await Promise.all([
-        supabase.from('chat_participants').select('chat_id, user:user_id(id, username, display_name, profile_img_url)').in('chat_id', chatIds),
-        supabase.from('chat_nicknames').select('*').in('chat_id', chatIds)
+        supabase
+          .from('chat_participants')
+          .select(`
+            chat_id,
+            user:user_id (
+              id,
+              username,
+              display_name,
+              profile_img_url
+            )
+          `)
+          .in('chat_id', chatIds),
+        supabase
+          .from('chat_nicknames')
+          .select('chat_id, target_user_id, nickname')
+          .in('chat_id', chatIds)
       ]);
 
       const formatted = partData.map((p: any) => {
         const c = p.chats as any;
         if (!c) return null;
-        
-        const allMembers = membersRes.data?.filter(m => m.chat_id === c.id) || [];
-        
-        // ✅ แก้ไขตรงนี้: บังคับ Type เป็น any เพื่อเลี่ยง Error 'Property id does not exist on type ...[]'
+
+        const allMembers = membersRes.data?.filter((m: any) => m.chat_id === c.id) || [];
         const otherMemberItem: any = c.is_group ? null : allMembers.find((m: any) => m.user?.id !== userId);
         const otherUserObj = otherMemberItem?.user;
-        
-        const myNickEntry = nicknamesRes.data?.find(n => n.chat_id === c.id && n.target_user_id === userId);
-        const otherNickEntry = otherUserObj ? nicknamesRes.data?.find(n => n.chat_id === c.id && n.target_user_id === otherUserObj.id) : null;
 
-        return { 
-          ...c, 
-          unread_count: p.unread_count || 0, 
+        const myNickEntry = nicknamesRes.data?.find((n: any) => n.chat_id === c.id && n.target_user_id === userId);
+        const otherNickEntry = otherUserObj
+          ? nicknamesRes.data?.find((n: any) => n.chat_id === c.id && n.target_user_id === otherUserObj.id)
+          : null;
+
+        return {
+          ...c,
+          unread_count: p.unread_count || 0,
           my_nickname: myNickEntry?.nickname || null,
-          other_user: otherUserObj ? { 
-            ...otherUserObj, 
-            display_name: otherNickEntry?.nickname || otherUserObj.display_name,
-            is_online: !!onlineUsers[otherUserObj.id]
-          } : undefined 
+          other_user: otherUserObj
+            ? {
+                ...otherUserObj,
+                display_name: otherNickEntry?.nickname || otherUserObj.display_name,
+                is_online: !!onlineUsers[otherUserObj.id]
+              }
+            : undefined
         };
       }).filter(Boolean) as Chat[];
 
-      setChats(formatted.sort((a, b) => new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()));
-    } catch (e) { console.error("Load error:", e); }
-  };
+      setChats(
+        formatted.sort(
+          (a, b) =>
+            new Date(b.last_message_at || 0).getTime() -
+            new Date(a.last_message_at || 0).getTime()
+        )
+      );
+    } catch (e) {
+      console.error('Load error:', e);
+    }
+  }, [onlineUsers]);
 
-  if (isLoading) return <div className="h-screen flex items-center justify-center bg-white"><Loader2 className="animate-spin text-frog-500" /></div>;
+  useEffect(() => {
+    let isCancelled = false;
+
+    const init = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+
+      if (!authUser) {
+        router.push('/login');
+        return;
+      }
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id, username, display_name, profile_img_url, is_verified')
+        .eq('id', authUser.id)
+        .single();
+
+      if (isCancelled) return;
+
+      if (userData) {
+        setCurrentUser(userData);
+        await loadChats(userData.id);
+      }
+
+      if (!isCancelled) {
+        setIsLoading(false);
+      }
+    };
+
+    init();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [router, loadChats]);
+
+  useEffect(() => {
+    setChats(prev =>
+      prev.map(chat => {
+        if (!chat.other_user) return chat;
+
+        return {
+          ...chat,
+          other_user: {
+            ...chat.other_user,
+            is_online: !!onlineUsers[chat.other_user.id]
+          }
+        };
+      })
+    );
+  }, [onlineUsers]);
+
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-white">
+        <Loader2 className="animate-spin text-frog-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100dvh-64px)] w-full flex bg-white overflow-hidden text-gray-900">
       <div className={`${selectedChatId ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 border-r flex-col`}>
-        <ChatList chats={chats} currentUserId={currentUser?.id} selectedChatId={selectedChatId} onSelectChat={setSelectedChatId} onRefresh={() => loadChats(currentUser?.id)} />
+        <ChatList
+          chats={chats}
+          currentUserId={currentUser?.id}
+          selectedChatId={selectedChatId}
+          onSelectChat={setSelectedChatId}
+          onRefresh={() => loadChats(currentUser?.id)}
+        />
       </div>
+
       <div className="flex-1 min-w-0 bg-gray-50/20">
         {selectedChatId && currentSelectedChat ? (
-          <ChatWindow 
-            key={selectedChatId} 
-            chatId={selectedChatId} 
+          <ChatWindow
+            key={selectedChatId}
+            chatId={selectedChatId}
             chatData={currentSelectedChat}
-            currentUser={currentUser} 
-            onBack={() => setSelectedChatId(null)} 
-            onRefreshChats={() => loadChats(currentUser.id)} 
+            currentUser={currentUser}
+            onBack={() => setSelectedChatId(null)}
+            onRefreshChats={() => loadChats(currentUser.id)}
           />
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-gray-300">
