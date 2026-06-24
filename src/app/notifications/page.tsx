@@ -70,15 +70,24 @@ export default function NotificationsPage() {
     if (node) observer.current.observe(node);
   }, [isLoading, isLoadingMore, hasMore]);
 
-  const silentMarkAllAsRead = async (userId: string) => {
+  const silentMarkLoadedAsRead = async (loadedNotifications: any[]) => {
     try {
+      const unreadIds = loadedNotifications
+        .filter(n => !n.is_read)
+        .map(n => n.id);
+
+      if (unreadIds.length === 0) return;
+
       await supabase
         .from('notifications')
         .update({ is_read: true })
-        .eq('receiver_id', userId)
-        .eq('is_read', false);
+        .in('id', unreadIds);
+
+      setNotifications(prev =>
+        prev.map(n => unreadIds.includes(n.id) ? { ...n, is_read: true } : n)
+      );
     } catch (error) {
-      console.error('Error marking all as read:', error);
+      console.error('Error marking loaded notifications as read:', error);
     }
   };
 
@@ -113,7 +122,12 @@ export default function NotificationsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/login'); return; }
 
-      const { data: userData } = await supabase.from('users').select('id, username, display_name').eq('id', user.id).single();
+      const { data: userData } = await supabase
+        .from('users')
+        .select('id, username, display_name')
+        .eq('id', user.id)
+        .single();
+
       setCurrentUser(userData as any);
 
       const { data } = await fetchNotifications(user.id, 0);
@@ -121,7 +135,7 @@ export default function NotificationsPage() {
         const uniqueData = deduplicateNotifications(data);
         setNotifications(uniqueData);
         setHasMore(data.length === NOTIFS_PER_PAGE);
-        silentMarkAllAsRead(user.id);
+        silentMarkLoadedAsRead(uniqueData);
       }
     } catch (error) {
       console.error(error);
@@ -136,11 +150,15 @@ export default function NotificationsPage() {
     try {
       const { data } = await fetchNotifications(currentUser.id, page);
       if (data && data.length > 0) {
+        const uniqueNewData = deduplicateNotifications(data);
+
         setNotifications(prev => {
-          const combined = [...prev, ...data];
+          const combined = [...prev, ...uniqueNewData];
           return deduplicateNotifications(combined);
         });
+
         setHasMore(data.length === NOTIFS_PER_PAGE);
+        silentMarkLoadedAsRead(uniqueNewData);
       } else {
         setHasMore(false);
       }
@@ -158,9 +176,25 @@ export default function NotificationsPage() {
     return await supabase
       .from('notifications')
       .select(`
-        *,
-        sender:users!notifications_sender_id_fkey(id, username, display_name, profile_img_url),
-        post:posts(id, content)
+        id,
+        receiver_id,
+        type,
+        sender_id,
+        post_id,
+        comment_id,
+        parent_comment_id,
+        is_read,
+        created_at,
+        sender:users!notifications_sender_id_fkey (
+          id,
+          username,
+          display_name,
+          profile_img_url
+        ),
+        post:posts (
+          id,
+          content
+        )
       `)
       .eq('receiver_id', userId)
       .order('created_at', { ascending: false })
