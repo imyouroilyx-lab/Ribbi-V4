@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+const MESSAGES_LIMIT = 50;
+
 export default function ChatWindow({ chatId, chatData: initialChatData, currentUser, onBack, onRefreshChats }: any) {
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState('');
@@ -28,6 +30,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   const [groupName, setGroupName] = useState(''); 
   const [groupImg, setGroupImg] = useState(''); 
   const lastId = useRef(chatId);
+  const hasMarkedReadRef = useRef(false);
 
   // ✅ States สำหรับจัดการกลุ่ม
   const [participants, setParticipants] = useState<any[]>([]);
@@ -42,18 +45,119 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
 
   // 📡 1. ระบบ Realtime & Load Messages
   useEffect(() => {
+    hasMarkedReadRef.current = false;
+
     loadMessages();
     markAsRead();
 
     const channel = supabase
       .channel(`chat:${chatId}`)
       .on('postgres_changes', { 
-        event: '*', 
+        event: 'INSERT', 
         schema: 'public', 
         table: 'messages', 
         filter: `chat_id=eq.${chatId}` 
-      }, () => {
-        loadMessages();
+      }, async (payload: any) => {
+        const newMessageId = payload.new?.id;
+        if (!newMessageId) return;
+
+        const { data } = await supabase
+          .from('messages')
+          .select(`
+            id,
+            chat_id,
+            sender_id,
+            content,
+            images,
+            read_at,
+            read_by,
+            created_at,
+            updated_at,
+            deleted_by,
+            event,
+            sender:users!messages_sender_id_fkey (
+              id,
+              username,
+              display_name,
+              profile_img_url
+            )
+          `)
+          .eq('id', newMessageId)
+          .single();
+
+        if (!data) return;
+        if ((data.deleted_by || []).includes(currentUser.id)) return;
+
+        setMessages(prev => {
+          if (prev.some(m => m.id === data.id)) return prev;
+
+          const next = [...prev, data];
+
+          if (next.length > MESSAGES_LIMIT) {
+            return next.slice(next.length - MESSAGES_LIMIT);
+          }
+
+          return next;
+        });
+
+        setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+
+        if (data.sender_id !== currentUser.id) {
+          markAsRead(true);
+        }
+      })
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'messages', 
+        filter: `chat_id=eq.${chatId}` 
+      }, async (payload: any) => {
+        const updatedMessageId = payload.new?.id;
+        if (!updatedMessageId) return;
+
+        const { data } = await supabase
+          .from('messages')
+          .select(`
+            id,
+            chat_id,
+            sender_id,
+            content,
+            images,
+            read_at,
+            read_by,
+            created_at,
+            updated_at,
+            deleted_by,
+            event,
+            sender:users!messages_sender_id_fkey (
+              id,
+              username,
+              display_name,
+              profile_img_url
+            )
+          `)
+          .eq('id', updatedMessageId)
+          .single();
+
+        if (!data) return;
+
+        if ((data.deleted_by || []).includes(currentUser.id)) {
+          setMessages(prev => prev.filter(m => m.id !== updatedMessageId));
+          return;
+        }
+
+        setMessages(prev => prev.map(m => m.id === updatedMessageId ? data : m));
+      })
+      .on('postgres_changes', { 
+        event: 'DELETE', 
+        schema: 'public', 
+        table: 'messages', 
+        filter: `chat_id=eq.${chatId}` 
+      }, (payload: any) => {
+        const deletedMessageId = payload.old?.id;
+        if (!deletedMessageId) return;
+
+        setMessages(prev => prev.filter(m => m.id !== deletedMessageId));
       })
       .subscribe();
 
@@ -124,19 +228,56 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   const loadMessages = async () => {
     const { data } = await supabase
       .from('messages')
-      .select('*, sender:users!messages_sender_id_fkey(id, display_name, profile_img_url)')
+      .select(`
+        id,
+        chat_id,
+        sender_id,
+        content,
+        images,
+        read_at,
+        read_by,
+        created_at,
+        updated_at,
+        deleted_by,
+        event,
+        sender:users!messages_sender_id_fkey (
+          id,
+          username,
+          display_name,
+          profile_img_url
+        )
+      `)
       .eq('chat_id', chatId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: false })
+      .limit(MESSAGES_LIMIT);
 
     if (data) {
-      setMessages(data.filter(m => !(m.deleted_by || []).includes(currentUser.id)));
+      const visibleMessages = data
+        .filter(m => !(m.deleted_by || []).includes(currentUser.id))
+        .reverse();
+
+      setMessages(visibleMessages);
     }
+
     setIsLoading(false);
     setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
-  const markAsRead = async () => {
-    await supabase.from('chat_participants').update({ unread_count: 0 }).eq('chat_id', chatId).eq('user_id', currentUser.id);
+  const markAsRead = async (force = false) => {
+    if (!force && hasMarkedReadRef.current) return;
+
+    if (!force && !initialChatData.unread_count) {
+      hasMarkedReadRef.current = true;
+      return;
+    }
+
+    await supabase
+      .from('chat_participants')
+      .update({ unread_count: 0 })
+      .eq('chat_id', chatId)
+      .eq('user_id', currentUser.id);
+
+    hasMarkedReadRef.current = true;
     onRefreshChats();
   };
 
@@ -153,12 +294,23 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
     setShowImageInput(false);
 
     if (editingId) {
-      await supabase.from('messages').update({ content, updated_at: new Date().toISOString() }).eq('id', editingId);
+      await supabase
+        .from('messages')
+        .update({ content, updated_at: new Date().toISOString() })
+        .eq('id', editingId);
+
       setEditingId(null);
     } else {
-      await supabase.from('messages').insert({ chat_id: chatId, sender_id: currentUser.id, content, images });
-      await supabase.from('chats').update({ last_message_content: content || '[ส่งรูปภาพ]', last_message_at: new Date().toISOString() }).eq('id', chatId);
+      await supabase
+        .from('messages')
+        .insert({ chat_id: chatId, sender_id: currentUser.id, content, images });
+
+      await supabase
+        .from('chats')
+        .update({ last_message_content: content || '[ส่งรูปภาพ]', last_message_at: new Date().toISOString() })
+        .eq('id', chatId);
     }
+
     onRefreshChats();
   };
 
@@ -196,12 +348,18 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
 
   const clearHistoryForMe = async () => {
     if (!confirm('ล้างประวัติการแชท (หายเฉพาะฝั่งคุณ)?')) return;
-    const { data } = await supabase.from('messages').select('id, deleted_by').eq('chat_id', chatId);
+
+    const { data } = await supabase
+      .from('messages')
+      .select('id, deleted_by')
+      .eq('chat_id', chatId);
+
     if (data) {
       const updates = data.map(m => {
         const current = m.deleted_by || [];
         return supabase.from('messages').update({ deleted_by: [...current, currentUser.id] }).eq('id', m.id);
       });
+
       await Promise.all(updates);
       loadMessages();
       setShowSettings(false);
