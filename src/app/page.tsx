@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { Users, Circle, ChevronRight, RefreshCw, Loader2, ArrowRight, BadgeCheck } from 'lucide-react';
 
 const POSTS_PER_PAGE = 10;
+const LAST_ACTIVE_INTERVAL = 10 * 60 * 1000;
 
 export default function HomePage() {
   const router = useRouter();
@@ -58,16 +59,25 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!currentUser) return;
+
     const updateActivity = async () => {
       const lastUpdated = sessionStorage.getItem('last_active_update');
       const now = Date.now();
-      if (!lastUpdated || now - parseInt(lastUpdated) > 120000) {
-        await supabase.from('users').update({ last_active: new Date().toISOString() }).eq('id', currentUser.id);
+
+      if (!lastUpdated || now - parseInt(lastUpdated) > LAST_ACTIVE_INTERVAL) {
+        await supabase
+          .from('users')
+          .update({ last_active: new Date().toISOString() })
+          .eq('id', currentUser.id);
+
         sessionStorage.setItem('last_active_update', now.toString());
       }
     };
+
     updateActivity();
-    const interval = setInterval(updateActivity, 5 * 60 * 1000); 
+
+    const interval = setInterval(updateActivity, LAST_ACTIVE_INTERVAL);
+
     return () => clearInterval(interval);
   }, [currentUser?.id]);
 
