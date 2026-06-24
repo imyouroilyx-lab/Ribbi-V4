@@ -147,7 +147,27 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   useEffect(() => {
     if (showComments && !hasLoadedFriends) {
       const loadFriends = async () => {
-        const { data } = await supabase.from('friendships').select(`sender:sender_id(*), receiver:receiver_id(*)`).eq('status', 'accepted').or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
+        const { data } = await supabase
+          .from('friendships')
+          .select(`
+            sender:sender_id (
+              id,
+              username,
+              display_name,
+              profile_img_url,
+              is_verified
+            ),
+            receiver:receiver_id (
+              id,
+              username,
+              display_name,
+              profile_img_url,
+              is_verified
+            )
+          `)
+          .eq('status', 'accepted')
+          .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
+
         if (data) {
           const list = data.map((f: any) => f.sender.id === currentUserId ? f.receiver : f.sender);
           setFriends(list);
@@ -198,8 +218,8 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
   useEffect(() => {
     const loadStats = async () => {
       const [lCount, cCount, isL] = await Promise.all([
-        supabase.from('likes').select('*', { count: 'exact', head: true }).eq('post_id', post.id),
-        supabase.from('comments').select('*', { count: 'exact', head: true }).eq('post_id', post.id),
+        supabase.from('likes').select('id', { count: 'exact', head: true }).eq('post_id', post.id),
+        supabase.from('comments').select('id', { count: 'exact', head: true }).eq('post_id', post.id),
         supabase.from('likes').select('id').eq('post_id', post.id).eq('user_id', currentUserId).maybeSingle()
       ]);
       setLikeCount(lCount.count || 0); setCommentCount(cCount.count || 0); setIsLiked(!!isL.data);
@@ -238,18 +258,51 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
 
   const loadComments = async () => {
     setIsCommentsLoading(true);
-    const { data } = await supabase.from('comments').select('*, author:users(id, username, display_name, profile_img_url, is_verified)').eq('post_id', post.id).order('created_at', { ascending: true });
+    const { data } = await supabase
+      .from('comments')
+      .select(`
+        id,
+        post_id,
+        author_id,
+        content,
+        image_url,
+        parent_comment_id,
+        created_at,
+        author:users (
+          id,
+          username,
+          display_name,
+          profile_img_url,
+          is_verified
+        )
+      `)
+      .eq('post_id', post.id)
+      .order('created_at', { ascending: true });
+
     if (data) {
       const topLevel = data.filter(c => !c.parent_comment_id);
       const formatted = topLevel.map(c => ({ ...c, replies: data.filter(r => r.parent_comment_id === c.id) }));
       setComments(formatted as Comment[]);
-      const { data: cLikes } = await supabase.from('comment_likes').select('comment_id, user_id').in('comment_id', data.map(c => c.id));
-      if (cLikes) {
-        const counts: Record<string, number> = {}; const userLiked = new Set<string>();
-        cLikes.forEach(like => { counts[like.comment_id] = (counts[like.comment_id] || 0) + 1; if (like.user_id === currentUserId) userLiked.add(like.comment_id); });
-        setCommentLikes(counts); setLikedComments(userLiked);
+
+      const commentIds = data.map(c => c.id);
+
+      if (commentIds.length > 0) {
+        const { data: cLikes } = await supabase
+          .from('comment_likes')
+          .select('comment_id, user_id')
+          .in('comment_id', commentIds);
+
+        if (cLikes) {
+          const counts: Record<string, number> = {}; const userLiked = new Set<string>();
+          cLikes.forEach(like => { counts[like.comment_id] = (counts[like.comment_id] || 0) + 1; if (like.user_id === currentUserId) userLiked.add(like.comment_id); });
+          setCommentLikes(counts); setLikedComments(userLiked);
+        }
+      } else {
+        setCommentLikes({});
+        setLikedComments(new Set());
       }
     }
+
     setIsCommentsLoading(false);
   };
 
@@ -265,7 +318,27 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if (e) e.preventDefault(); if ((!newComment.trim() && !commentImageUrl.trim()) || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const { data: newAddedComment, error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: newComment.trim(), image_url: commentImageUrl.trim() || null }).select('*, author:users(id, username, display_name, profile_img_url, is_verified)').single();
+      const { data: newAddedComment, error } = await supabase
+        .from('comments')
+        .insert({ post_id: post.id, author_id: currentUserId, content: newComment.trim(), image_url: commentImageUrl.trim() || null })
+        .select(`
+          id,
+          post_id,
+          author_id,
+          content,
+          image_url,
+          parent_comment_id,
+          created_at,
+          author:users (
+            id,
+            username,
+            display_name,
+            profile_img_url,
+            is_verified
+          )
+        `)
+        .single();
+
       if (error) throw error;
       if (newAddedComment) setComments(prev => [...prev, { ...newAddedComment, replies: [] } as Comment]);
       await sendTagNotifications(newComment, newAddedComment.id);
@@ -277,7 +350,27 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
     if ((!replyContent.trim() && !replyImageUrl.trim()) || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const { data: newReply, error } = await supabase.from('comments').insert({ post_id: post.id, author_id: currentUserId, content: replyContent.trim(), parent_comment_id: parentCommentId, image_url: replyImageUrl.trim() || null }).select('*, author:users(id, username, display_name, profile_img_url, is_verified)').single();
+      const { data: newReply, error } = await supabase
+        .from('comments')
+        .insert({ post_id: post.id, author_id: currentUserId, content: replyContent.trim(), parent_comment_id: parentCommentId, image_url: replyImageUrl.trim() || null })
+        .select(`
+          id,
+          post_id,
+          author_id,
+          content,
+          image_url,
+          parent_comment_id,
+          created_at,
+          author:users (
+            id,
+            username,
+            display_name,
+            profile_img_url,
+            is_verified
+          )
+        `)
+        .single();
+
       if (error) throw error;
       if (newReply) setComments(prev => prev.map(c => c.id === parentCommentId ? { ...c, replies: [...(c.replies || []), newReply as Comment] } : c));
       await sendTagNotifications(replyContent, newReply.id);
