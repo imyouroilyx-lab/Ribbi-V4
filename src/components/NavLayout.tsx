@@ -5,7 +5,6 @@ import { supabase } from '../lib/supabase';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Home, Users, Settings, LogOut, Menu, X, MessageCircle, Bell, ArrowLeft } from 'lucide-react';
-import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 const CACHE_KEY = 'ribbi_user_cache';
 
@@ -29,8 +28,6 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastPlayedRef = useRef<number>(0);
-
-  useOnlineStatus(currentUser?.id || null);
 
   const refreshNavBadges = useCallback(async () => {
     if (!currentUser?.id) return;
@@ -105,15 +102,17 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
   // ✅ เช็ก badge แบบไม่ realtime:
   // - ตอนกลับมาโฟกัสแท็บ
   // - ตอนเปิดแท็บกลับมา
-  // - ทุก 30 วินาที
+  // - ทุก 60 วินาที เฉพาะตอนแท็บยัง visible
   useEffect(() => {
     if (!currentUser?.id) return;
 
     refreshNavBadges();
 
     const interval = window.setInterval(() => {
-      refreshNavBadges();
-    }, 30000);
+      if (document.visibilityState === 'visible') {
+        refreshNavBadges();
+      }
+    }, 60000);
 
     const handleFocus = () => {
       refreshNavBadges();
@@ -159,10 +158,25 @@ export default function NavLayout({ children }: { children: React.ReactNode }) {
           playNotificationSound(); 
         } 
       })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'chat_participants',
+        filter: `user_id=eq.${currentUser.id}`
+      }, (payload: any) => {
+        const newUnreadCount = Number(payload.new?.unread_count || 0);
+        const oldUnreadCount = Number(payload.old?.unread_count || 0);
+
+        if (newUnreadCount > 0 && newUnreadCount > oldUnreadCount) {
+          setUnreadMsg(p => p + Math.max(newUnreadCount - oldUnreadCount, 1));
+          playNotificationSound();
+          refreshNavBadges();
+        }
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [currentUser?.id, playNotificationSound]);
+  }, [currentUser?.id, playNotificationSound, refreshNavBadges]);
 
   const fetchLatestData = async () => {
     try {
