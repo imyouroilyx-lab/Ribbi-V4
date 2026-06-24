@@ -13,8 +13,8 @@ export function useOnlineStatus(userId: string | null) {
     const initPresence = async () => {
       if (channelRef.current) await supabase.removeChannel(channelRef.current);
 
-      const uniqueName = `presence_${userId}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const channel = supabase.channel(uniqueName, { config: { presence: { key: userId } } });
+      const channelName = `presence_${userId}`;
+      const channel = supabase.channel(channelName, { config: { presence: { key: userId } } });
 
       channel
         .on('presence', { event: 'sync' }, () => {
