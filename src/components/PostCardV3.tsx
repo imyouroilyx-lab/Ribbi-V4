@@ -77,6 +77,18 @@ const LinkPreview = ({ url }: { url: string }) => {
   );
 };
 
+const normalizeUser = (user: any): User | undefined => {
+  if (!user) return undefined;
+  return Array.isArray(user) ? user[0] : user;
+};
+
+const normalizeComment = (comment: any): Comment => {
+  return {
+    ...comment,
+    author: normalizeUser(comment.author),
+  };
+};
+
 export default function PostCardV3({ post: initialPost, currentUserId, onDelete, profileOwnerId }: PostCardProps) {
   const [post, setPost] = useState(initialPost);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -169,7 +181,7 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
           .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
 
         if (data) {
-          const list = data.map((f: any) => f.sender.id === currentUserId ? f.receiver : f.sender);
+          const list = data.map((f: any) => normalizeUser(f.sender)?.id === currentUserId ? normalizeUser(f.receiver) : normalizeUser(f.sender)).filter(Boolean) as User[];
           setFriends(list);
           setHasLoadedFriends(true);
         }
@@ -280,11 +292,16 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
       .order('created_at', { ascending: true });
 
     if (data) {
-      const topLevel = data.filter(c => !c.parent_comment_id);
-      const formatted = topLevel.map(c => ({ ...c, replies: data.filter(r => r.parent_comment_id === c.id) }));
-      setComments(formatted as Comment[]);
+      const normalizedData = data.map(normalizeComment);
+      const topLevel = normalizedData.filter(c => !c.parent_comment_id);
+      const formatted = topLevel.map(c => ({
+        ...c,
+        replies: normalizedData.filter(r => r.parent_comment_id === c.id)
+      }));
 
-      const commentIds = data.map(c => c.id);
+      setComments(formatted);
+
+      const commentIds = normalizedData.map(c => c.id);
 
       if (commentIds.length > 0) {
         const { data: cLikes } = await supabase
@@ -340,8 +357,11 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         .single();
 
       if (error) throw error;
-      if (newAddedComment) setComments(prev => [...prev, { ...newAddedComment, replies: [] } as Comment]);
-      await sendTagNotifications(newComment, newAddedComment.id);
+      if (newAddedComment) {
+        const normalizedNewComment = normalizeComment(newAddedComment);
+        setComments(prev => [...prev, { ...normalizedNewComment, replies: [] }]);
+        await sendTagNotifications(newComment, normalizedNewComment.id);
+      }
       setNewComment(''); setCommentImageUrl(''); setShowCommentImageInput(false); setCommentCount(prev => prev + 1);
     } catch (err) { console.error(err); } finally { setIsSubmitting(false); }
   };
@@ -372,8 +392,11 @@ export default function PostCardV3({ post: initialPost, currentUserId, onDelete,
         .single();
 
       if (error) throw error;
-      if (newReply) setComments(prev => prev.map(c => c.id === parentCommentId ? { ...c, replies: [...(c.replies || []), newReply as Comment] } : c));
-      await sendTagNotifications(replyContent, newReply.id);
+      if (newReply) {
+        const normalizedNewReply = normalizeComment(newReply);
+        setComments(prev => prev.map(c => c.id === parentCommentId ? { ...c, replies: [...(c.replies || []), normalizedNewReply] } : c));
+        await sendTagNotifications(replyContent, normalizedNewReply.id);
+      }
       setReplyContent(''); setReplyImageUrl(''); setReplyTo(null); setShowReplyImageInput(false); setCommentCount(prev => prev + 1);
     } catch (err) { console.error(err); } finally { setIsSubmitting(false); }
   };
