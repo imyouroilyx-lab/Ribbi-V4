@@ -1,4 +1,5 @@
 'use client';
+
 import { useEffect } from 'react';
 import { supabase } from '../lib/supabase'; 
 
@@ -17,16 +18,11 @@ export default function PresenceHandler({ userId }: { userId: string | undefined
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          // แจ้งระบบว่าเราออนไลน์
+          // แจ้งระบบว่าเราออนไลน์ผ่าน Presence เท่านั้น
           await channel.track({ 
             user_id: userId, 
             online_at: new Date().toISOString() 
           });
-          
-          // ✅ อัปเดต Database แค่ "ครั้งเดียว"
-          await supabase.from('users').update({ 
-            last_seen: new Date().toISOString() 
-          }).eq('id', userId);
         }
       });
 
