@@ -21,16 +21,20 @@ import {
 } from 'lucide-react';
 
 // นำเข้า Server Actions
-import { forceResetUserPassword, updateUserProfile, deleteUserAccount } from '@/lib/adminActions';
+import { checkIsAdmin, forceResetUserPassword, updateUserProfile, deleteUserAccount } from '@/lib/adminActions';
 
-const ADMIN_SECRET_PASSWORD = 'themostfunwebsiteinthailand';
 const USERS_PER_PAGE = 20;
+
+// ดึง access token ล่าสุดของผู้ใช้ เพื่อส่งให้ Server Action ตรวจสิทธิ์ฝั่งเซิร์ฟเวอร์
+async function getAccessToken(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token ?? '';
+}
 
 export default function ManagementPage() {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [authError, setAuthError] = useState('');
+  const [checkingAccess, setCheckingAccess] = useState(true);
 
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,12 +53,19 @@ export default function ManagementPage() {
   });
   const [isSaving, setIsSaving] = useState(false);
 
+  // ตรวจสิทธิ์แอดมินจากเซิร์ฟเวอร์ (ไม่มีรหัสผ่านในโค้ดฝั่ง client อีกต่อไป)
   useEffect(() => {
-    const checkLogin = async () => {
+    const checkAccess = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) router.push('/login');
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+      const token = await getAccessToken();
+      setIsAuthorized(await checkIsAdmin(token));
+      setCheckingAccess(false);
     };
-    checkLogin();
+    checkAccess();
   }, [router]);
 
   // โหลดข้อมูลเมื่อได้รับสิทธิ์ หรือเมื่อเปลี่ยนหน้า/ค้นหา
@@ -63,17 +74,6 @@ export default function ManagementPage() {
       fetchUsers();
     }
   }, [isAuthorized, currentPage, searchTerm]);
-
-  const handleAdminLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (passwordInput === ADMIN_SECRET_PASSWORD) {
-      setIsAuthorized(true);
-      setAuthError('');
-    } else {
-      setAuthError('รหัสผ่านแอดมินไม่ถูกต้อง');
-      setPasswordInput('');
-    }
-  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -130,6 +130,7 @@ export default function ManagementPage() {
   const saveEdit = async (userId: string) => {
     setIsSaving(true);
     const result = await updateUserProfile(
+      await getAccessToken(),
       userId, 
       editForm.display_name, 
       editForm.username,
@@ -165,7 +166,7 @@ export default function ManagementPage() {
     }
     const confirmReset = confirm(`คุณแน่ใจไหมว่าจะเปลี่ยนรหัสผ่านให้ ${displayName} เป็น "${newPassword}" ?`);
     if (!confirmReset) return;
-    const result = await forceResetUserPassword(userId, newPassword);
+    const result = await forceResetUserPassword(await getAccessToken(), userId, newPassword);
     if (result.success) {
       alert('เปลี่ยนรหัสผ่านสำเร็จ!');
     } else {
@@ -176,7 +177,7 @@ export default function ManagementPage() {
   const handleDeleteUser = async (userId: string, displayName: string) => {
     const confirmDelete = confirm(`⚠️ คำเตือนอันตราย!\nคุณกำลังจะลบบัญชีของ "${displayName}" ออกจากระบบถาวร\nพิมพ์ "ยืนยัน" เพื่อลบผู้ใช้นี้`);
     if (confirmDelete) {
-      const result = await deleteUserAccount(userId);
+      const result = await deleteUserAccount(await getAccessToken(), userId);
       if (result.success) {
         setUsers(users.filter(u => u.id !== userId));
         alert('ลบผู้ใช้ออกเรียบร้อยแล้ว');
@@ -188,6 +189,16 @@ export default function ManagementPage() {
 
   const totalPages = Math.ceil(totalCount / USERS_PER_PAGE);
 
+  if (checkingAccess) {
+    return (
+      <NavLayout>
+        <div className="flex items-center justify-center min-h-[70vh]">
+          <Loader2 className="animate-spin text-gray-400" size={40} />
+        </div>
+      </NavLayout>
+    );
+  }
+
   if (!isAuthorized) {
     return (
       <NavLayout>
@@ -197,27 +208,13 @@ export default function ManagementPage() {
               <ShieldAlert size={40} />
             </div>
             <h1 className="text-2xl font-black text-gray-900 mb-2">Admin Access</h1>
-            <p className="text-gray-500 mb-8 text-sm">กรุณากรอกรหัสผ่านเพื่อจัดการข้อมูลสมาชิก</p>
-            
-            <form onSubmit={handleAdminLogin} className="space-y-4">
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                <input 
-                  type="password"
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="รหัสผ่านแอดมิน..."
-                  className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
-                />
-              </div>
-              {authError && <p className="text-red-500 text-xs font-bold uppercase tracking-widest">{authError}</p>}
-              <button 
-                type="submit"
-                className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95"
-              >
-                ยืนยันตัวตน
-              </button>
-            </form>
+            <p className="text-gray-500 mb-8 text-sm">บัญชีนี้ไม่มีสิทธิ์จัดการข้อมูลสมาชิก</p>
+            <button
+              onClick={() => router.push('/')}
+              className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95"
+            >
+              กลับหน้าแรก
+            </button>
           </div>
         </div>
       </NavLayout>
