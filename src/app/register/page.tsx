@@ -69,7 +69,6 @@ export default function RegisterPage() {
         .from('users')
         .insert({
           id: authData.user.id,
-          email: formData.email.toLowerCase(),
           username: formData.username.toLowerCase(),
           display_name: formData.displayName,
         });
