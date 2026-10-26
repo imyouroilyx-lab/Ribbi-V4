@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
   Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, 
@@ -37,6 +37,36 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // ✅ มือถือ: กดค้างที่ข้อความของตัวเองเพื่อเปิดเมนู แก้ไข / ยกเลิกข้อความ
+  const [activeMsgId, setActiveMsgId] = useState<string | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStart = useRef<{ x: number; y: number } | null>(null);
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+    longPressStart.current = null;
+  };
+
+  const startLongPress = (e: React.PointerEvent, msgId: string) => {
+    if (e.pointerType === 'mouse') return; // คอมใช้ hover แทน
+    cancelLongPress();
+    longPressStart.current = { x: e.clientX, y: e.clientY };
+    longPressTimer.current = setTimeout(() => {
+      setActiveMsgId(msgId);
+      if (typeof navigator !== 'undefined') navigator.vibrate?.(15);
+      longPressTimer.current = null;
+    }, 450);
+  };
+
+  const moveLongPress = (e: React.PointerEvent) => {
+    const start = longPressStart.current;
+    // ถ้านิ้วเลื่อน (กำลังเลื่อนแชต) ให้ยกเลิกการกดค้าง
+    if (start && (Math.abs(e.clientX - start.x) > 10 || Math.abs(e.clientY - start.y) > 10)) {
+      cancelLongPress();
+    }
+  };
   const [isSaving, setIsSaving] = useState(false);
 
   // ✅ States สำหรับระบบส่งรูปภาพ
@@ -549,7 +579,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       </div>
 
       {/* Messages */}
-      <div ref={containerRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fcfdfe]">
+      <div ref={containerRef} onScroll={handleMessagesScroll} onClick={() => setActiveMsgId(null)} className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fcfdfe]">
         {hasMore && messages.length > 0 && (
           <div className="flex justify-center py-2">
             <button
@@ -591,17 +621,37 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                   </span>
                 )}
 
-                <div className={`relative px-4 py-2.5 rounded-2xl text-[14px] shadow-sm break-words ${isMe ? 'text-white rounded-tr-none' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'}`} 
-                     style={{ backgroundColor: isMe ? (initialChatData.theme_color || '#22c55e') : undefined }}>
+                <div className={`relative px-4 py-2.5 rounded-2xl text-[14px] shadow-sm break-words transition-transform ${isMe ? 'text-white rounded-tr-none select-none md:select-text [-webkit-touch-callout:none]' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'} ${activeMsgId === m.id ? 'scale-[0.97] ring-2 ring-gray-300' : ''}`} 
+                     style={{ backgroundColor: isMe ? (initialChatData.theme_color || '#22c55e') : undefined }}
+                     onPointerDown={isMe ? (e) => startLongPress(e, m.id) : undefined}
+                     onPointerMove={isMe ? moveLongPress : undefined}
+                     onPointerUp={isMe ? cancelLongPress : undefined}
+                     onPointerCancel={isMe ? cancelLongPress : undefined}
+                     onContextMenu={isMe ? (e) => { if (activeMsgId === m.id || longPressStart.current) e.preventDefault(); } : undefined}>
                   {m.images && m.images.length > 0 && <img src={m.images[0]} alt="Pic" className="rounded-xl mb-2 max-w-full max-h-64 object-cover" loading="lazy" />}
                   {m.content && <div>{renderMessageContent(m.content)}</div>}
                   {isMe && (
-                    <div className="absolute -left-16 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 bg-white border rounded-lg p-1 shadow-lg z-10">
-                        <button onClick={() => { setEditingId(m.id); setInput(m.content); }} className="p-1 text-blue-500 hover:bg-blue-50 rounded"><Edit2 size={12}/></button>
+                    <div className="absolute -left-16 top-1/2 -translate-y-1/2 hidden md:group-hover:flex items-center gap-1 bg-white border rounded-lg p-1 shadow-lg z-10">
+                        <button onClick={() => { setEditingId(m.id); setInput(m.content || ''); }} title="แก้ไข" className="p-1 text-blue-500 hover:bg-blue-50 rounded"><Edit2 size={12}/></button>
                         <button onClick={() => handleUnsend(m)} title="ยกเลิกข้อความ" className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 size={12}/></button>
                     </div>
                   )}
                 </div>
+                {isMe && activeMsgId === m.id && (
+                  <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 bg-white border border-gray-100 rounded-full p-1 shadow-lg animate-in fade-in zoom-in-95 duration-150">
+                    {m.content && (
+                      <button onClick={() => { setEditingId(m.id); setInput(m.content || ''); setActiveMsgId(null); }} className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-blue-600 active:bg-blue-50 rounded-full">
+                        <Edit2 size={14}/> แก้ไข
+                      </button>
+                    )}
+                    <button onClick={() => { setActiveMsgId(null); handleUnsend(m); }} className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-red-500 active:bg-red-50 rounded-full">
+                      <Trash2 size={14}/> ยกเลิกข้อความ
+                    </button>
+                    <button onClick={() => setActiveMsgId(null)} className="p-2 text-gray-400 active:bg-gray-100 rounded-full" aria-label="ปิด">
+                      <X size={14}/>
+                    </button>
+                  </div>
+                )}
                 {m.updated_at && <span className="text-[9px] text-gray-400 italic">แก้ไขแล้ว</span>}
               </div>
             </div>
