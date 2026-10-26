@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
   Send, ChevronLeft, Loader2, Settings, Trash2, Edit2, X, 
@@ -10,6 +10,26 @@ import {
 import Link from 'next/link';
 
 const MESSAGES_LIMIT = 50;
+
+const MESSAGE_FIELDS = `
+  id,
+  chat_id,
+  sender_id,
+  content,
+  images,
+  read_at,
+  read_by,
+  created_at,
+  updated_at,
+  deleted_by,
+  event,
+  sender:users!messages_sender_id_fkey (
+    id,
+    username,
+    display_name,
+    profile_img_url
+  )
+`;
 
 export default function ChatWindow({ chatId, chatData: initialChatData, currentUser, onBack, onRefreshChats }: any) {
   const [messages, setMessages] = useState<any[]>([]);
@@ -42,6 +62,29 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
   const [isAdding, setIsAdding] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // ✅ States สำหรับโหลดข้อความเก่า
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
+  const restoreScrollRef = useRef<{ height: number; top: number } | null>(null);
+
+  // หลังเติมข้อความเก่าด้านบน ให้คงตำแหน่งที่ผู้ใช้อ่านอยู่ ไม่กระโดด
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    const saved = restoreScrollRef.current;
+    if (el && saved) {
+      el.scrollTop = el.scrollHeight - saved.height + saved.top;
+      restoreScrollRef.current = null;
+    }
+  }, [messages]);
+
+  const isNearBottom = () => {
+    const el = containerRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+  };
 
   // 📡 1. ระบบ Realtime & Load Messages
   useEffect(() => {
@@ -88,19 +131,17 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         if (!data) return;
         if ((data.deleted_by || []).includes(currentUser.id)) return;
 
+        // เลื่อนลงล่างเฉพาะตอนที่เราส่งเอง หรืออยู่ท้ายแชตอยู่แล้ว (ไม่ดึงคนที่กำลังอ่านข้อความเก่า)
+        const shouldScroll = data.sender_id === currentUser.id || isNearBottom();
+
         setMessages(prev => {
           if (prev.some(m => m.id === data.id)) return prev;
-
-          const next = [...prev, data];
-
-          if (next.length > MESSAGES_LIMIT) {
-            return next.slice(next.length - MESSAGES_LIMIT);
-          }
-
-          return next;
+          return [...prev, data];
         });
 
-        setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        if (shouldScroll) {
+          setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        }
 
         if (data.sender_id !== currentUser.id) {
           markAsRead(true);
@@ -257,10 +298,83 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         .reverse();
 
       setMessages(visibleMessages);
+      setHasMore(data.length === MESSAGES_LIMIT);
     }
 
     setIsLoading(false);
-    setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    // กระโดดลงล่างทันที (ไม่ใช้ smooth เพื่อไม่ให้ไปกระตุ้นการโหลดข้อความเก่าตอนเปิดแชต)
+    setTimeout(() => scrollRef.current?.scrollIntoView(), 100);
+  };
+
+  // 📜 โหลดข้อความเก่าก่อนหน้า (ครั้งละ MESSAGES_LIMIT ข้อความ)
+  const loadOlderMessages = async () => {
+    if (loadingOlderRef.current || !hasMore || messages.length === 0) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+
+    try {
+      const oldest = messages[0];
+      const { data, error } = await supabase
+        .from('messages')
+        .select(MESSAGE_FIELDS)
+        .eq('chat_id', chatId)
+        .lt('created_at', oldest.created_at)
+        .order('created_at', { ascending: false })
+        .limit(MESSAGES_LIMIT);
+
+      if (error) throw error;
+
+      const rows = data || [];
+      const older = rows
+        .filter((m: any) => !(m.deleted_by || []).includes(currentUser.id))
+        .reverse();
+
+      const el = containerRef.current;
+      if (el) restoreScrollRef.current = { height: el.scrollHeight, top: el.scrollTop };
+
+      setMessages(prev => {
+        const ids = new Set(prev.map(m => m.id));
+        return [...older.filter((m: any) => !ids.has(m.id)), ...prev];
+      });
+      setHasMore(rows.length === MESSAGES_LIMIT);
+    } catch (err) {
+      console.error('Load older messages failed:', err);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  };
+
+  const handleMessagesScroll = () => {
+    const el = containerRef.current;
+    if (el && el.scrollTop < 80) loadOlderMessages();
+  };
+
+  // 🚫 ยกเลิกข้อความ (ทุกคนในแชตจะเห็นว่า "ยกเลิกข้อความ" แทน)
+  const handleUnsend = async (m: any) => {
+    if (!confirm('ยกเลิกข้อความนี้? ทุกคนในแชตจะไม่เห็นข้อความนี้อีก')) return;
+
+    const { error } = await supabase
+      .from('messages')
+      .update({ content: null, images: null, event: 'unsent' })
+      .eq('id', m.id)
+      .eq('sender_id', currentUser.id);
+
+    if (error) {
+      console.error(error);
+      alert('ยกเลิกข้อความไม่สำเร็จ: ' + error.message);
+      return;
+    }
+
+    setMessages(prev => prev.map(x => x.id === m.id ? { ...x, content: null, images: null, event: 'unsent' } : x));
+    if (editingId === m.id) { setEditingId(null); setInput(''); }
+
+    // ถ้าเป็นข้อความล่าสุด ให้รายการแชตแสดงว่า "ยกเลิกข้อความ" ด้วย
+    const last = messages[messages.length - 1];
+    if (last?.id === m.id) {
+      await supabase.from('chats').update({ last_message_content: 'ยกเลิกข้อความ' }).eq('id', chatId);
+      onRefreshChats();
+    }
   };
 
   const markAsRead = async (force = false) => {
@@ -435,7 +549,19 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fcfdfe]">
+      <div ref={containerRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fcfdfe]">
+        {hasMore && messages.length > 0 && (
+          <div className="flex justify-center py-2">
+            <button
+              onClick={loadOlderMessages}
+              disabled={loadingOlder}
+              className="flex items-center gap-2 text-[11px] font-bold text-gray-400 hover:text-gray-600 bg-white border border-gray-100 rounded-full px-3 py-1 shadow-sm"
+            >
+              {loadingOlder && <Loader2 size={12} className="animate-spin" />}
+              {loadingOlder ? 'กำลังโหลด...' : 'โหลดข้อความก่อนหน้า'}
+            </button>
+          </div>
+        )}
         {messages.length === 0 && !isLoading && (
           <div className="h-full flex flex-col items-center justify-center opacity-20 text-gray-900">
             <MessageSquare size={64}/>
@@ -444,6 +570,10 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
         )}
         {messages.map((m) => {
           if (m.event === 'system') return <div key={m.id} className="text-center text-[10px] text-gray-400 font-bold uppercase py-4 tracking-widest">{m.content}</div>;
+          if (m.event === 'unsent') {
+            const who = m.sender_id === currentUser.id ? 'คุณ' : (m.sender?.display_name || 'ผู้ใช้');
+            return <div key={m.id} className="text-center text-[11px] text-gray-400 italic py-2">{who} ยกเลิกข้อความ</div>;
+          }
           const isMe = m.sender_id === currentUser.id;
           return (
             <div key={m.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'} group items-end gap-2 animate-in fade-in slide-in-from-bottom-1`}>
@@ -468,7 +598,7 @@ export default function ChatWindow({ chatId, chatData: initialChatData, currentU
                   {isMe && (
                     <div className="absolute -left-16 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 bg-white border rounded-lg p-1 shadow-lg z-10">
                         <button onClick={() => { setEditingId(m.id); setInput(m.content); }} className="p-1 text-blue-500 hover:bg-blue-50 rounded"><Edit2 size={12}/></button>
-                        <button onClick={() => { if(confirm('ลบข้อความนี้?')) supabase.from('messages').delete().eq('id', m.id); }} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 size={12}/></button>
+                        <button onClick={() => handleUnsend(m)} title="ยกเลิกข้อความ" className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 size={12}/></button>
                     </div>
                   )}
                 </div>
