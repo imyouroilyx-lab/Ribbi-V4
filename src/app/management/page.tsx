@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { supabase, User } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import NavLayout from '@/components/NavLayout';
 import { 
@@ -21,7 +21,8 @@ import {
 } from 'lucide-react';
 
 // นำเข้า Server Actions
-import { checkIsAdmin, forceResetUserPassword, updateUserProfile, deleteUserAccount } from '@/lib/adminActions';
+import { checkIsAdmin, adminListUsers, forceResetUserPassword, updateUserProfile, deleteUserAccount } from '@/lib/adminActions';
+import type { AdminUserRow } from '@/lib/adminActions';
 
 const USERS_PER_PAGE = 20;
 
@@ -36,7 +37,7 @@ export default function ManagementPage() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [checkingAccess, setCheckingAccess] = useState(true);
 
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -77,27 +78,12 @@ export default function ManagementPage() {
 
   const fetchUsers = async () => {
     setLoading(true);
-    const from = (currentPage - 1) * USERS_PER_PAGE;
-    const to = from + USERS_PER_PAGE - 1;
-
     try {
-      let query = supabase
-        .from('users')
-        .select('*', { count: 'exact' });
-
-      // ระบบค้นหา
-      if (searchTerm) {
-        query = query.or(`display_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`);
-      }
-
-      // ✅ เรียงลำดับ A-Z และทำ Pagination
-      const { data, error, count } = await query
-        .order('display_name', { ascending: true })
-        .range(from, to);
-
-      if (error) throw error;
-      setUsers(data || []);
-      setTotalCount(count || 0);
+      // ดึงผ่านเซิร์ฟเวอร์ เพราะอีเมลเป็นข้อมูลส่วนตัว อ่านได้เฉพาะแอดมิน
+      const result = await adminListUsers(await getAccessToken(), currentPage, USERS_PER_PAGE, searchTerm);
+      if (!result.success) throw new Error(result.message);
+      setUsers(result.users);
+      setTotalCount(result.total);
     } catch (err: any) {
       console.error(err);
       alert('ไม่สามารถดึงข้อมูลสมาชิกได้: ' + err.message);
@@ -112,7 +98,7 @@ export default function ManagementPage() {
     setCurrentPage(1);
   };
 
-  const startEdit = (user: User) => {
+  const startEdit = (user: AdminUserRow) => {
     setEditingUserId(user.id);
     setEditForm({
       display_name: user.display_name || '',
