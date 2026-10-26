@@ -85,6 +85,98 @@ export async function checkIsAdmin(accessToken: string): Promise<boolean> {
   }
 }
 
+export type AdminUserRow = {
+  id: string;
+  username: string;
+  display_name: string;
+  profile_img_url: string | null;
+  cover_img_url: string | null;
+  created_at: string;
+  email: string | null;
+};
+
+type ListUsersResult =
+  | { success: true; users: AdminUserRow[]; total: number }
+  | { success: false; message: string; users: []; total: 0 };
+
+/**
+ * หา user id จากอีเมลใน Supabase Auth (อีเมลไม่ได้เก็บในตาราง users สาธารณะแล้ว)
+ */
+async function findUserIdsByEmail(term: string): Promise<string[]> {
+  const ids: string[] = [];
+  const needle = term.toLowerCase();
+  const perPage = 1000;
+
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await getAdminClient().auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    for (const u of data.users) {
+      if (u.email && u.email.toLowerCase().includes(needle)) ids.push(u.id);
+    }
+    if (data.users.length < perPage || ids.length >= 100) break;
+  }
+
+  return ids.slice(0, 100);
+}
+
+/**
+ * 0.1 ดึงรายชื่อสมาชิกพร้อมอีเมล (เฉพาะแอดมิน)
+ */
+export async function adminListUsers(
+  accessToken: string,
+  page: number,
+  perPage: number,
+  search: string
+): Promise<ListUsersResult> {
+  try {
+    await requireAdmin(accessToken);
+
+    const safePage = Math.max(1, Math.floor(Number(page) || 1));
+    const safePerPage = Math.min(100, Math.max(1, Math.floor(Number(perPage) || 20)));
+    const from = (safePage - 1) * safePerPage;
+    const to = from + safePerPage - 1;
+
+    // ตัดอักขระที่มีความหมายพิเศษในตัวกรองของ Supabase ออก
+    const term = (typeof search === 'string' ? search : '').replace(/[,()*%\\]/g, '').trim();
+
+    let query = getAdminClient()
+      .from('users')
+      .select('id, username, display_name, profile_img_url, cover_img_url, created_at', {
+        count: 'exact',
+      });
+
+    if (term) {
+      const filters = [`display_name.ilike.%${term}%`, `username.ilike.%${term}%`];
+      const emailIds = await findUserIdsByEmail(term);
+      if (emailIds.length > 0) filters.push(`id.in.(${emailIds.join(',')})`);
+      query = query.or(filters.join(','));
+    }
+
+    const { data, error, count } = await query
+      .order('display_name', { ascending: true })
+      .range(from, to);
+    if (error) throw error;
+
+    const rows = data || [];
+    const emails = await Promise.all(
+      rows.map(async (row) => {
+        const { data: authUser } = await getAdminClient().auth.admin.getUserById(row.id);
+        return authUser?.user?.email ?? null;
+      })
+    );
+
+    return {
+      success: true,
+      users: rows.map((row, i) => ({ ...row, email: emails[i] })),
+      total: count || 0,
+    };
+  } catch (error) {
+    console.error('Admin API Error (List Users):', error);
+    const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+    return { success: false, message, users: [], total: 0 };
+  }
+}
+
 /**
  * 1. เปลี่ยนรหัสผ่าน (Force Reset)
  */
