@@ -1,0 +1,6 @@
+{
+  "redirects": [
+    { "source": "/", "destination": "https://roleplayth.com/ribbi/", "permanent": false },
+    { "source": "/:path*", "destination": "https://roleplayth.com/ribbi/:path*", "permanent": false }
+  ]
+}
